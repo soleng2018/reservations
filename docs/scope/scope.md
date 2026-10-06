@@ -31,7 +31,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | done |
 | 2 | Coding standards & tooling | Foundation | done |
-| 3 | Data model | Foundation | planned |
+| 3 | Data model | Foundation | in-progress |
 | 4 | Authentik sign in & provisioning | Foundation | planned |
 | 5 | Design system & UI foundation | Foundation | planned |
 | 6 | Core booking loop | Slice 1 | planned |
@@ -62,10 +62,18 @@ Record the project conventions and tooling choices from the real scaffold, then 
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
 - [x] Capture conventions + tooling choices: `/audit`
 
-### 3. Data model · needs a decision
+### 3. Data model · in-progress
 Core entities: testbed types, testbeds and their clients (each testbed linked to its Authentik group), API keys (with encrypted secrets), users linked to their Authentik identity, reservations, and audit events. Every later slice builds on these.
 **Done when:** the schema supports the admin catalog, booking with no overlap per testbed and one active booking per learner, the delete blocking rules, and the audit log, with no breaking migration needed later.
-- [ ] Design it (spec): `/architect data model`
+- [x] Design it (spec): `/architect data model`
+- [ ] Build it: `/develop data model`
+  - [x] Core migration with named constraints, version trigger, RLS, and codegen (AC-1, 2, 3, 5, 6, 9, 10, 12)
+  - [ ] Pure helpers: booking phase, duration, slug, enum parity (AC-5, 9, 11)
+  - [ ] Booking and delete data rules: constraint error mapping, locks, guarded updates, blockers (AC-1, 2, 3, 4, 12, 14)
+  - [ ] Guest saga data steps and compensation (AC-13)
+- [ ] Verify it: `/check verify data model`
+- [ ] Test it: `/test data model`
+spec [0002](../specs/0002-data-model/index.md)
 (basis: data model is the costliest thing to redo)
 
 ### 4. Authentik sign in & provisioning · needs a decision · Full
