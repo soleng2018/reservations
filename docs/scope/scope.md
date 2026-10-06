@@ -31,7 +31,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | done |
 | 2 | Coding standards & tooling | Foundation | done |
-| 3 | Data model | Foundation | in-progress |
+| 3 | Data model | Foundation | done |
 | 4 | Authentik sign in & provisioning | Foundation | planned |
 | 5 | Design system & UI foundation | Foundation | planned |
 | 6 | Core booking loop | Slice 1 | planned |
@@ -62,7 +62,7 @@ Record the project conventions and tooling choices from the real scaffold, then 
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
 - [x] Capture conventions + tooling choices: `/audit`
 
-### 3. Data model · in-progress
+### 3. Data model · done
 Core entities: testbed types, testbeds and their clients (each testbed linked to its Authentik group), API keys (with encrypted secrets), users linked to their Authentik identity, reservations, and audit events. Every later slice builds on these.
 **Done when:** the schema supports the admin catalog, booking with no overlap per testbed and one active booking per learner, the delete blocking rules, and the audit log, with no breaking migration needed later.
 - [x] Design it (spec): `/architect data model`

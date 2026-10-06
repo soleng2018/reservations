@@ -1,7 +1,7 @@
 # 0002. Data model for Nile HOL Reservations
 
 **Date**: 2026-10-06
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
