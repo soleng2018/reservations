@@ -32,6 +32,9 @@ npm run lint && npm run typecheck
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 ```
 
+- Local env: copy `.env.example` to `.env.local` (read by `npm run dev` and `db:migrate`; never commit real values).
+- `db/bootstrap.sql` is a one time setup run by hand as `postgres` (creates the `hol_app` role and schemas), not a migration; its header has the exact command.
+
 ## Specs
 
 Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
