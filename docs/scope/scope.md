@@ -66,14 +66,14 @@ Record the project conventions and tooling choices from the real scaffold, then 
 Core entities: testbed types, testbeds and their clients (each testbed linked to its Authentik group), API keys (with encrypted secrets), users linked to their Authentik identity, reservations, and audit events. Every later slice builds on these.
 **Done when:** the schema supports the admin catalog, booking with no overlap per testbed and one active booking per learner, the delete blocking rules, and the audit log, with no breaking migration needed later.
 - [x] Design it (spec): `/architect data model`
-- [ ] Build it: `/develop data model`
+- [x] Build it: `/develop data model`
   - [x] Core migration with named constraints, version trigger, RLS, and codegen (AC-1, 2, 3, 5, 6, 9, 10, 12)
   - [x] Pure helpers: booking phase, duration, slug, enum parity (AC-5, 9, 11)
   - [x] Booking and delete data rules: constraint error mapping, locks, guarded updates, blockers (AC-1, 2, 3, 4, 12, 14)
-  - [ ] Guest saga data steps and compensation (AC-13)
+  - [x] Guest saga data steps and compensation (AC-13)
 - [ ] Verify it: `/check verify data model`
 - [ ] Test it: `/test data model`
-spec [0002](../specs/0002-data-model/index.md)
+spec [0002](../specs/0002-data-model/index.md) · code in `db/migrations/`, `server/db/`, `lib/`
 (basis: data model is the costliest thing to redo)
 
 ### 4. Authentik sign in & provisioning · needs a decision · Full
