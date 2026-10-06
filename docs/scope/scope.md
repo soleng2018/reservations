@@ -29,7 +29,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
-| 1 | Stack & architecture | Foundation | in-progress |
+| 1 | Stack & architecture | Foundation | done |
 | 2 | Coding standards & tooling | Foundation | planned |
 | 3 | Data model | Foundation | planned |
 | 4 | Authentik sign in & provisioning | Foundation | planned |
@@ -50,11 +50,11 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 
 ## Foundations
 
-### 1. Stack & architecture · in-progress
+### 1. Stack & architecture · done
 Pick everything the Next.js base does not settle yet: persistence, hosting, how secrets are encrypted, email sending, and scheduled jobs. Then add only what slice 1 needs to the existing scaffold.
 **Done when:** the stack is recorded in a spec, and the app boots locally and builds with its database connected.
 - [x] Decide the stack (spec): `/architect stack & architecture`
-- [ ] Scaffold from the decision: `/develop stack & architecture`
+- [x] Scaffold from the decision: `/develop stack & architecture`
 spec [0001](../specs/0001-stack-architecture/index.md) · code in `./` (Next.js 16 App Router, TypeScript, Tailwind already scaffolded)
 
 ### 2. Coding standards & tooling
