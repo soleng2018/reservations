@@ -29,6 +29,8 @@ npm install
 npm run dev          # never runs migrations or the worker
 npm run build
 npm run lint && npm run typecheck
+npm test             # Vitest (passes with no tests)
+npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 ```
 
@@ -52,10 +54,10 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 
 ## Tooling
 
-To be installed by `/develop tooling`:
-- ESLint (`eslint-config-next`, already installed) plus Prettier with `prettier-plugin-tailwindcss`.
+Installed:
+- ESLint (`eslint-config-next`, with `eslint-config-prettier` last) plus Prettier with `prettier-plugin-tailwindcss`. Prettier skips Markdown, `docs/`, `context/`, and skills folders.
 - Pre-commit: Husky + lint-staged (ESLint and Prettier on staged files) plus `npm run typecheck`.
-- CI: GitHub Actions on push runs lint, typecheck, and tests (the image build from spec 0001 comes later).
+- CI (`.github/workflows/ci.yml`): GitHub Actions on push runs lint, format check, typecheck, and tests (the image build from spec 0001 comes later).
 
 ## Git
 
