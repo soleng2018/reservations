@@ -69,7 +69,7 @@ Core entities: testbed types, testbeds and their clients (each testbed linked to
 - [ ] Build it: `/develop data model`
   - [x] Core migration with named constraints, version trigger, RLS, and codegen (AC-1, 2, 3, 5, 6, 9, 10, 12)
   - [x] Pure helpers: booking phase, duration, slug, enum parity (AC-5, 9, 11)
-  - [ ] Booking and delete data rules: constraint error mapping, locks, guarded updates, blockers (AC-1, 2, 3, 4, 12, 14)
+  - [~] Booking and delete data rules: constraint error mapping, locks, guarded updates, blockers (AC-1, 2, 3, 4, 12, 14)
   - [ ] Guest saga data steps and compensation (AC-13)
 - [ ] Verify it: `/check verify data model`
 - [ ] Test it: `/test data model`

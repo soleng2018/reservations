@@ -1,5 +1,5 @@
 import "server-only";
-import type { Insertable, Kysely, Transaction } from "kysely";
+import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
 import { db } from "@/server/db";
 import { hasDbEnv } from "@/server/env";
 import type { DB, TestbedTypes, Testbeds, Users } from "./types";
@@ -24,6 +24,23 @@ export async function inRollback(
     .catch((e: unknown) => {
       if (!(e instanceof Rollback)) throw e;
     });
+}
+
+// Runs `fn` inside a savepoint and returns what it threw (undefined if
+// nothing), so a test can assert a constraint error and keep using `trx`.
+export async function attempt(
+  trx: Kysely<DB>,
+  fn: () => Promise<unknown>,
+): Promise<unknown> {
+  await sql`savepoint attempt`.execute(trx);
+  try {
+    await fn();
+    await sql`release savepoint attempt`.execute(trx);
+    return undefined;
+  } catch (e) {
+    await sql`rollback to savepoint attempt`.execute(trx);
+    return e;
+  }
 }
 
 const unique = () => crypto.randomUUID().slice(0, 8);
