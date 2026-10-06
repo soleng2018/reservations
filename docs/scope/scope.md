@@ -30,7 +30,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | # | Feature | Phase | Status |
 |---|---------|-------|--------|
 | 1 | Stack & architecture | Foundation | done |
-| 2 | Coding standards & tooling | Foundation | in-progress |
+| 2 | Coding standards & tooling | Foundation | done |
 | 3 | Data model | Foundation | planned |
 | 4 | Authentik sign in & provisioning | Foundation | planned |
 | 5 | Design system & UI foundation | Foundation | planned |
@@ -57,10 +57,10 @@ Pick everything the Next.js base does not settle yet: persistence, hosting, how 
 - [x] Scaffold from the decision: `/develop stack & architecture`
 spec [0001](../specs/0001-stack-architecture/index.md) · code in `./` (Next.js 16 App Router, TypeScript, Tailwind already scaffolded)
 
-### 2. Coding standards & tooling · in-progress
+### 2. Coding standards & tooling · done
 Record the project conventions and tooling choices from the real scaffold, then install lint, format, and pre commit checks.
 **Done when:** root `AGENTS.md` reflects the real stack, and lint, format, and pre commit run clean.
-- [ ] Capture conventions + tooling choices: `/audit`
+- [x] Capture conventions + tooling choices: `/audit`
 
 ### 3. Data model · needs a decision
 Core entities: testbed types, testbeds and their clients (each testbed linked to its Authentik group), API keys (with encrypted secrets), users linked to their Authentik identity, reservations, and audit events. Every later slice builds on these.
