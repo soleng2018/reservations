@@ -22,6 +22,11 @@ export type DbEnv = z.infer<typeof dbSchema>;
 
 let cached: DbEnv | undefined;
 
+// True when a database is configured. DB integration tests skip without one (CI).
+export function hasDbEnv(): boolean {
+  return Boolean(process.env.DATABASE_HOST);
+}
+
 // Parsed lazily on first use, never at import, so `next build` needs no values.
 // Shared by web, worker, and the migrate script.
 export function dbEnv(): DbEnv {
