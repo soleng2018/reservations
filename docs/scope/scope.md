@@ -71,7 +71,7 @@ Core entities: testbed types, testbeds and their clients (each testbed linked to
   - [x] Pure helpers: booking phase, duration, slug, enum parity (AC-5, 9, 11)
   - [x] Booking and delete data rules: constraint error mapping, locks, guarded updates, blockers (AC-1, 2, 3, 4, 12, 14)
   - [x] Guest saga data steps and compensation (AC-13)
-- [ ] Verify it: `/check verify data model`
+- [x] Verify it: `/check verify data model` (AC-14 lock wait accepted on lock SQL evidence, engineer call 2026-10-06)
 - [ ] Test it: `/test data model`
 spec [0002](../specs/0002-data-model/index.md) · code in `db/migrations/`, `server/db/`, `lib/`
 (basis: data model is the costliest thing to redo)
