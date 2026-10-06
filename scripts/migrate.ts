@@ -7,7 +7,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { sql } from "kysely";
-import { Migrator, type Migration, type MigrationProvider } from "kysely/migration";
+import {
+  Migrator,
+  type Migration,
+  type MigrationProvider,
+} from "kysely/migration";
 import { createDb } from "@/server/db";
 import { dbEnv } from "@/server/env";
 
@@ -21,11 +25,16 @@ const sqlMigration = (text: string): Migration => ({
 
 const sqlFileProvider = (folder: string): MigrationProvider => ({
   getMigrations: async () => {
-    const files = (await readdir(folder)).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+    const files = (await readdir(folder))
+      .filter((f) => /^\d{4}_.+\.sql$/.test(f))
+      .sort();
     const entries = await Promise.all(
       files.map(
         async (file) =>
-          [file.replace(/\.sql$/, ""), sqlMigration(await readFile(path.join(folder, file), "utf8"))] as const,
+          [
+            file.replace(/\.sql$/, ""),
+            sqlMigration(await readFile(path.join(folder, file), "utf8")),
+          ] as const,
       ),
     );
     return Object.fromEntries(entries);
@@ -42,7 +51,9 @@ async function main(): Promise<number> {
     });
     const { error, results } = await migrator.migrateToLatest();
     (results ?? []).forEach((r) =>
-      console.log(`${r.status === "Success" ? "applied" : r.status}: ${r.migrationName}`),
+      console.log(
+        `${r.status === "Success" ? "applied" : r.status}: ${r.migrationName}`,
+      ),
     );
     if (!results?.length && !error) console.log("nothing to apply");
     if (error) {

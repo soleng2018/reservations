@@ -10,6 +10,9 @@ export async function GET(): Promise<Response> {
   } catch (err) {
     // Covers env misconfiguration (Zod) as well as an unreachable database.
     console.error("health: database check failed", err);
-    return Response.json({ status: "error", db: "unreachable" }, { status: 503 });
+    return Response.json(
+      { status: "error", db: "unreachable" },
+      { status: 503 },
+    );
   }
 }
