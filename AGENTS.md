@@ -32,9 +32,10 @@ npm run lint && npm run typecheck
 npm test             # Vitest (passes with no tests)
 npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
+npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
 ```
 
-- Local env: copy `.env.example` to `.env.local` (read by `npm run dev` and `db:migrate`; never commit real values).
+- Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
 - `db/bootstrap.sql` is a one time setup run by hand as `postgres` (creates the `hol_app` role and schemas), not a migration; its header has the exact command.
 
 ## Specs
@@ -45,12 +46,13 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 
 - Functional style: pure functions by default, no shared mutable state (module variables are constants, lazy caches aside), side effects (DB, Authentik, Google, Cloudflare) kept at the edges in `server/`.
 - Prefer plain functions and composition over classes; `map`/`filter`/`reduce` over loops when clearer; never mutate inputs (`readonly` types).
-- Errors: expected failures return a typed `Result` (`{ ok: true, value } | { ok: false, error }`); throw only for bugs and broken invariants. Server Actions map a `Result` to a user facing message.
+- Errors: expected failures return a typed `Result` (`{ ok: true, value } | { ok: false, error }`); throw only for bugs and broken invariants. Server Actions map a `Result` to a user facing message. The type and `ok`/`err` helpers live in `lib/result.ts`; DB constraint violations become a `Result` through `mapConstraintError` in `server/db/constraint-errors.ts`.
+- Schema: `server/db/types.ts` is generated (never hand edit; Prettier skips it). Constraint and index names are a contract with `mapConstraintError`, so renaming one is a breaking change. Every `CHECK (col in (...))` list has a matching Zod enum in `lib/db-enums.ts`, registered in `checkLists`; a parity test compares them to the live schema.
 - Strict TypeScript: no `any`, no non null `!` without a comment, exhaustive `switch` on unions (`never` check). Parse every boundary (input, env, external API) with Zod.
 - Env: each process validates its env through the Zod schemas in `server/env.ts`, failing fast at start, never during `next build`. No `process.env` reads elsewhere.
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
 - Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`. Import via `@/`.
-- Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks.
+- Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
 
 ## Tooling
 
