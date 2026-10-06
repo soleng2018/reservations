@@ -375,9 +375,142 @@ describe.skipIf(!hasDb)("booking data rules", () => {
         });
       }
     }));
+
+  it("lets a reschedule overlap its own old range but not another booking (AC-1, AC-12)", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(24, 26);
+      const other = await makeUser(trx);
+      await insertBooking(trx, {
+        user_id: other.id,
+        testbed_id: w.testbed.id,
+        testbed_type_id: w.type.id,
+        starts_at: slot(30),
+        ends_at: slot(32),
+        status: "confirmed",
+      });
+      const move = (from: number, to: number, expectedVersion: number) =>
+        rescheduleBooking(trx, {
+          id: b.id,
+          expectedVersion,
+          testbedId: w.testbed.id,
+          testbedTypeId: w.type.id,
+          startsAt: slot(from),
+          endsAt: slot(to),
+        });
+
+      expect(await move(25, 27, 1)).toEqual({
+        ok: true,
+        value: { version: 2 },
+      });
+      const clash = await attempt(trx, () => move(29, 31, 2));
+      expect(mapped(clash)).toBe("overlap");
+    }));
+
+  it("records a system cancel with no actor and keeps ends_at (AC-12)", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(-1, 1);
+      const result = await cancelBooking(trx, {
+        id: b.id,
+        expectedVersion: 1,
+        source: "deactivation",
+        byUserId: null,
+      });
+      expect(result).toEqual({ ok: true, value: { version: 2 } });
+      const row = await trx
+        .selectFrom("bookings")
+        .select(["status", "cancel_source", "cancelled_by_user_id", "ends_at"])
+        .where("id", "=", b.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({
+        status: "cancelled",
+        cancel_source: "deactivation",
+        cancelled_by_user_id: null,
+        ends_at: b.ends_at,
+      });
+    }));
+
+  it("refuses a testbed whose type is soft deleted (AC-14)", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id);
+      await trx
+        .updateTable("testbed_types")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", type.id)
+        .execute();
+      expect(await lockBookableTestbed(trx, tb.id)).toEqual({
+        ok: false,
+        error: "not_bookable",
+      });
+    }));
+
+  it("moves updated_at forward on update", () =>
+    inRollback(async (trx) => {
+      const old = new Date("2020-01-01T00:00:00Z");
+      const user = await makeUser(trx, { updated_at: old });
+      const { updated_at } = await trx
+        .updateTable("users")
+        .set({ name: "Renamed" })
+        .where("id", "=", user.id)
+        .returning("updated_at")
+        .executeTakeFirstOrThrow();
+      expect(updated_at.getTime()).toBeGreaterThan(old.getTime());
+    }));
+
+  it("keeps client positions unique per testbed and removes clients with a hard deleted testbed", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id);
+      const client = (position: number) =>
+        trx
+          .insertInto("testbed_clients")
+          .values({
+            testbed_id: tb.id,
+            kind: "wired",
+            name: "PC",
+            url: "u",
+            position,
+          })
+          .execute();
+      await client(0);
+      const dup = (await attempt(trx, () => client(0))) as {
+        constraint?: string;
+      };
+      expect(dup.constraint).toBe("testbed_clients_position_uq");
+
+      await trx.deleteFrom("testbeds").where("id", "=", tb.id).execute();
+      const left = await trx
+        .selectFrom("testbed_clients")
+        .select("id")
+        .where("testbed_id", "=", tb.id)
+        .execute();
+      expect(left).toEqual([]);
+    }));
 });
 
 describe("mapConstraintError", () => {
+  it.each([
+    ["23P01", "bookings_no_overlap", "overlap"],
+    ["23505", "bookings_one_live_per_user", "user_has_live_booking"],
+    ["23505", "users_email_lower_uq", "duplicate_email"],
+    ["23505", "testbeds_slug_uq", "duplicate_slug"],
+    ["23505", "testbed_types_name_lower_uq", "duplicate_name"],
+    ["23505", "testbeds_name_lower_uq", "duplicate_name"],
+    ["23505", "api_keys_name_lower_uq", "duplicate_name"],
+  ])("maps %s on %s to %s", (code, constraint, error) => {
+    expect(mapConstraintError({ code, constraint })).toEqual({
+      ok: false,
+      error,
+    });
+  });
+
+  it("rethrows a known constraint name under the wrong error code", () => {
+    const e = { code: "23514", constraint: "bookings_no_overlap" };
+    expect(() => mapConstraintError(e)).toThrow();
+  });
+
   it("rethrows errors that are not expected constraint violations", () => {
     const bug = new Error("boom");
     expect(() => mapConstraintError(bug)).toThrow(bug);

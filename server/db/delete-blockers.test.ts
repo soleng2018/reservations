@@ -103,4 +103,30 @@ describe.skipIf(!hasDb)("delete blockers", () => {
         error: "not_bookable",
       });
     }));
+
+  it("ignores cancelled and completed bookings when blocking a testbed (AC-3, AC-4)", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id);
+      const base = {
+        testbed_id: tb.id,
+        testbed_type_id: type.id,
+        starts_at: slot(24),
+        ends_at: slot(26),
+      };
+      await trx
+        .insertInto("bookings")
+        .values([
+          {
+            ...base,
+            user_id: (await makeUser(trx)).id,
+            status: "cancelled",
+            cancelled_at: new Date(),
+            cancel_source: "admin",
+          },
+          { ...base, user_id: (await makeUser(trx)).id, status: "completed" },
+        ])
+        .execute();
+      expect(await testbedBlockers(trx, tb.id)).toEqual([]);
+    }));
 });

@@ -227,4 +227,42 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
         error: "refused",
       });
     }));
+
+  it("refuses a testbed that cannot take bookings and writes no booking", () =>
+    inRollback(async (trx) => {
+      const { input, testbed } = await setup(trx);
+      await trx
+        .updateTable("testbeds")
+        .set({ authentik_group_pk: null })
+        .where("id", "=", testbed.id)
+        .execute();
+      expect(await startGuestBooking(trx, input)).toEqual({
+        ok: false,
+        error: "not_bookable",
+      });
+      const rows = await trx
+        .selectFrom("bookings")
+        .select("id")
+        .where("testbed_id", "=", testbed.id)
+        .execute();
+      expect(rows).toEqual([]);
+    }));
+
+  it("never deletes an admin row during compensation", () =>
+    inRollback(async (trx) => {
+      const auth = recorder();
+      const admin = await makeUser(trx, { role: "admin", company: null });
+      await compensateGuestBooking(
+        trx,
+        { userId: admin.id, bookingId: crypto.randomUUID() },
+        auth.deleteAuthentikUser,
+      );
+      const still = await trx
+        .selectFrom("users")
+        .select("id")
+        .where("id", "=", admin.id)
+        .executeTakeFirst();
+      expect(still).toEqual({ id: admin.id });
+      expect(auth.deleted).toEqual([]);
+    }));
 });
