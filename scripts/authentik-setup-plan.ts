@@ -9,8 +9,8 @@ export const LEARNER_PATH = "hol/learners";
 export const RECOVERY_FLOW_SLUG = "hol-recovery";
 export const PROVISIONING_ACCOUNT = "hol-webapp-provisioning";
 export const PROVISIONING_ROLE = "hol-webapp-provisioning";
-// Better Auth genericOAuth callback, providerId `authentik`.
-export const CALLBACK_PATH = "/api/auth/oauth2/callback/authentik";
+// Better Auth 1.7 generic OAuth callback (core route), providerId `authentik`.
+export const CALLBACK_PATH = "/api/auth/callback/authentik";
 
 // Global permissions for the provisioning role (spec 0003 security model).
 // Object level containment (never an admin, only `pod-*` groups) is the

@@ -43,7 +43,7 @@ describe("desiredProvider", () => {
       { matching_mode: "strict", url: `https://hol.example${CALLBACK_PATH}` },
       {
         matching_mode: "regex",
-        url: "^http:\\/\\/localhost:3000\\/api\\/auth\\/oauth2\\/callback\\/authentik$",
+        url: "^http:\\/\\/localhost:3000\\/api\\/auth\\/callback\\/authentik$",
       },
     ]);
   });

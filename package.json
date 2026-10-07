@@ -17,6 +17,7 @@
     "authentik:setup": "tsx scripts/authentik-setup.ts"
   },
   "dependencies": {
+    "better-auth": "1.7.7",
     "kysely": "^0.29.6",
     "next": "16.3.8",
     "pg": "^8.23.1",
