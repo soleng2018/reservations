@@ -13,7 +13,8 @@
     "prepare": "husky",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "authentik:setup": "tsx scripts/authentik-setup.ts"
   },
   "dependencies": {
     "kysely": "^0.29.6",

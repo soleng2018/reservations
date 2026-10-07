@@ -1,7 +1,7 @@
 # 0003. Authentik sign in and learner provisioning
 
 **Date**: 2026-10-06
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

@@ -81,7 +81,7 @@ Sign in through Authentik for two roles (admin, learner). Admin accounts already
 **Done when:** an admin set up in Authentik signs in by opening the unlisted admin URL and choosing "Sign in with SSO" (no password is entered in the app), and a learner signs in through "Manage an existing reservation", each landing in their own area and blocked from the other's; no learner facing page links to the admin URL; the app has no path that creates an admin; a guest booking creates exactly one Authentik user (reusing an existing one for a known email); the set password link verifies the email; deactivating a user in the app blocks their sign in; admins and learners sign in through the same Authentik OIDC application; the provisioning key cannot create or change an admin, and runtime user calls never use the master key.
 - [x] Design it (spec): `/architect authentik sign in & provisioning`
 - [ ] Build it: `/develop authentik sign in & provisioning`
-  - [ ] Spike 4 plus the idempotent `authentik:setup` script (AC-1, 11, 13)
+  - [x] Spike 4 plus the idempotent `authentik:setup` script (AC-1, 11, 13)
   - [ ] Better Auth migration, sign in hook, `require.ts`, admin tracer end to end (AC-1, 2, 7, 10, 11, 14, 16)
   - [ ] Learner sign in page, error page, sign out, noindex (AC-2, 3, 12)
   - [ ] Authentik client with guards, saga wiring, welcome job, resend (AC-4, 5, 6, 8, 9, 15, 16)
