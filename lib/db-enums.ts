@@ -31,6 +31,7 @@ export const JobKind = z.enum([
   "send_email",
   "calendar_upsert",
   "calendar_delete",
+  "send_welcome",
 ]);
 export type JobKind = z.infer<typeof JobKind>;
 

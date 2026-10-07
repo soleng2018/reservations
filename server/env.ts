@@ -64,6 +64,43 @@ export function authEnv(): AuthEnv {
   return cachedAuth;
 }
 
+// The provisioning token only: RBAC limited, and every write it makes passes
+// server/authentik/guard.ts (spec 0003). Used by web and worker.
+const authentikSchema = z.object({
+  AUTHENTIK_URL: z.url().transform((u) => new URL(u).origin),
+  AUTHENTIK_PROVISIONING_TOKEN: z.string().min(1),
+});
+
+export type AuthentikEnv = z.infer<typeof authentikSchema>;
+
+let cachedAuthentik: AuthentikEnv | undefined;
+
+export function authentikEnv(): AuthentikEnv {
+  cachedAuthentik ??= authentikSchema.parse({
+    AUTHENTIK_URL: process.env.AUTHENTIK_URL,
+    AUTHENTIK_PROVISIONING_TOKEN: secret("AUTHENTIK_PROVISIONING_TOKEN"),
+  });
+  return cachedAuthentik;
+}
+
+// Cloudflare Turnstile (spec 0001). Dev uses Cloudflare's test keys.
+const turnstileSchema = z.object({
+  TURNSTILE_SITE_KEY: z.string().min(1),
+  TURNSTILE_SECRET_KEY: z.string().min(1),
+});
+
+export type TurnstileEnv = z.infer<typeof turnstileSchema>;
+
+let cachedTurnstile: TurnstileEnv | undefined;
+
+export function turnstileEnv(): TurnstileEnv {
+  cachedTurnstile ??= turnstileSchema.parse({
+    TURNSTILE_SITE_KEY: process.env.TURNSTILE_SITE_KEY,
+    TURNSTILE_SECRET_KEY: secret("TURNSTILE_SECRET_KEY"),
+  });
+  return cachedTurnstile;
+}
+
 // The admin entry path only, for proxy.ts (it must not need the auth secrets).
 export function adminEntryPath(): string {
   return authSchema.shape.ADMIN_ENTRY_PATH.parse(

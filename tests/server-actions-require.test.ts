@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 const PUBLIC_ACTIONS = new Set([
   "app/auth/actions.ts#signInWithSso",
   "app/auth/actions.ts#signOut",
+  "app/reservations/actions.ts#resendSetPassword",
 ]);
 
 const root = path.resolve(__dirname, "..");

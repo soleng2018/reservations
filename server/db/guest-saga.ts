@@ -36,11 +36,12 @@ const HAS_NO_BOOKINGS = sql<boolean>`not exists (
 )`;
 
 // Step 1: find or create the learner by email and hold the slot as
-// provisioning. Admin and deactivated accounts get the same generic refusal.
+// provisioning. An admin email is told apart (spec 0003 AC-5: its own message
+// and audit); a deactivated account gets the generic refusal.
 export async function startGuestBooking(
   trx: Kysely<DB>,
   input: GuestBookingInput,
-): Promise<Result<SagaRef, "refused" | "not_bookable">> {
+): Promise<Result<SagaRef, "admin_email" | "refused" | "not_bookable">> {
   await trx
     .insertInto("users")
     .values({
@@ -60,9 +61,8 @@ export async function startGuestBooking(
     .where(sql<string>`lower(email)`, "=", input.email.toLowerCase())
     .forUpdate()
     .executeTakeFirstOrThrow();
-  if (user.role !== "learner" || user.status !== "active") {
-    return err("refused");
-  }
+  if (user.role === "admin") return err("admin_email");
+  if (user.status !== "active") return err("refused");
 
   // The user's own crashed attempt would block them via one live booking. Its
   // compensation is just this delete: the same user continues in this saga,
@@ -107,7 +107,10 @@ export async function recordAuthentikUser(
     .updateTable("users")
     .set({
       authentik_user_pk: authentik.pk,
-      ...(authentik.created ? { authentik_pending_saga: true } : {}),
+      // A created user has no password yet; the first sign in clears this.
+      ...(authentik.created
+        ? { authentik_pending_saga: true, set_password_pending: true }
+        : {}),
     })
     .where("id", "=", userId)
     .execute();

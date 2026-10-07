@@ -11,5 +11,7 @@ export const AuditAction = z.enum([
   "user.reactivated",
   "set_password.resent",
   "booking.refused_admin_email",
+  // AC-5: the lowercased email is another Authentik user's username.
+  "booking.refused_username_taken",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

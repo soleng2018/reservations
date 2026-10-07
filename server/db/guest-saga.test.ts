@@ -214,7 +214,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
       await makeUser(trx, { role: "admin", company: null, email: input.email });
       expect(await startGuestBooking(trx, input)).toEqual({
         ok: false,
-        error: "refused",
+        error: "admin_email",
       });
       const off = { ...input, email: `off-${input.email}` };
       await makeUser(trx, {
