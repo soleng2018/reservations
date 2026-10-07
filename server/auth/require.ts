@@ -17,7 +17,11 @@ export type SessionUser = {
 
 export type CurrentSession = {
   readonly user: SessionUser;
-  readonly session: { readonly id: string; readonly expiresAt: Date };
+  readonly session: {
+    readonly id: string;
+    readonly expiresAt: Date;
+    readonly authUserId: string; // hol_auth."user".id
+  };
 };
 
 // The signed in app user, or undefined. Reads the DB session every time, so a
@@ -37,7 +41,11 @@ export async function currentSession(): Promise<CurrentSession | undefined> {
       role: UserRole.parse(row.role),
       status: UserStatus.parse(row.status),
     },
-    session: { id: found.session.id, expiresAt: found.session.expiresAt },
+    session: {
+      id: found.session.id,
+      expiresAt: found.session.expiresAt,
+      authUserId: found.user.id,
+    },
   };
 }
 

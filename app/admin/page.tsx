@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SignOutButton } from "@/components/auth/sign-out-button";
 import { requireAdmin } from "@/server/auth/require";
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export default async function AdminHome() {
       <p className="text-sm text-zinc-500">
         Session ends {session.expiresAt.toISOString()}.
       </p>
+      <SignOutButton />
     </main>
   );
 }

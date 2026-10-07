@@ -31,25 +31,33 @@ describe("parseAppUrls", () => {
 describe("desiredProvider", () => {
   const p = desiredProvider({
     appUrls: ["https://hol.example", "http://localhost:3000"],
+    adminEntryPath: "/l0gin",
     authorizationFlow: "auth",
     invalidationFlow: "inv",
     signingKey: "key",
     scopeMappings: ["profile", "openid", "email"],
   });
 
-  it("uses the user pk as sub and one callback per URL", () => {
+  it("uses the user pk as sub and a callback plus logout targets per URL", () => {
     expect(p.sub_mode).toBe("user_id");
     expect(p.redirect_uris).toEqual([
       { matching_mode: "strict", url: `https://hol.example${CALLBACK_PATH}` },
+      { matching_mode: "strict", url: "https://hol.example/" },
+      { matching_mode: "strict", url: "https://hol.example/l0gin" },
       {
         matching_mode: "regex",
         url: "^http:\\/\\/localhost:3000\\/api\\/auth\\/callback\\/authentik$",
+      },
+      { matching_mode: "regex", url: "^http:\\/\\/localhost:3000\\/$" },
+      {
+        matching_mode: "regex",
+        url: "^http:\\/\\/localhost:3000\\/l0gin$",
       },
     ]);
   });
 
   it("makes the http regex match only its own callback", () => {
-    const re = new RegExp(p.redirect_uris[1]?.url ?? "");
+    const re = new RegExp(p.redirect_uris[3]?.url ?? "");
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}`)).toBe(true);
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}/x`)).toBe(false);
     expect(re.test(`http://localhostX3000${CALLBACK_PATH}`)).toBe(false);

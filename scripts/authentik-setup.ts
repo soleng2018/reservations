@@ -31,6 +31,11 @@ const envSchema = z.object({
   AUTHENTIK_URL: z.url().transform((u) => new URL(u).origin),
   AUTHENTIK_MASTER_TOKEN: z.string().min(1),
   APP_URLS: z.string().min(1),
+  // Must match the web app's ADMIN_ENTRY_PATH (a post logout target).
+  ADMIN_ENTRY_PATH: z
+    .string()
+    .regex(/^\/[A-Za-z0-9_-]+$/, "a single path segment like /l0gin")
+    .default("/l0gin"),
 });
 
 const readSecret = (name: string): string | undefined => {
@@ -49,6 +54,7 @@ const env = envSchema.parse({
   AUTHENTIK_URL: process.env.AUTHENTIK_URL,
   AUTHENTIK_MASTER_TOKEN: readSecret("AUTHENTIK_MASTER_TOKEN"),
   APP_URLS: process.env.APP_URLS,
+  ADMIN_ENTRY_PATH: process.env.ADMIN_ENTRY_PATH || undefined,
 });
 const apply = args.apply;
 const api = `${env.AUTHENTIK_URL}/api/v3`;
@@ -186,7 +192,11 @@ const providerSchema = z.looseObject({
 
 async function ensureProvider(appUrls: readonly string[]) {
   say("OIDC provider");
-  const desired = desiredProvider({ appUrls, ...(await lookups()) });
+  const desired = desiredProvider({
+    appUrls,
+    adminEntryPath: env.ADMIN_ENTRY_PATH,
+    ...(await lookups()),
+  });
   const current = await one(
     providerSchema,
     `/providers/oauth2/?name=${q(PROVIDER_NAME)}`,

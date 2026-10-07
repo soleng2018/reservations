@@ -82,15 +82,21 @@ export function parseAppUrls(raw: string): ParsedUrls {
 const exactRegex = (url: string): string =>
   `^${url.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`;
 
+// Per origin: the sign in callback, plus the two post logout targets (`/` for
+// learners, the admin entry path for admins, AC-12). This Authentik version
+// has no separate post logout list, so they share `redirect_uris`.
 export const redirectUris = (
   appUrls: readonly string[],
+  adminEntryPath: string,
 ): readonly RedirectUri[] =>
-  appUrls.map((origin) => {
-    const url = `${origin}${CALLBACK_PATH}`;
-    return origin.startsWith("http:")
-      ? { matching_mode: "regex", url: exactRegex(url) }
-      : { matching_mode: "strict", url };
-  });
+  appUrls.flatMap((origin) =>
+    [CALLBACK_PATH, "/", adminEntryPath].map((path): RedirectUri => {
+      const url = `${origin}${path}`;
+      return origin.startsWith("http:")
+        ? { matching_mode: "regex", url: exactRegex(url) }
+        : { matching_mode: "strict", url };
+    }),
+  );
 
 // Order free comparison for arrays of primitives or plain objects.
 const canonical = (v: unknown): string =>
@@ -118,6 +124,7 @@ export const diffFields = (
 
 export type ProviderInputs = {
   readonly appUrls: readonly string[];
+  readonly adminEntryPath: string;
   readonly authorizationFlow: string;
   readonly invalidationFlow: string;
   readonly signingKey: string;
@@ -134,7 +141,7 @@ export const desiredProvider = (i: ProviderInputs) => ({
   invalidation_flow: i.invalidationFlow,
   signing_key: i.signingKey,
   property_mappings: [...i.scopeMappings].toSorted(),
-  redirect_uris: redirectUris(i.appUrls),
+  redirect_uris: redirectUris(i.appUrls, i.adminEntryPath),
 });
 
 export type PermissionPlan = {

@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 
 // AC-14: every exported Server Action calls requireAdmin() or
 // requireLearner(), unless it is public by design and listed here.
-const PUBLIC_ACTIONS = new Set(["app/auth/actions.ts#signInWithSso"]);
+const PUBLIC_ACTIONS = new Set([
+  "app/auth/actions.ts#signInWithSso",
+  "app/auth/actions.ts#signOut",
+]);
 
 const root = path.resolve(__dirname, "..");
 const files = (dir: string): string[] =>
