@@ -82,7 +82,7 @@ Sign in through Authentik for two roles (admin, learner). Admin accounts already
 - [x] Design it (spec): `/architect authentik sign in & provisioning`
 - [ ] Build it: `/develop authentik sign in & provisioning`
   - [x] Spike 4 plus the idempotent `authentik:setup` script (AC-1, 11, 13)
-  - [ ] Better Auth migration, sign in hook, `require.ts`, admin tracer end to end (AC-1, 2, 7, 10, 11, 14, 16)
+  - [x] Better Auth migration, sign in hook, `require.ts`, admin tracer end to end (AC-1, 2, 7, 10, 11, 14, 16)
   - [ ] Learner sign in page, error page, sign out, noindex (AC-2, 3, 12)
   - [ ] Authentik client with guards, saga wiring, welcome job, resend (AC-4, 5, 6, 8, 9, 15, 16)
 - [ ] Verify it: `/check verify authentik sign in & provisioning`

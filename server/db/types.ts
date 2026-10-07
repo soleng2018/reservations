@@ -23,6 +23,17 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AuditEvents {
+  action: string;
+  actor_user_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  metadata: Generated<Json>;
+  summary: string;
+  target_id: string;
+  target_type: string;
+}
+
 export interface Bookings {
   calendar_event_id: string | null;
   cancel_source: string | null;
@@ -40,6 +51,52 @@ export interface Bookings {
   version: Generated<number>;
 }
 
+export interface HolAuthAccount {
+  accessToken: string | null;
+  accessTokenExpiresAt: Timestamp | null;
+  accountId: string;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  idToken: string | null;
+  password: string | null;
+  providerId: string;
+  refreshToken: string | null;
+  refreshTokenExpiresAt: Timestamp | null;
+  scope: string | null;
+  updatedAt: Timestamp;
+  userId: string;
+}
+
+export interface HolAuthSession {
+  createdAt: Generated<Timestamp>;
+  expiresAt: Timestamp;
+  id: string;
+  ipAddress: string | null;
+  token: string;
+  updatedAt: Timestamp;
+  userAgent: string | null;
+  userId: string;
+}
+
+export interface HolAuthUser {
+  createdAt: Generated<Timestamp>;
+  email: string;
+  emailVerified: boolean;
+  id: string;
+  image: string | null;
+  name: string;
+  updatedAt: Generated<Timestamp>;
+}
+
+export interface HolAuthVerification {
+  createdAt: Generated<Timestamp>;
+  expiresAt: Timestamp;
+  id: string;
+  identifier: string;
+  updatedAt: Generated<Timestamp>;
+  value: string;
+}
+
 export interface Jobs {
   attempts: Generated<number>;
   created_at: Generated<Timestamp>;
@@ -52,6 +109,13 @@ export interface Jobs {
   run_at: Generated<Timestamp>;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface RateLimits {
+  bucket_key: string;
+  count: number;
+  created_at: Generated<Timestamp>;
+  window_start: Timestamp;
 }
 
 export interface TestbedClients {
@@ -88,6 +152,7 @@ export interface TestbedTypes {
 }
 
 export interface Users {
+  auth_user_id: string | null;
   authentik_pending_saga: Generated<boolean>;
   authentik_user_pk: number | null;
   company: string | null;
@@ -98,14 +163,21 @@ export interface Users {
   id: Generated<string>;
   name: string;
   role: string;
+  set_password_pending: Generated<boolean>;
   status: Generated<string>;
   timezone: string;
   updated_at: Generated<Timestamp>;
 }
 
 export interface DB {
+  audit_events: AuditEvents;
   bookings: Bookings;
+  "hol_auth.account": HolAuthAccount;
+  "hol_auth.session": HolAuthSession;
+  "hol_auth.user": HolAuthUser;
+  "hol_auth.verification": HolAuthVerification;
   jobs: Jobs;
+  rate_limits: RateLimits;
   testbed_clients: TestbedClients;
   testbed_types: TestbedTypes;
   testbeds: Testbeds;
