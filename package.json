@@ -14,7 +14,8 @@
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "authentik:setup": "tsx scripts/authentik-setup.ts"
+    "authentik:setup": "tsx scripts/authentik-setup.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@goauthentik/api": "2026.2.1",
@@ -28,6 +29,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.1",
     "@types/pg": "^8.23.1",

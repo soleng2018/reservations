@@ -30,7 +30,7 @@ function authPool(): Pool {
   return pool;
 }
 
-function createAuth() {
+function createAuth(pool: Pool) {
   const env = authEnv();
   const hours = {
     admin: env.ADMIN_SESSION_HOURS,
@@ -43,7 +43,7 @@ function createAuth() {
     baseURL: env.APP_URL,
     secret: env.AUTH_SECRET,
     trustedOrigins: [env.APP_URL],
-    database: authPool(),
+    database: pool,
     // Authentik is the only way in: no passwords in the app (AC-1).
     emailAndPassword: { enabled: false },
     session: {
@@ -99,9 +99,29 @@ export type Auth = ReturnType<typeof createAuth>;
 
 // Created on first use (never at import, so `next build` needs no secrets),
 // and cached on globalThis so dev reloads reuse one pool.
-const cache = globalThis as typeof globalThis & { holAuth?: Auth };
+const cache = globalThis as typeof globalThis & {
+  holAuth?: Auth;
+  holAuthPool?: Pool;
+};
+
+// genericOAuth fetches Authentik's discovery document once, at init, and
+// silently drops the provider if that fetch fails. Such an instance is not
+// kept, so the next request tries again instead of failing until a restart.
+const forgetIfNoProvider = (instance: Auth) => {
+  const forget = () => {
+    if (cache.holAuth === instance) cache.holAuth = undefined;
+  };
+  instance.$context.then((ctx) => {
+    if (!ctx.socialProviders.some((p) => p.id === AUTHENTIK_PROVIDER_ID))
+      forget();
+  }, forget);
+};
 
 export function auth(): Auth {
-  cache.holAuth ??= createAuth();
+  if (!cache.holAuth) {
+    cache.holAuthPool ??= authPool();
+    cache.holAuth = createAuth(cache.holAuthPool);
+    forgetIfNoProvider(cache.holAuth);
+  }
   return cache.holAuth;
 }

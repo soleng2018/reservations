@@ -1,4 +1,5 @@
 import "server-only";
+import { UserTypeEnum } from "@goauthentik/api/dist/esm/index.js";
 import { sql, type Kysely } from "kysely";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
@@ -6,6 +7,7 @@ import type { DB } from "@/server/db/types";
 import { LEARNER_PATH } from "@/scripts/authentik-setup-plan";
 import { call, type AuthentikFailure, type CoreApi, type User } from "./client";
 import { guardUserWrite, type UserRefusal } from "./guard";
+import { endSessionsOf } from "./sessions";
 
 // Learner identities in Authentik (spec 0003 API surface). Every write goes
 // through guardUserWrite first, which re-reads the target from Authentik.
@@ -20,6 +22,7 @@ export type FindOrCreateError =
   | "is_admin"
   | "refused" // the Authentik account is inactive
   | "username_taken" // the lowercased email is another user's username
+  | "duplicate_email" // two users have this email, differing only by case
   | "unavailable";
 
 const learnerAttributes = (holUserId: string) => ({
@@ -27,24 +30,39 @@ const learnerAttributes = (holUserId: string) => ({
   hol_user_id: holUserId,
 });
 
-// Exact matches only: Authentik filters can be loose about case.
 async function usersBy(
   api: CoreApi,
   what: string,
   query: { readonly email?: string; readonly username?: string },
-  same: (u: User) => boolean,
 ): Promise<Result<readonly User[], AuthentikFailure>> {
   const found = await call(`users.list by ${what}`, () =>
     api.coreUsersList({ ...query, pageSize: 20 }),
   );
-  return found.ok ? ok(found.value.results.filter(same)) : found;
+  return found.ok ? ok(found.value.results) : found;
 }
 
 const sameEmail = (email: string) => (u: User) =>
-  (u.email ?? "").toLowerCase() === email.toLowerCase();
+  (u.email ?? "").toLowerCase() === email;
 
-// AC-5: one Authentik user per email. A known non admin user is reused; the
-// only change is adding the learner attributes it lacks. A new user gets no
+// Every candidate for this email: by the lowercased email and by the
+// username (= lowercased email), deduplicated by pk.
+async function candidates(
+  api: CoreApi,
+  email: string,
+): Promise<Result<readonly User[], AuthentikFailure>> {
+  const [byEmail, byUsername] = await Promise.all([
+    usersBy(api, "email", { email }),
+    usersBy(api, "username", { username: email }),
+  ]);
+  if (!byEmail.ok) return byEmail;
+  if (!byUsername.ok) return byUsername;
+  const all = [...byEmail.value, ...byUsername.value];
+  return ok(all.filter((u, i) => all.findIndex((v) => v.pk === u.pk) === i));
+}
+
+// AC-5: one Authentik user per email, compared ignoring case. A known non
+// admin user is reused; the only change is adding the learner attributes it
+// lacks (never its type or path). A new user is `external` (AC-18) with no
 // password: the welcome job sends the set password link.
 export async function findOrCreateLearner(
   api: CoreApi,
@@ -55,29 +73,15 @@ export async function findOrCreateLearner(
   },
 ): Promise<Result<LearnerRef, FindOrCreateError>> {
   const username = input.email.toLowerCase();
-  const byEmail = await usersBy(
-    api,
-    "email",
-    { email: input.email },
-    sameEmail(input.email),
-  );
-  if (!byEmail.ok) return err("unavailable");
-  if (byEmail.value.length > 1) {
-    console.error("authentik: more than one user has this email");
-    return err("unavailable");
-  }
+  const found = await candidates(api, username);
+  if (!found.ok) return err("unavailable");
 
-  const [existing] = byEmail.value;
+  const matches = found.value.filter(sameEmail(username));
+  if (matches.length > 1) return err("duplicate_email");
+  const [existing] = matches;
   if (existing) return reuseLearner(api, existing.pk, input.holUserId);
-
-  const byUsername = await usersBy(
-    api,
-    "username",
-    { username },
-    (u) => u.username === username,
-  );
-  if (!byUsername.ok) return err("unavailable");
-  if (byUsername.value.length > 0) return err("username_taken");
+  if (found.value.some((u) => u.username.toLowerCase() === username))
+    return err("username_taken");
 
   const created = await call("users.create", () =>
     api.coreUsersCreate({
@@ -86,6 +90,7 @@ export async function findOrCreateLearner(
         name: input.name,
         email: input.email,
         path: LEARNER_PATH,
+        type: UserTypeEnum.External,
         isActive: true,
         attributes: learnerAttributes(input.holUserId),
       },
@@ -136,7 +141,8 @@ export async function deleteSagaLearner(
 }
 
 // AC-6: requested when the welcome job sends, so a failure only retries the
-// job. The link opens the brand's `hol-recovery` flow (72 hours, set by setup).
+// job. The link opens the brand's `hol-recovery` flow and lasts 72 hours,
+// asked for on each call (Authentik's own default is 30 minutes).
 // Guarded: a recovery link for an admin would be an account takeover.
 export async function issueSetPasswordLink(
   api: CoreApi,
@@ -145,7 +151,10 @@ export async function issueSetPasswordLink(
   const guarded = await guardUserWrite(api, pk, "learner");
   if (!guarded.ok) return guarded;
   const link = await call("users.recovery", () =>
-    api.coreUsersRecoveryCreate({ id: pk }),
+    api.coreUsersRecoveryCreate({
+      id: pk,
+      userRecoveryLinkRequest: { tokenDuration: "hours=72" },
+    }),
   );
   return link.ok ? ok(link.value.link) : link;
 }
@@ -186,30 +195,6 @@ async function setActive(
   return patched.ok ? ok(guarded.value) : patched;
 }
 
-// Authentik sessions belong to the user pk; the list filters by username.
-async function endAuthentikSessions(
-  api: CoreApi,
-  user: User,
-): Promise<Result<void, AuthentikFailure>> {
-  const sessions = await call("sessions.list", () =>
-    api.coreAuthenticatedSessionsList({
-      userUsername: user.username,
-      pageSize: 100,
-    }),
-  );
-  if (!sessions.ok) return sessions;
-  const ends = await Promise.all(
-    sessions.value.results
-      .filter((s) => s.user === user.pk && s.uuid)
-      .map((s) =>
-        call("sessions.destroy", () =>
-          api.coreAuthenticatedSessionsDestroy({ uuid: s.uuid ?? "" }),
-        ),
-      ),
-  );
-  return ends.find((r) => !r.ok) ?? ok(undefined);
-}
-
 // AC-9: Authentik refuses their next sign in, their Authentik and app
 // sessions end, and the row is marked deactivated. The guard refuses admins.
 // Feature 10 adds the booking side effects and the access reconcile.
@@ -225,7 +210,7 @@ export async function deactivateLearner(
   if (pk !== null) {
     const user = await setActive(api, pk, false);
     if (!user.ok) return user;
-    const ended = await endAuthentikSessions(api, user.value);
+    const ended = await endSessionsOf(api, user.value);
     if (!ended.ok) return ended;
   }
 

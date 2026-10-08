@@ -27,6 +27,12 @@ const views = {
     message: "You don't have access to this page.",
     reserveLink: false,
   },
+  signout_partial: {
+    title: "Signed out of HOL",
+    message:
+      "You're signed out of HOL, but we couldn't end your Authentik session. Close the browser to finish.",
+    reserveLink: false,
+  },
 } as const satisfies Record<string, AuthErrorView>;
 
 export type AuthErrorReason = keyof typeof views;

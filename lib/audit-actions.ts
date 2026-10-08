@@ -13,5 +13,7 @@ export const AuditAction = z.enum([
   "booking.refused_admin_email",
   // AC-5: the lowercased email is another Authentik user's username.
   "booking.refused_username_taken",
+  // AC-5: two Authentik users have this email, differing only by case.
+  "booking.refused_duplicate_email",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

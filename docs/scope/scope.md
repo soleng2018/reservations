@@ -32,7 +32,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 1 | Stack & architecture | Foundation | done |
 | 2 | Coding standards & tooling | Foundation | done |
 | 3 | Data model | Foundation | done |
-| 4 | Authentik sign in & provisioning | Foundation | in-progress |
+| 4 | Authentik sign in & provisioning | Foundation | done |
 | 5 | Design system & UI foundation | Foundation | planned |
 | 6 | Core booking loop | Slice 1 | planned |
 | 7 | Admin: Testbed Types | Slice 2 | planned |
@@ -76,7 +76,7 @@ Core entities: testbed types, testbeds and their clients (each testbed linked to
 spec [0002](../specs/0002-data-model/index.md) · code in `db/migrations/`, `server/db/`, `lib/`
 (basis: data model is the costliest thing to redo)
 
-### 4. Authentik sign in & provisioning · in-progress · Full
+### 4. Authentik sign in & provisioning · done · Full
 Sign in through Authentik for two roles (admin, learner). Admin accounts already exist in Authentik and the app only recognizes them; it never creates admins. A server side Authentik API client that uses the master key only to set up the app's OIDC SSO configuration, and the provisioning key to create, update, and deactivate learners and to manage testbed groups and their members, including creating a learner at guest booking time and issuing the set password link that verifies their email.
 **Done when:** an admin set up in Authentik signs in by opening the unlisted admin URL and choosing "Sign in with SSO" (no password is entered in the app), and a learner signs in through "Manage an existing reservation", each landing in their own area and blocked from the other's; no learner facing page links to the admin URL; the app has no path that creates an admin; a guest booking creates exactly one Authentik user (reusing an existing one for a known email); the set password link verifies the email; deactivating a user in the app blocks their sign in; admins and learners sign in through the same Authentik OIDC application; the provisioning key cannot create or change an admin, and runtime user calls never use the master key.
 - [x] Design it (spec): `/architect authentik sign in & provisioning`
@@ -85,9 +85,10 @@ Sign in through Authentik for two roles (admin, learner). Admin accounts already
   - [x] Better Auth migration, sign in hook, `require.ts`, admin tracer end to end (AC-1, 2, 7, 10, 11, 14, 16)
   - [x] Learner sign in page, error page, sign out, noindex (AC-2, 3, 12)
   - [x] Authentik client with guards, saga wiring, welcome job, resend (AC-4, 5, 6, 8, 9, 15, 16)
-- [ ] Verify it: `/check verify authentik sign in & provisioning`
-- [ ] Test it: `/test authentik sign in & provisioning`
-- [ ] Review it (fresh model): `/check review authentik sign in & provisioning`
+  - [x] Learner isolation and sign out return: sign out by API session delete, spike 2, setup script policy and `hol-authorization` flow, external learners, case insensitive email reuse, Playwright (AC-5, 12, 13, 17, 18)
+- [x] Verify it: `/check verify authentik sign in & provisioning`
+- [x] Test it: `/test authentik sign in & provisioning`
+- [x] Review it (fresh model): `/check review authentik sign in & provisioning`
 spec [0003](../specs/0003-authentik-sign-in-provisioning/index.md) · code in `server/auth/`, `server/authentik/`, `server/booking/guest-booking.ts`, `server/jobs/send-welcome.ts`, `app/reservations/`, `scripts/authentik-setup.ts`
 (basis: auth is high risk and every slice depends on it, so it is a foundation at a higher tier)
 

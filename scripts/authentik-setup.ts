@@ -15,15 +15,28 @@ import {
   ADMIN_GROUP,
   APP_NAME,
   APP_SLUG,
+  AUTHORIZATION_FLOWS,
+  DEFAULT_INVALIDATION_FLOW_SLUG,
+  HOL_AUTHORIZATION_FLOW_SLUG,
+  ISOLATION_BINDING_SETTINGS,
+  ISOLATION_POLICY,
   LEARNER_PATH,
   PROVIDER_NAME,
   PROVISIONING_ACCOUNT,
   PROVISIONING_ROLE,
+  LEGACY_INVALIDATION_FLOW_SLUG,
+  LEGACY_INVALIDATION_STAGE,
   RECOVERY_FLOW_SLUG,
+  desiredHolAuthorizationFlow,
+  desiredIsolationBinding,
   desiredProvider,
   diffFields,
+  holFlowProblems,
+  isolationExpression,
+  isolationFlowProblems,
   parseAppUrls,
   planPermissions,
+  uncoveredProviders,
   type FieldChange,
 } from "./authentik-setup-plan";
 
@@ -31,11 +44,6 @@ const envSchema = z.object({
   AUTHENTIK_URL: z.url().transform((u) => new URL(u).origin),
   AUTHENTIK_MASTER_TOKEN: z.string().min(1),
   APP_URLS: z.string().min(1),
-  // Must match the web app's ADMIN_ENTRY_PATH (a post logout target).
-  ADMIN_ENTRY_PATH: z
-    .string()
-    .regex(/^\/[A-Za-z0-9_-]+$/, "a single path segment like /l0gin")
-    .default("/l0gin"),
 });
 
 const readSecret = (name: string): string | undefined => {
@@ -54,14 +62,13 @@ const env = envSchema.parse({
   AUTHENTIK_URL: process.env.AUTHENTIK_URL,
   AUTHENTIK_MASTER_TOKEN: readSecret("AUTHENTIK_MASTER_TOKEN"),
   APP_URLS: process.env.APP_URLS,
-  ADMIN_ENTRY_PATH: process.env.ADMIN_ENTRY_PATH || undefined,
 });
 const apply = args.apply;
 const api = `${env.AUTHENTIK_URL}/api/v3`;
 
 // ---- HTTP edge -------------------------------------------------------------
 
-type Method = "GET" | "POST" | "PATCH";
+type Method = "GET" | "POST" | "PATCH" | "DELETE";
 
 async function call<T>(
   schema: z.ZodType<T>,
@@ -174,10 +181,7 @@ async function lookups() {
     "default signing certificate",
   );
   return {
-    authorizationFlow: await flow(
-      "default-provider-authorization-implicit-consent",
-    ),
-    invalidationFlow: await flow("default-provider-invalidation-flow"),
+    invalidationFlow: await flow(DEFAULT_INVALIDATION_FLOW_SLUG),
     signingKey: cert.pk,
     scopeMappings: ["openid", "email", "profile"].map(managed),
   };
@@ -190,11 +194,17 @@ const providerSchema = z.looseObject({
   client_secret: z.string(),
 });
 
-async function ensureProvider(appUrls: readonly string[]) {
+// On a dry run before hol-authorization exists, this stands in for its pk.
+const PENDING_HOL_FLOW = `<${HOL_AUTHORIZATION_FLOW_SLUG}>`;
+
+async function ensureProvider(
+  appUrls: readonly string[],
+  holAuthorizationFlow: string | undefined,
+) {
   say("OIDC provider");
   const desired = desiredProvider({
     appUrls,
-    adminEntryPath: env.ADMIN_ENTRY_PATH,
+    authorizationFlow: holAuthorizationFlow ?? PENDING_HOL_FLOW,
     ...(await lookups()),
   });
   const current = await one(
@@ -399,6 +409,232 @@ async function ensureRecoveryFlow(): Promise<string | undefined> {
   return flow?.pk;
 }
 
+// hol-authorization (AC-17): HOL's own authorization flow, with nothing
+// bound to it, so the learner deny on the default flows never reaches HOL.
+async function ensureHolAuthorizationFlow(): Promise<string | undefined> {
+  say("HOL authorization flow");
+  const holFlow = flowSchema.extend({ policybindingmodel_ptr_id: z.string() });
+  const current = await one(
+    holFlow,
+    `/flows/instances/?slug=${q(HOL_AUTHORIZATION_FLOW_SLUG)}`,
+    "flow",
+  );
+  if (!current) {
+    const made = await write(`create flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, () =>
+      call(holFlow, "POST", "/flows/instances/", desiredHolAuthorizationFlow),
+    );
+    return made?.pk;
+  }
+  const [policies, stages] = await Promise.all([
+    list(
+      pkOnly,
+      `/policies/bindings/?target=${current.policybindingmodel_ptr_id}&page_size=50`,
+    ),
+    list(pkOnly, `/flows/bindings/?target=${current.pk}&page_size=50`),
+  ]);
+  const problems = holFlowProblems({
+    designation: current.designation,
+    policyBindings: policies.length,
+    stageBindings: stages.length,
+  });
+  if (problems.length > 0)
+    throw new Error(
+      `${HOL_AUTHORIZATION_FLOW_SLUG} would not keep HOL open, nothing written:\n  ${problems.join("\n  ")}`,
+    );
+  const changes = diffFields(current, desiredHolAuthorizationFlow);
+  reportChanges(`flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, changes);
+  if (changes.length > 0)
+    await write(`update flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, () =>
+      call(
+        holFlow,
+        "PATCH",
+        `/flows/instances/${q(HOL_AUTHORIZATION_FLOW_SLUG)}/`,
+        Object.fromEntries(changes.map((c) => [c.field, c.to])),
+      ),
+    );
+  return current.pk;
+}
+
+// hol-invalidation and its logout stage came from an earlier version of this
+// script (sign out now ends sessions through the API, AC-12). Removed once
+// no provider uses the flow; runs after the provider is moved off it.
+async function removeLegacyInvalidation() {
+  say("Old sign out flow");
+  const flow = await one(
+    flowSchema,
+    `/flows/instances/?slug=${q(LEGACY_INVALIDATION_FLOW_SLUG)}`,
+    "flow",
+  );
+  const stage = await one(
+    z.looseObject({ pk: z.string(), name: z.string() }),
+    `/stages/user_logout/?name=${q(LEGACY_INVALIDATION_STAGE)}`,
+    LEGACY_INVALIDATION_STAGE,
+  );
+  if (!flow && !stage) {
+    say(`  ok      no ${LEGACY_INVALIDATION_FLOW_SLUG}`);
+    return;
+  }
+  if (flow) {
+    const users = (
+      await list(
+        z.looseObject({
+          name: z.string(),
+          invalidation_flow: z.string().nullable().optional(),
+        }),
+        "/providers/all/?page_size=200",
+      )
+    ).filter((p) => p.invalidation_flow === flow.pk);
+    // On a dry run the HOL provider is not moved yet; apply moves it first.
+    const blocking = apply
+      ? users
+      : users.filter((p) => p.name !== PROVIDER_NAME);
+    if (blocking.length > 0)
+      throw new Error(
+        `${LEGACY_INVALIDATION_FLOW_SLUG} is still used by ${blocking.map((p) => p.name).join(", ")}; nothing deleted`,
+      );
+    await write(`delete flow ${LEGACY_INVALIDATION_FLOW_SLUG}`, () =>
+      call(z.unknown(), "DELETE", `/flows/instances/${q(flow.slug)}/`),
+    );
+  }
+  if (stage)
+    await write(`delete stage ${LEGACY_INVALIDATION_STAGE}`, () =>
+      call(z.unknown(), "DELETE", `/stages/user_logout/${stage.pk}/`),
+    );
+}
+
+// hol-learner-isolation (AC-17): one expression policy, bound once to each
+// default authorization flow. Both flows are checked before either is
+// written, and nothing on them changes except our one binding. It runs after
+// the HOL provider is on hol-authorization, so HOL is never denied.
+async function ensureIsolation(holFlowPk: string | undefined) {
+  say("Learner isolation");
+  const authFlow = z.looseObject({
+    pk: z.string(),
+    slug: z.string(),
+    policybindingmodel_ptr_id: z.string(),
+    policy_engine_mode: z.string(),
+    denied_action: z.string(),
+  });
+  const policySchema = z.looseObject({
+    pk: z.string(),
+    name: z.string(),
+    expression: z.string(),
+  });
+  const policyBinding = z.looseObject({
+    pk: z.string(),
+    policy: z.string().nullable(),
+    order: z.number(),
+    enabled: z.boolean(),
+    negate: z.boolean(),
+    timeout: z.number(),
+    failure_result: z.boolean(),
+  });
+
+  // Binding while HOL still uses a default flow would lock learners out of it.
+  const holProvider = must(
+    await one(
+      z.looseObject({ name: z.string(), authorization_flow: z.string() }),
+      `/providers/oauth2/?name=${q(PROVIDER_NAME)}`,
+      "provider",
+    ),
+    `provider ${PROVIDER_NAME}`,
+  );
+  if (apply && holProvider.authorization_flow !== holFlowPk)
+    throw new Error(
+      `${PROVIDER_NAME} is not on ${HOL_AUTHORIZATION_FLOW_SLUG}; isolation not bound`,
+    );
+  const expression = isolationExpression();
+  const current = await one(
+    policySchema,
+    `/policies/expression/?name=${q(ISOLATION_POLICY)}`,
+    ISOLATION_POLICY,
+  );
+
+  const flows = await Promise.all(
+    AUTHORIZATION_FLOWS.map(async (slug) => {
+      const flow = must(
+        await one(authFlow, `/flows/instances/?slug=${q(slug)}`, slug),
+        `flow ${slug}`,
+      );
+      const bindings = await list(
+        policyBinding,
+        `/policies/bindings/?target=${flow.policybindingmodel_ptr_id}&page_size=50`,
+      );
+      return { flow, bindings };
+    }),
+  );
+  const problems = flows.flatMap(({ flow, bindings }) =>
+    isolationFlowProblems({ ...flow, bindings }, current?.pk),
+  );
+  if (problems.length > 0)
+    throw new Error(
+      `cannot bind ${ISOLATION_POLICY}, nothing written:\n  ${problems.join("\n  ")}`,
+    );
+
+  const policy =
+    current ??
+    (await write(`create policy ${ISOLATION_POLICY}`, () =>
+      call(policySchema, "POST", "/policies/expression/", {
+        name: ISOLATION_POLICY,
+        expression,
+      }),
+    ));
+  if (current) {
+    const changes = diffFields(current, { expression });
+    reportChanges(`policy ${ISOLATION_POLICY}`, changes);
+    if (changes.length > 0)
+      await write(`update policy ${ISOLATION_POLICY} expression`, () =>
+        call(policySchema, "PATCH", `/policies/expression/${current.pk}/`, {
+          expression,
+        }),
+      );
+  }
+
+  for (const { flow, bindings } of flows) {
+    if (!policy) {
+      say(`  would   bind ${ISOLATION_POLICY} to ${flow.slug}`);
+      continue;
+    }
+    const desired = desiredIsolationBinding(
+      flow.policybindingmodel_ptr_id,
+      policy.pk,
+    );
+    const have = bindings.find((b) => b.policy === policy.pk);
+    if (!have) {
+      const made = await write(`bind ${ISOLATION_POLICY} to ${flow.slug}`, () =>
+        call(policyBinding, "POST", "/policies/bindings/", desired),
+      );
+      if (made) say(`  bound   ${flow.slug} binding ${made.pk}`);
+      continue;
+    }
+    const changes = diffFields(have, ISOLATION_BINDING_SETTINGS);
+    reportChanges(`${flow.slug} binding ${have.pk}`, changes);
+    if (changes.length > 0)
+      await write(`update ${flow.slug} binding ${have.pk}`, () =>
+        call(
+          policyBinding,
+          "PATCH",
+          `/policies/bindings/${have.pk}/`,
+          ISOLATION_BINDING_SETTINGS,
+        ),
+      );
+  }
+
+  // Warn (never write) about providers isolation does not cover.
+  const providers = await list(
+    z.looseObject({ name: z.string(), authorization_flow: z.string() }),
+    "/providers/all/?page_size=200",
+  );
+  uncoveredProviders(providers, [
+    ...flows.map(({ flow }) => flow.pk),
+    ...(holFlowPk ? [holFlowPk] : []),
+  ]).forEach((p) =>
+    say(
+      `  warn    provider ${p.name} uses authorization flow ${p.authorization_flow}; isolation does not cover it`,
+    ),
+  );
+}
+
 async function ensureBrandRecovery(flowPk: string | undefined) {
   say("Brand recovery flow");
   const brand = z.looseObject({
@@ -521,11 +757,16 @@ async function main(): Promise<number> {
   );
   say(`App URLs: ${urls.urls.join(", ")}\n`);
 
-  const provider = await ensureProvider(urls.urls);
+  // Order matters (spec 0003 Bindings): HOL moves to its own flow before the
+  // deny is bound to the default flows.
+  const holFlowPk = await ensureHolAuthorizationFlow();
+  const provider = await ensureProvider(urls.urls, holFlowPk);
+  await removeLegacyInvalidation();
   await ensureApplication(provider?.pk);
   await ensureAdminGroup();
   const flowPk = await ensureRecoveryFlow();
   await ensureBrandRecovery(flowPk);
+  await ensureIsolation(holFlowPk);
   const account = await ensureProvisioning();
   say(
     `\nLearner path: ${LEARNER_PATH} (Authentik creates a path when the first user is put in it; nothing to set up)`,

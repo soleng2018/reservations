@@ -4,9 +4,100 @@ import {
   PROVISIONING_PERMISSIONS,
   desiredProvider,
   diffFields,
+  holFlowProblems,
+  isolationExpression,
+  isolationFlowProblems,
   parseAppUrls,
   planPermissions,
+  uncoveredProviders,
 } from "./authentik-setup-plan";
+
+describe("isolationExpression (AC-17)", () => {
+  const text = isolationExpression();
+
+  it("denies the learner path and everything under it", () => {
+    expect(text).toContain('path == "hol/learners"');
+    expect(text).toContain('path.startswith("hol/learners/")');
+    expect(text.split("\n").at(-1)).toMatch(/^return not \(/);
+  });
+
+  // A pass cached for one app would carry to the next (the failed spike).
+  it("never reads the app being opened, so a cached result is always right", () => {
+    expect(text).not.toMatch(/context|application|slug/);
+  });
+});
+
+describe("holFlowProblems (AC-17)", () => {
+  it("accepts an empty authorization flow", () => {
+    expect(
+      holFlowProblems({
+        designation: "authorization",
+        policyBindings: 0,
+        stageBindings: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it("refuses another designation or anything bound to it", () => {
+    expect(
+      holFlowProblems({
+        designation: "invalidation",
+        policyBindings: 1,
+        stageBindings: 2,
+      }),
+    ).toHaveLength(3);
+  });
+});
+
+describe("isolationFlowProblems (AC-17)", () => {
+  const ok = {
+    slug: "f",
+    policy_engine_mode: "any",
+    denied_action: "message_continue",
+    bindings: [],
+  };
+
+  it("accepts a clean flow, with or without our binding", () => {
+    expect(isolationFlowProblems(ok, "p1")).toEqual([]);
+    expect(
+      isolationFlowProblems({ ...ok, bindings: [{ policy: "p1" }] }, "p1"),
+    ).toEqual([]);
+  });
+
+  it("refuses another binding, a non any mode, or a changed denied action", () => {
+    expect(
+      isolationFlowProblems(
+        {
+          slug: "f",
+          policy_engine_mode: "all",
+          denied_action: "continue",
+          bindings: [{ policy: "other" }],
+        },
+        "p1",
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("treats every binding as foreign before our policy exists", () => {
+    expect(
+      isolationFlowProblems({ ...ok, bindings: [{ policy: "p1" }] }, undefined),
+    ).toHaveLength(1);
+  });
+});
+
+describe("uncoveredProviders (AC-13)", () => {
+  it("lists providers on a flow that is not covered", () => {
+    expect(
+      uncoveredProviders(
+        [
+          { name: "a", authorization_flow: "f1" },
+          { name: "b", authorization_flow: "f9" },
+        ],
+        ["f1", "f2"],
+      ),
+    ).toEqual([{ name: "b", authorization_flow: "f9" }]);
+  });
+});
 
 describe("parseAppUrls", () => {
   it("keeps sorted, unique origins", () => {
@@ -31,33 +122,27 @@ describe("parseAppUrls", () => {
 describe("desiredProvider", () => {
   const p = desiredProvider({
     appUrls: ["https://hol.example", "http://localhost:3000"],
-    adminEntryPath: "/l0gin",
-    authorizationFlow: "auth",
+    authorizationFlow: "hol-auth",
     invalidationFlow: "inv",
     signingKey: "key",
     scopeMappings: ["profile", "openid", "email"],
   });
 
-  it("uses the user pk as sub and a callback plus logout targets per URL", () => {
+  // covers: AC-12, AC-17
+  it("uses the user pk as sub, HOL's own flow, and only a callback per URL", () => {
     expect(p.sub_mode).toBe("user_id");
+    expect(p.authorization_flow).toBe("hol-auth");
     expect(p.redirect_uris).toEqual([
       { matching_mode: "strict", url: `https://hol.example${CALLBACK_PATH}` },
-      { matching_mode: "strict", url: "https://hol.example/" },
-      { matching_mode: "strict", url: "https://hol.example/l0gin" },
       {
         matching_mode: "regex",
         url: "^http:\\/\\/localhost:3000\\/api\\/auth\\/callback\\/authentik$",
-      },
-      { matching_mode: "regex", url: "^http:\\/\\/localhost:3000\\/$" },
-      {
-        matching_mode: "regex",
-        url: "^http:\\/\\/localhost:3000\\/l0gin$",
       },
     ]);
   });
 
   it("makes the http regex match only its own callback", () => {
-    const re = new RegExp(p.redirect_uris[3]?.url ?? "");
+    const re = new RegExp(p.redirect_uris[1]?.url ?? "");
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}`)).toBe(true);
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}/x`)).toBe(false);
     expect(re.test(`http://localhostX3000${CALLBACK_PATH}`)).toBe(false);

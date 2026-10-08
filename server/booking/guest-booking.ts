@@ -6,6 +6,7 @@ import type { CoreApi } from "@/server/authentik/client";
 import {
   deleteSagaLearner,
   findOrCreateLearner,
+  type FindOrCreateError,
 } from "@/server/authentik/learners";
 import {
   compensateGuestBooking,
@@ -90,7 +91,7 @@ export async function bookAsGuest(
 async function refusal(
   conn: Kysely<DB>,
   ref: SagaRef,
-  error: "is_admin" | "refused" | "username_taken" | "unavailable",
+  error: FindOrCreateError,
 ): Promise<GuestBookingError> {
   switch (error) {
     case "is_admin":
@@ -110,6 +111,16 @@ async function refusal(
         targetType: "user",
         targetId: ref.userId,
         summary: "Guest booking refused: the username belongs to another email",
+      });
+      return "unavailable";
+    case "duplicate_email":
+      await audit(conn, {
+        actorUserId: null,
+        action: "booking.refused_duplicate_email",
+        targetType: "user",
+        targetId: ref.userId,
+        summary:
+          "Guest booking refused: two Authentik users have this email, differing only by case",
       });
       return "unavailable";
     case "refused":

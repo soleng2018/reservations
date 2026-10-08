@@ -26,6 +26,16 @@ describe("authErrorView", () => {
     expect(authErrorView({}).message).toBe(unavailable);
   });
 
+  // covers: AC-12 (Authentik unreachable at sign out)
+  it("tells you the app session ended but Authentik's did not", () => {
+    expect(authErrorView({ reason: "signout_partial" })).toMatchObject({
+      title: "Signed out of HOL",
+      message:
+        "You're signed out of HOL, but we couldn't end your Authentik session. Close the browser to finish.",
+      reserveLink: false,
+    });
+  });
+
   it("prefers our reason over Better Auth's error", () => {
     expect(
       authErrorView({ reason: "not_authorized", error: "unknown" }).title,

@@ -30,15 +30,15 @@ const isRead = (init?: RequestInit) =>
 // Every request times out after 10 seconds (AC-15). Only safe reads retry,
 // on a network error or a 5xx, so a write is never sent twice.
 export const withTimeoutAndRetry =
-  (base: FetchAPI): FetchAPI =>
+  (base: FetchAPI, timeoutMs: number = TIMEOUT_MS): FetchAPI =>
   async (input, init) => {
     const attempts = isRead(init) ? READ_ATTEMPTS : 1;
+    // One deadline for the whole call, retries included, so a hanging
+    // Authentik costs at most timeoutMs, not timeoutMs per attempt.
+    const signal = AbortSignal.timeout(timeoutMs);
     const tryOnce = async (left: number): Promise<Response> => {
-      const res = await base(input, {
-        ...init,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      }).catch((e: unknown) => {
-        if (left > 1) return undefined;
+      const res = await base(input, { ...init, signal }).catch((e: unknown) => {
+        if (left > 1 && !signal.aborted) return undefined;
         throw e;
       });
       if (res && (res.status < 500 || left <= 1)) return res;
