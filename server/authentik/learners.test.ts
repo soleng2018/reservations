@@ -1,118 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createCoreApi } from "./client";
 import { addToPodGroup } from "./groups";
 import {
   deleteSagaLearner,
   findOrCreateLearner,
   issueSetPasswordLink,
 } from "./learners";
+import { ADMINS, fakeAuthentik, fakeUser, POD } from "./testing";
 
-// A small in memory Authentik behind the real SDK, recording every write.
-type FakeUser = {
-  pk: number;
-  username: string;
-  name: string;
-  email: string;
-  is_active: boolean;
-  is_superuser: boolean;
-  groups: string[];
-  attributes: Record<string, unknown>;
-};
-
-// The SDK's mappers require these fields on every group.
-const group = (pk: string, name: string) => ({ pk, name, roles_obj: [] });
-const ADMINS = group("admins-uuid", "hol-admins");
-const POD = group("pod-uuid", "pod-lab-1");
-const PAGE = { pagination: { count: 0 } };
-
-function fakeAuthentik(
-  initial: readonly FakeUser[],
-  opts: { readonly down?: boolean } = {},
-) {
-  const users = initial.map((u) => ({ ...u }));
-  const writes: string[] = [];
-  const groups = [ADMINS, POD, group("other-uuid", "staff")];
-  const json = (body: unknown, status = 200) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    });
-
-  const fetchApi = async (
-    input: RequestInfo | URL,
-    init?: RequestInit,
-  ): Promise<Response> => {
-    if (opts.down) throw new TypeError("fetch failed");
-    const url = new URL(String(input));
-    const path = url.pathname.replace("/api/v3", "");
-    const method = (init?.method ?? "GET").toUpperCase();
-    const body = init?.body ? JSON.parse(String(init.body)) : {};
-    if (method !== "GET") writes.push(`${method} ${path}`);
-    const q = url.searchParams;
-
-    if (method === "GET" && path === "/core/groups/")
-      return json({
-        ...PAGE,
-        results: groups.filter(
-          (g) => !q.get("name") || g.name === q.get("name"),
-        ),
-      });
-    const byPk = path.match(/^\/core\/groups\/([^/]+)\/$/);
-    if (method === "GET" && byPk)
-      return json(groups.find((g) => g.pk === byPk[1]));
-    if (method === "POST" && /\/core\/groups\/[^/]+\/add_user\/$/.test(path))
-      return new Response(null, { status: 204 });
-
-    if (method === "GET" && path === "/core/users/")
-      return json({
-        ...PAGE,
-        results: users.filter(
-          (u) =>
-            (!q.get("email") || u.email === q.get("email")) &&
-            (!q.get("username") || u.username === q.get("username")),
-        ),
-      });
-    if (method === "POST" && path === "/core/users/") {
-      const created = {
-        ...body,
-        pk: 100 + users.length,
-        is_superuser: false,
-        groups: [],
-      };
-      users.push(created);
-      return json(created, 201);
-    }
-    const one = path.match(/^\/core\/users\/(\d+)\/(recovery\/)?$/);
-    const user = one && users.find((u) => u.pk === Number(one[1]));
-    if (!one || !user) return json({ detail: "Not found." }, 404);
-    if (one[2]) return json({ link: `https://auth.test/recover/${user.pk}` });
-    if (method === "GET") return json(user);
-    if (method === "PATCH") return json(Object.assign(user, body));
-    if (method === "DELETE") return new Response(null, { status: 204 });
-    return json({}, 405);
-  };
-
-  return {
-    users,
-    writes,
-    api: createCoreApi(
-      { AUTHENTIK_URL: "https://auth.test", token: "t" },
-      fetchApi,
-    ),
-  };
-}
-
-const user = (over: Partial<FakeUser>): FakeUser => ({
-  pk: 7,
-  username: "someone",
-  name: "Some One",
-  email: "someone@x.test",
-  is_active: true,
-  is_superuser: false,
-  groups: [],
-  attributes: {},
-  ...over,
-});
+const user = fakeUser;
 
 const input = { email: "Priya@X.test", name: "Priya", holUserId: "row-1" };
 
@@ -129,6 +24,7 @@ describe("findOrCreateLearner (AC-5)", () => {
       username: "priya@x.test",
       email: "Priya@X.test",
       path: "hol/learners",
+      type: "external",
       is_active: true,
       attributes: { hol_learner: true, hol_user_id: "row-1" },
     });
@@ -137,7 +33,7 @@ describe("findOrCreateLearner (AC-5)", () => {
 
   it("reuses a known non admin user, adding only the missing attributes", async () => {
     const ak = fakeAuthentik([
-      user({ email: "Priya@X.test", attributes: { team: "a" } }),
+      user({ email: "priya@x.test", attributes: { team: "a" } }),
     ]);
     const r = await findOrCreateLearner(ak.api, input);
     expect(r).toEqual({
@@ -155,7 +51,7 @@ describe("findOrCreateLearner (AC-5)", () => {
   it("writes nothing for an already tagged user", async () => {
     const ak = fakeAuthentik([
       user({
-        email: "Priya@X.test",
+        email: "priya@x.test",
         attributes: { hol_learner: true, hol_user_id: "row-1" },
       }),
     ]);
@@ -168,7 +64,7 @@ describe("findOrCreateLearner (AC-5)", () => {
 
   it("refuses an admin email without writing", async () => {
     const ak = fakeAuthentik([
-      user({ email: "Priya@X.test", groups: [ADMINS.pk] }),
+      user({ email: "priya@x.test", groups: [ADMINS.pk] }),
     ]);
     expect(await findOrCreateLearner(ak.api, input)).toEqual({
       ok: false,
@@ -188,9 +84,56 @@ describe("findOrCreateLearner (AC-5)", () => {
     expect(ak.writes).toEqual([]);
   });
 
+  it("finds a user ignoring case, by email or by username", async () => {
+    const byEmail = fakeAuthentik([
+      user({
+        email: "priya@x.test",
+        attributes: { hol_learner: true, hol_user_id: "row-1" },
+      }),
+    ]);
+    expect(await findOrCreateLearner(byEmail.api, input)).toMatchObject({
+      ok: true,
+      value: { pk: 7, created: false },
+    });
+    // Stored mixed case: the email filter misses it, the username finds it,
+    // and the same email ignoring case makes it the same person.
+    const byUsername = fakeAuthentik([
+      user({
+        username: "priya@x.test",
+        email: "PRIYA@x.TEST",
+        attributes: { hol_learner: true, hol_user_id: "row-1" },
+      }),
+    ]);
+    expect(await findOrCreateLearner(byUsername.api, input)).toMatchObject({
+      ok: true,
+      value: { pk: 7, created: false },
+    });
+    expect(byEmail.writes).toEqual([]);
+    expect(byUsername.writes).toEqual([]);
+  });
+
+  it("never changes the type or path of a reused user", async () => {
+    const ak = fakeAuthentik([user({ email: "priya@x.test" })]);
+    await findOrCreateLearner(ak.api, input);
+    expect(ak.users[0]).not.toHaveProperty("type");
+    expect(ak.users[0]).not.toHaveProperty("path");
+  });
+
+  it("refuses two users whose emails differ only by case", async () => {
+    const ak = fakeAuthentik([
+      user({ pk: 7, email: "priya@x.test" }),
+      user({ pk: 8, username: "priya@x.test", email: "Priya@X.test" }),
+    ]);
+    expect(await findOrCreateLearner(ak.api, input)).toEqual({
+      ok: false,
+      error: "duplicate_email",
+    });
+    expect(ak.writes).toEqual([]);
+  });
+
   it("refuses an inactive Authentik account", async () => {
     const ak = fakeAuthentik([
-      user({ email: "Priya@X.test", is_active: false }),
+      user({ email: "priya@x.test", is_active: false }),
     ]);
     expect(await findOrCreateLearner(ak.api, input)).toEqual({
       ok: false,
@@ -228,7 +171,8 @@ describe("guarded writes (AC-4, AC-6)", () => {
     });
     expect(await issueSetPasswordLink(ak.api, 3)).toEqual({
       ok: true,
-      value: "https://auth.test/recover/3",
+      // AC-6: 72 hours, not Authentik's default token duration.
+      value: "https://auth.test/recover/3?for=hours=72",
     });
     expect(ak.writes).toEqual(["POST /core/users/3/recovery/"]);
   });

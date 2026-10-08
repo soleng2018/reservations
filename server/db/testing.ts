@@ -26,6 +26,23 @@ export async function inRollback(
     });
 }
 
+// Code under test that opens its own `conn.transaction()` cannot run on a
+// rollback transaction (Kysely refuses nesting). This view runs each such
+// block straight on `trx`, so its writes still roll back with the test.
+export function asConn(trx: Transaction<DB>): Kysely<DB> {
+  return new Proxy(trx, {
+    get(target, prop, receiver) {
+      if (prop === "transaction")
+        return () => ({
+          execute: <T>(fn: (t: Transaction<DB>) => Promise<T>) => fn(target),
+        });
+      const value: unknown = Reflect.get(target, prop, receiver);
+      // Kysely uses private fields, so methods must run on the real object.
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
 // Runs `fn` inside a savepoint and returns what it threw (undefined if
 // nothing), so a test can assert a constraint error and keep using `trx`.
 export async function attempt(
@@ -98,6 +115,47 @@ export async function makeTestbed(
     })
     .returningAll()
     .executeTakeFirstOrThrow();
+}
+
+// A Better Auth user with an Authentik account and `sessions` live sessions.
+export async function makeAuthUser(
+  trx: Kysely<DB>,
+  authentikPk: number,
+  sessions = 0,
+) {
+  const id = crypto.randomUUID();
+  const now = new Date();
+  await trx
+    .insertInto("hol_auth.user")
+    .values({
+      id,
+      email: `${id}@example.test`,
+      name: "Auth",
+      emailVerified: false,
+    })
+    .execute();
+  await trx
+    .insertInto("hol_auth.account")
+    .values({
+      id: crypto.randomUUID(),
+      accountId: String(authentikPk),
+      providerId: "authentik",
+      userId: id,
+      updatedAt: now,
+    })
+    .execute();
+  for (let i = 0; i < sessions; i++)
+    await trx
+      .insertInto("hol_auth.session")
+      .values({
+        id: crypto.randomUUID(),
+        token: crypto.randomUUID(),
+        userId: id,
+        expiresAt: new Date(now.getTime() + 3_600_000),
+        updatedAt: now,
+      })
+      .execute();
+  return id;
 }
 
 // A half hour aligned instant `hours` from now (negative for the past).
