@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/migrate.ts",
     "db:codegen": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/codegen.ts",
+    "worker": "tsx --conditions=react-server --env-file-if-exists=.env.local worker/index.ts",
     "prepare": "husky",
     "test": "vitest run",
     "format": "prettier --write .",
