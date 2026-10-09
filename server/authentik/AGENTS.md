@@ -5,9 +5,9 @@ The app's side of the shared Authentik: the API client, the write guard, and lea
 ## Files
 
 - `client.ts`: `authentik()` builds the pinned `@goauthentik/api` `CoreApi` on the provisioning token (`AUTHENTIK_PROVISIONING_TOKEN_FILE`), with a 10 second timeout. Wrap every SDK call in `call(label, fn)`, which returns a `Result` (`unavailable` | `not_found`).
-- `guard.ts`: the only gate for Authentik writes. It re-reads the target before each write.
+- `guard.ts`: the only gate for Authentik writes. It re-reads the target before each write; `guardGroupWrite` returns the fresh group so a delete can check its `hol_testbed_id`.
 - `learners.ts`: `findOrCreateLearner` (guest saga), `issueSetPasswordLink`, `deactivateLearner`, `reactivateLearner`, `deleteSagaLearner`.
-- `groups.ts`: testbed `pod-` group membership.
+- `groups.ts`: testbed `pod-` groups: create (stamped with `hol_testbed_id`), find by name, delete, and membership. Only the worker's access reconciler (`server/worker/reconcile.ts`) adds or removes members.
 - `sessions.ts`: ends every Authentik session of a user (used by sign out and deactivate).
 - `testing.ts`: test support only, an in memory fake Authentik behind the real SDK that records every write.
 

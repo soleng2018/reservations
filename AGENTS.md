@@ -33,6 +33,7 @@ npm test             # Vitest (passes with no tests)
 npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
+npm run worker       # background worker; exits unless WORKER_ENABLED=true; shared DB, so it IS the prod worker (one at a time)
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 ```
@@ -53,8 +54,12 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Schema: `server/db/types.ts` is generated (never hand edit; Prettier skips it). Constraint and index names are a contract with `mapConstraintError`, so renaming one is a breaking change. Every `CHECK (col in (...))` list has a matching Zod enum in `lib/db-enums.ts`, registered in `checkLists`; a parity test compares them to the live schema.
 - Strict TypeScript: no `any`, no non null `!` without a comment, exhaustive `switch` on unions (`never` check). Parse every boundary (input, env, external API) with Zod.
 - Env: each process validates its env through the Zod schemas in `server/env.ts`, failing fast at start, never during `next build`. No `process.env` reads elsewhere.
+- Time: the database is the clock. Booking, slot, and access decisions use SQL `now()` or `dbNow()` from `server/db/bookings.ts`, never `Date.now()`. Times are stored UTC and shown in the viewer's IANA zone through `lib/format-time.ts`.
+- Forms: Server Actions parse input with the Zod schemas in `lib/` (`booking-input.ts`, `catalog-input.ts`) and return field errors keyed by dotted path through `fieldErrors` in `lib/form-errors.ts`.
+- Audit: every audit action name is in the `AuditAction` enum in `lib/audit-actions.ts` (no DB CHECK, so a new action needs no migration); write rows with `audit()` from `server/audit.ts` inside the same transaction.
+- Client IP for rate limits comes only from `clientIp()` in `server/request-ip.ts` (it trusts `CF-Connecting-IP` only when `TRUST_PROXY_HEADERS=true`).
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
-- Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`. Import via `@/`.
+- Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`, `worker/` (the worker process entry). Import via `@/`.
 - Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
 - Test helpers: `asConn(trx)` in `server/db/testing.ts` lets code that opens its own `conn.transaction()` run inside `inRollback`; `server/authentik/testing.ts` is the in memory fake Authentik behind the real SDK.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
@@ -92,5 +97,6 @@ MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setu
 
 <!-- Nested AGENTS.md files are listed here as they are created -->
 - [server/authentik/AGENTS.md](server/authentik/AGENTS.md): Authentik API client, the write guard, learner provisioning, and token rules
+- [server/worker/AGENTS.md](server/worker/AGENTS.md): the background worker, its lock, tick loop, sweepers, and the access reconciler
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
