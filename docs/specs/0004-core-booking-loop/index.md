@@ -185,7 +185,7 @@ Tracer Bullet: prove the admin, then the guest, then the access thread end to en
 7. [ ] Concurrency and failure tests: the two connection assignment race, the Authentik timeout, and the admin create failure. Satisfies **AC-2**, **AC-9**, **AC-10**
 8. [x] Worker: `worker/index.ts` (env gate, dedicated lock client, sequential loop, step timeouts, SIGTERM), `completeEnded`, `sweepGuestSagas`, `sweepTestbedCreates`, `purgeRateLimits`, and the `npm run worker` script, plus the env schema and `.env.example`. Satisfies **AC-11**
 9. [x] Access: `lib/reconcile.ts` `membershipDiff` and `server/worker/reconcile.ts` with paging, session cut off, and audit after success, unit and fake Authentik tests. Satisfies **AC-12**
-10. [ ] Playwright happy path (admin creates, guest books) against the dev server. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-6**
+10. [x] Playwright happy path (admin creates, guest books) against the dev server. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-6**
 
 ## Consequences
 

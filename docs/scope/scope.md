@@ -108,7 +108,7 @@ The walking skeleton, real at every layer and as narrow as possible. An admin si
   - [x] Guest tracer: slot math, saga step 1 rework with assignment and rollback, `/book` form and confirmation (AC-3, 5, 6, 7, 8, 9, 13)
   - [ ] Abuse guard and failure paths: rate limits, trusted IP, Turnstile, race and timeout tests (AC-2, 3, 4, 9, 10)
   - [x] Worker: lock, sequential loop, sweepers, and the access reconciler (AC-11, 12)
-  - [ ] Playwright happy path (AC-1, 2, 3, 5, 6)
+  - [x] Playwright happy path (AC-1, 2, 3, 5, 6)
 - [ ] Verify it: `/check verify core booking loop`
 - [ ] Test it: `/test core booking loop`
 spec [0004](../specs/0004-core-booking-loop/index.md) · code in `app/book/`, `app/admin/`, `server/booking/`, `server/catalog/`, `server/worker/`, `worker/`, `lib/`
