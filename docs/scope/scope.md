@@ -34,7 +34,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 3 | Data model | Foundation | done |
 | 4 | Authentik sign in & provisioning | Foundation | done |
 | 5 | Design system & UI foundation | Foundation | planned |
-| 6 | Core booking loop | Slice 1 | in-progress |
+| 6 | Core booking loop | Slice 1 | done |
 | 7 | Admin: Testbed Types | Slice 2 | planned |
 | 8 | Admin: API Keys | Slice 2 | planned |
 | 9 | Admin: Testbeds | Slice 2 | planned |
@@ -99,7 +99,7 @@ Take the Nile visual language from the mock (colors, type, logo, rounded cards a
 
 ## Slice 1: Core booking loop
 
-### 6. Core booking loop · in-progress
+### 6. Core booking loop · done
 The walking skeleton, real at every layer and as narrow as possible. An admin signs in and creates one testbed type and one testbed. A guest fills the mock's Step 1 form, picks a start time from a plain list, and confirms; the app creates their Authentik user and the booking together, and adds the user to the testbed's Authentik group. No calendar, landing page, emails, search, editing, or cancel yet.
 **Done when:** that full path works against the real database and real Authentik; a failed step leaves nothing booked, no orphan user, and no stray group membership; a second guest cannot book the same testbed for an overlapping time.
 - [x] Design it (spec): `/architect core booking loop`
@@ -109,8 +109,8 @@ The walking skeleton, real at every layer and as narrow as possible. An admin si
   - [x] Abuse guard and failure paths: rate limits, trusted IP, Turnstile, race and timeout tests (AC-2, 3, 4, 9, 10) (AC-10 race: in order assignment test plus the manual two browser check in verify.md accepted instead of a two connection DB test, which would have to commit to the shared database, engineer call 2026-10-08)
   - [x] Worker: lock, sequential loop, sweepers, and the access reconciler (AC-11, 12)
   - [x] Playwright happy path (AC-1, 2, 3, 5, 6)
-- [ ] Verify it: `/check verify core booking loop`
-- [ ] Test it: `/test core booking loop`
+- [x] Verify it: `/check verify core booking loop` (29 of 30 steps; the prod rate limit step through the Cloudflare Tunnel is owed to the spec 0001 image and compose work, engineer call 2026-10-09)
+- [x] Test it: `/test core booking loop`
 spec [0004](../specs/0004-core-booking-loop/index.md) · code in `app/book/`, `app/admin/`, `server/booking/`, `server/catalog/`, `server/worker/`, `worker/`, `lib/`
 (basis: vertical slices prove the layers connect before breadth is added)
 

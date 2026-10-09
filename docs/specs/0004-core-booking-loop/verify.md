@@ -22,7 +22,7 @@ Dev and prod share one database and one Authentik. Use `e2e ` names and `dev-` e
 - [x] Use an admin's email → "This email can't be used for booking." → AC-8
 - [x] Leave the page open until a listed start is less than 1 hour away, then confirm it → "That time was just taken. Please pick another.", the fields keep their values, the list reloads without that time → AC-7
 - [x] Two browsers, one free testbed, same start, confirm both at once → exactly one booking, the other sees the AC-7 message; with two testbeds both succeed on different testbeds → AC-10
-- [ ] Submit 6 times within 10 minutes from one IP (prod, `TRUST_PROXY_HEADERS=true`) → the 6th shows "Please try again in a little while." with no Turnstile call → AC-4 (IP source)
+- [ ] Submit 6 times within 10 minutes from one IP (prod, `TRUST_PROXY_HEADERS=true`) → the 6th shows "Please try again in a little while." with no Turnstile call → AC-4 (IP source) · owed to the spec 0001 image and compose work: needs the app container behind Traefik, reachable only through the tunnel (Traefik also publishes 443 on the LAN, so a direct caller could set its own `CF-Connecting-IP`)
 - [x] In dev (`TRUST_PROXY_HEADERS=false`), confirm the `rate_limits` rows use the key `book:ip:untrusted` → AC-4 (IP source)
 - [x] After a failed submit the Turnstile widget resets (a new token) → AC-4
 
