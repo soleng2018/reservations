@@ -182,7 +182,7 @@ Tracer Bullet: prove the admin, then the guest, then the access thread end to en
 4. [x] Saga step 1 rework: `startGuestBooking` with the live booking check, the single type read, `ON CONFLICT DO NOTHING` assignment loop, and the rollback on every refusal (fixing today's committed orphan row), with rolled back tests. Satisfies **AC-5**, **AC-8**, **AC-9**
 5. [x] Guest tracer: `/book` page and client form, `loadStartsAction`, `bookAction` on `bookAsGuest`, the confirmation state, the error code messages, allow list entries, and `noindex`. Satisfies **AC-3**, **AC-6**, **AC-7**, **AC-8**, **AC-9**, **AC-13**
 6. [x] Abuse guard: `countAttempt`, `clientIp` with `TRUST_PROXY_HEADERS`, the check order, Turnstile on `/book` with widget reset, the starts limit, and the server rechecks. Satisfies **AC-3**, **AC-4**
-7. [ ] Concurrency and failure tests: the two connection assignment race, the Authentik timeout, and the admin create failure. Satisfies **AC-2**, **AC-9**, **AC-10**
+7. [x] Concurrency and failure tests: the two connection assignment race, the Authentik timeout, and the admin create failure. Satisfies **AC-2**, **AC-9**, **AC-10**
 8. [x] Worker: `worker/index.ts` (env gate, dedicated lock client, sequential loop, step timeouts, SIGTERM), `completeEnded`, `sweepGuestSagas`, `sweepTestbedCreates`, `purgeRateLimits`, and the `npm run worker` script, plus the env schema and `.env.example`. Satisfies **AC-11**
 9. [x] Access: `lib/reconcile.ts` `membershipDiff` and `server/worker/reconcile.ts` with paging, session cut off, and audit after success, unit and fake Authentik tests. Satisfies **AC-12**
 10. [x] Playwright happy path (admin creates, guest books) against the dev server. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-6**

@@ -49,7 +49,7 @@ Dev and prod share one database and one Authentik. Use `e2e ` names and `dev-` e
 - AC-7: lead time step, `server/db/guest-saga.test.ts`, `app/book/actions.test.ts`
 - AC-8: live booking and admin email steps, `server/booking/guest-booking.test.ts`
 - AC-9: `server/booking/guest-booking.test.ts` (Authentik timeout, step 1 rollback, no membership writes)
-- AC-10: the two browser step (manual); sequential assignment in `server/db/guest-saga.test.ts`. The two connection DB race test is not built (see the build report).
+- AC-10: the two browser step (manual); sequential assignment in `server/db/guest-saga.test.ts`. A two connection DB race test was not built: it would have to commit to the shared database (engineer call 2026-10-08, recorded in the scope).
 - AC-11: worker steps, `server/worker/loop.test.ts`, `server/worker/lock.test.ts`, `server/worker/sweep.test.ts`
 - AC-12: access steps, `lib/reconcile.test.ts`, `server/worker/reconcile.test.ts`
 - AC-13: admin step 1, `app/admin/actions.test.ts`, `tests/server-actions-require.test.ts`

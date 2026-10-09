@@ -103,10 +103,10 @@ Take the Nile visual language from the mock (colors, type, logo, rounded cards a
 The walking skeleton, real at every layer and as narrow as possible. An admin signs in and creates one testbed type and one testbed. A guest fills the mock's Step 1 form, picks a start time from a plain list, and confirms; the app creates their Authentik user and the booking together, and adds the user to the testbed's Authentik group. No calendar, landing page, emails, search, editing, or cancel yet.
 **Done when:** that full path works against the real database and real Authentik; a failed step leaves nothing booked, no orphan user, and no stray group membership; a second guest cannot book the same testbed for an overlapping time.
 - [x] Design it (spec): `/architect core booking loop`
-- [ ] Build it: `/develop core booking loop`
+- [x] Build it: `/develop core booking loop`
   - [x] Admin tracer: shadcn init, pod group create, create only type and testbed forms with the row first group saga (AC-1, 2, 13)
   - [x] Guest tracer: slot math, saga step 1 rework with assignment and rollback, `/book` form and confirmation (AC-3, 5, 6, 7, 8, 9, 13)
-  - [ ] Abuse guard and failure paths: rate limits, trusted IP, Turnstile, race and timeout tests (AC-2, 3, 4, 9, 10)
+  - [x] Abuse guard and failure paths: rate limits, trusted IP, Turnstile, race and timeout tests (AC-2, 3, 4, 9, 10) (AC-10 race: in order assignment test plus the manual two browser check in verify.md accepted instead of a two connection DB test, which would have to commit to the shared database, engineer call 2026-10-08)
   - [x] Worker: lock, sequential loop, sweepers, and the access reconciler (AC-11, 12)
   - [x] Playwright happy path (AC-1, 2, 3, 5, 6)
 - [ ] Verify it: `/check verify core booking loop`
