@@ -28,14 +28,17 @@ Tracer Bullet (prove one real thread through every layer first, then thicken it 
 npm install
 npm run dev          # never runs migrations or the worker
 npm run build
-npm run lint && npm run typecheck
+npm run lint && npm run typecheck   # typecheck runs next typegen first (PageProps, LayoutProps)
 npm test             # Vitest (passes with no tests)
 npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
+npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
+npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 ```
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
+- Dev runs on the LAN IP (`http://10.1.255.18:3000`), because the Authentik proxy refuses requests that mention localhost. `APP_URL` must match the URL the browser uses, or sign in fails with `state_mismatch`.
 - `db/bootstrap.sql` is a one time setup run by hand as `postgres` (creates the `hol_app` role and schemas), not a migration; its header has the exact command.
 
 ## Specs
@@ -53,13 +56,15 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
 - Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`. Import via `@/`.
 - Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
+- Test helpers: `asConn(trx)` in `server/db/testing.ts` lets code that opens its own `conn.transaction()` run inside `inRollback`; `server/authentik/testing.ts` is the in memory fake Authentik behind the real SDK.
+- Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
 
 ## Tooling
 
 Installed:
 - ESLint (`eslint-config-next`, with `eslint-config-prettier` last) plus Prettier with `prettier-plugin-tailwindcss`. Prettier skips Markdown, `docs/`, `context/`, and skills folders.
 - Pre-commit: Husky + lint-staged (ESLint and Prettier on staged files) plus `npm run typecheck`.
-- CI (`.github/workflows/ci.yml`): GitHub Actions on push runs lint, format check, typecheck, and tests (the image build from spec 0001 comes later).
+- CI (`.github/workflows/ci.yml`): GitHub Actions on push runs lint, format check, typecheck, and tests (the image build from spec 0001 comes later). Playwright needs real Authentik, so it runs locally, not in CI.
 
 ## Git
 
@@ -86,5 +91,6 @@ MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setu
 ## Context files
 
 <!-- Nested AGENTS.md files are listed here as they are created -->
+- [server/authentik/AGENTS.md](server/authentik/AGENTS.md): Authentik API client, the write guard, learner provisioning, and token rules
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
