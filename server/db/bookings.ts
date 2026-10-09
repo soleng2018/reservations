@@ -24,6 +24,32 @@ export async function completeEndedForUser(
     .execute();
 }
 
+// The type's testbeds that can take a booking (live, group pk stored), in
+// lower(name) order: the assignment order of spec 0004 AC-5.
+export async function bookableTestbedsOfType(
+  conn: Kysely<DB>,
+  testbedTypeId: string,
+): Promise<readonly { readonly id: string; readonly name: string }[]> {
+  return conn
+    .selectFrom("testbeds")
+    .select(["id", "name"])
+    .where("testbed_type_id", "=", testbedTypeId)
+    .where("deleted_at", "is", null)
+    .where("authentik_group_pk", "is not", null)
+    .orderBy(sql`lower(name)`)
+    .orderBy("id")
+    .execute();
+}
+
+// The database clock (spec 0001: the DB is the clock). Inside a transaction
+// this is the transaction's start time.
+export async function dbNow(conn: Kysely<DB>): Promise<Date> {
+  const { rows } = await sql<{ now: Date }>`select now() as now`.execute(conn);
+  const [row] = rows;
+  if (!row) throw new Error("select now() returned no row");
+  return row.now;
+}
+
 // Locks the testbed and its type FOR SHARE and checks it can take a booking:
 // not deleted, Authentik group set, type not deleted (AC-14). A concurrent
 // soft delete holds FOR UPDATE, so the two serialize.

@@ -28,10 +28,8 @@ async function setup(trx: Kysely<DB>) {
     company: "Acme",
     email,
     timezone: "UTC",
-    testbedId: testbed.id,
     testbedTypeId: type.id,
     startsAt: slot(24),
-    endsAt: slot(26),
   };
   const state = async () => {
     const user = await trx
@@ -68,7 +66,7 @@ async function setup(trx: Kysely<DB>) {
         .where("created_at", ">=", new Date(Date.now() - 60_000))
         .execute()
     ).length;
-  return { input, email, state, audits };
+  return { input, email, state, audits, type, testbed };
 }
 
 const existing = (email: string, over: Partial<FakeUser> = {}) =>
@@ -81,7 +79,10 @@ describe.skipIf(!hasDb)("bookAsGuest (AC-5, AC-6)", () => {
       const { input, state, audits } = await setup(trx);
       const ak = fakeAuthentik([]);
       const r = await bookAsGuest(ak.api, asConn(trx), input);
-      expect(r.ok).toBe(true);
+      expect(r).toMatchObject({
+        ok: true,
+        value: { newUser: true, typeName: expect.any(String) },
+      });
 
       const s = await state();
       expect(ak.users).toHaveLength(1);
@@ -89,13 +90,17 @@ describe.skipIf(!hasDb)("bookAsGuest (AC-5, AC-6)", () => {
       expect(s.bookings).toEqual(["confirmed"]);
       expect(s.jobs).toEqual([`welcome:${s.user?.id}`]);
       expect(await audits("user.created_in_authentik")).toBe(1);
+      expect(await audits("booking.created")).toBe(1);
     }));
 
   it("reuses a known Authentik user and sends no welcome", () =>
     inRollback(async (trx) => {
       const { input, email, state, audits } = await setup(trx);
       const ak = fakeAuthentik([existing(email)]);
-      expect((await bookAsGuest(ak.api, asConn(trx), input)).ok).toBe(true);
+      expect(await bookAsGuest(ak.api, asConn(trx), input)).toMatchObject({
+        ok: true,
+        value: { newUser: false },
+      });
 
       const s = await state();
       expect(ak.users).toHaveLength(1);
@@ -159,6 +164,89 @@ describe.skipIf(!hasDb)("bookAsGuest (AC-5, AC-6)", () => {
         user: undefined,
         bookings: [],
         jobs: [],
+      });
+    }));
+
+  // covers: spec 0004 AC-9
+  it("never writes pod group membership, even when step 2 times out", () =>
+    inRollback(async (trx) => {
+      const { input, state } = await setup(trx);
+      const ak = fakeAuthentik([], {
+        fail: (m, p) => m === "POST" && p === "/core/users/",
+      });
+      expect(await bookAsGuest(ak.api, asConn(trx), input)).toEqual({
+        ok: false,
+        error: "unavailable",
+      });
+      expect(await state()).toEqual({
+        user: undefined,
+        bookings: [],
+        jobs: [],
+      });
+      expect(ak.writes.filter((w) => w.includes("_user/"))).toEqual([]);
+
+      const ok = fakeAuthentik([]);
+      expect((await bookAsGuest(ok.api, asConn(trx), input)).ok).toBe(true);
+      expect(ok.writes.filter((w) => w.includes("/core/groups/"))).toEqual([]);
+    }));
+
+  // covers: spec 0004 AC-9 (a step 1 refusal commits nothing)
+  it("leaves no users row when step 1 refuses a new email", () =>
+    inRollback(async (trx) => {
+      const { input, state, testbed } = await setup(trx);
+      const ak = fakeAuthentik([]);
+      const other = await makeUser(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: other.id,
+          testbed_id: testbed.id,
+          testbed_type_id: input.testbedTypeId,
+          starts_at: input.startsAt,
+          ends_at: new Date(input.startsAt.getTime() + 2 * 3_600_000),
+          status: "confirmed",
+        })
+        .execute();
+      expect(await bookAsGuest(ak.api, asConn(trx), input)).toEqual({
+        ok: false,
+        error: "slot_taken",
+      });
+      expect((await state()).user).toBeUndefined();
+
+      await trx
+        .updateTable("testbeds")
+        .set({ authentik_group_pk: null })
+        .where("id", "=", testbed.id)
+        .execute();
+      expect(await bookAsGuest(ak.api, asConn(trx), input)).toEqual({
+        ok: false,
+        error: "not_bookable",
+      });
+      expect((await state()).user).toBeUndefined();
+      expect(ak.writes).toEqual([]);
+    }));
+
+  // covers: spec 0004 AC-8
+  it("tells a live booking apart from one still being set up", () =>
+    inRollback(async (trx) => {
+      const { input, email } = await setup(trx);
+      const ak = fakeAuthentik([existing(email)]);
+      expect((await bookAsGuest(ak.api, asConn(trx), input)).ok).toBe(true);
+      const again = { ...input, startsAt: slot(48) };
+      expect(await bookAsGuest(ak.api, asConn(trx), again)).toEqual({
+        ok: false,
+        error: "has_live_booking",
+      });
+
+      await trx
+        .updateTable("bookings")
+        .set({ status: "provisioning" })
+        .where("starts_at", "=", input.startsAt)
+        .where("testbed_type_id", "=", input.testbedTypeId)
+        .execute();
+      expect(await bookAsGuest(ak.api, asConn(trx), again)).toEqual({
+        ok: false,
+        error: "booking_pending",
       });
     }));
 });

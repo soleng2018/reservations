@@ -105,7 +105,7 @@ The walking skeleton, real at every layer and as narrow as possible. An admin si
 - [x] Design it (spec): `/architect core booking loop`
 - [ ] Build it: `/develop core booking loop`
   - [x] Admin tracer: shadcn init, pod group create, create only type and testbed forms with the row first group saga (AC-1, 2, 13)
-  - [ ] Guest tracer: slot math, saga step 1 rework with assignment and rollback, `/book` form and confirmation (AC-3, 5, 6, 7, 8, 9, 13)
+  - [x] Guest tracer: slot math, saga step 1 rework with assignment and rollback, `/book` form and confirmation (AC-3, 5, 6, 7, 8, 9, 13)
   - [ ] Abuse guard and failure paths: rate limits, trusted IP, Turnstile, race and timeout tests (AC-2, 3, 4, 9, 10)
   - [ ] Worker: lock, sequential loop, sweepers, and the access reconciler (AC-11, 12)
   - [ ] Playwright happy path (AC-1, 2, 3, 5, 6)
