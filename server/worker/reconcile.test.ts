@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 import {
   fakeAuthentik,
@@ -49,7 +49,9 @@ const audited = (trx: Kysely<DB>, action: string) =>
     .selectFrom("audit_events")
     .select(["target_type", "target_id", "metadata"])
     .where("action", "=", action)
-    .where("created_at", ">=", new Date(Date.now() - 60_000))
+    // Only this test's rows: they carry the rollback transaction's now(),
+    // while rows committed earlier (an e2e run) are older.
+    .where("created_at", ">=", sql<Date>`now()`)
     .execute();
 
 // pk numbers high enough never to meet a real Authentik pk in the shared DB.

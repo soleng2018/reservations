@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 import {
   ADMINS,
@@ -63,7 +63,9 @@ async function setup(trx: Kysely<DB>) {
         .selectFrom("audit_events")
         .select("target_id")
         .where("action", "=", action)
-        .where("created_at", ">=", new Date(Date.now() - 60_000))
+        // Only this test's rows: they carry the rollback transaction's now(),
+        // while rows committed earlier (an e2e run) are older.
+        .where("created_at", ">=", sql<Date>`now()`)
         .execute()
     ).length;
   return { input, email, state, audits, type, testbed };
