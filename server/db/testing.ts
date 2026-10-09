@@ -28,13 +28,26 @@ export async function inRollback(
 
 // Code under test that opens its own `conn.transaction()` cannot run on a
 // rollback transaction (Kysely refuses nesting). This view runs each such
-// block straight on `trx`, so its writes still roll back with the test.
+// block on `trx` inside a savepoint: a block that throws undoes its own
+// writes, as a real transaction would, and everything still rolls back with
+// the test.
 export function asConn(trx: Transaction<DB>): Kysely<DB> {
   return new Proxy(trx, {
     get(target, prop, receiver) {
       if (prop === "transaction")
         return () => ({
-          execute: <T>(fn: (t: Transaction<DB>) => Promise<T>) => fn(target),
+          execute: async <T>(fn: (t: Transaction<DB>) => Promise<T>) => {
+            await sql`savepoint as_conn`.execute(target);
+            try {
+              const value = await fn(target);
+              await sql`release savepoint as_conn`.execute(target);
+              return value;
+            } catch (e) {
+              await sql`rollback to savepoint as_conn`.execute(target);
+              await sql`release savepoint as_conn`.execute(target);
+              throw e;
+            }
+          },
         });
       const value: unknown = Reflect.get(target, prop, receiver);
       // Kysely uses private fields, so methods must run on the real object.

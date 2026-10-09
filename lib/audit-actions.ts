@@ -15,5 +15,15 @@ export const AuditAction = z.enum([
   "booking.refused_username_taken",
   // AC-5: two Authentik users have this email, differing only by case.
   "booking.refused_duplicate_email",
+  // Feature 6 (spec 0004).
+  "testbed_type.created",
+  "testbed.created",
+  "authentik_group.created",
+  // The testbed create undo or its sweeper removed a group it created.
+  "authentik_group.deleted",
+  "booking.created",
+  // The reconciler added or removed a learner in a pod group.
+  "access.granted",
+  "access.revoked",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

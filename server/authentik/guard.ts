@@ -1,7 +1,13 @@
 import "server-only";
 import { err, ok, type Result } from "@/lib/result";
 import { ADMIN_GROUP } from "@/server/auth/resolve-sign-in";
-import { call, type AuthentikFailure, type CoreApi, type User } from "./client";
+import {
+  call,
+  type AuthentikFailure,
+  type CoreApi,
+  type Group,
+  type User,
+} from "./client";
 
 // Every Authentik user or group write passes this module (spec 0003 AC-4).
 // The provisioning token's RBAC cannot tell an admin from a learner, so the
@@ -99,16 +105,19 @@ export async function guardUserWrite(
 }
 
 // Re-reads the group and checks its name before a membership or delete.
+// Returns the fresh group so the caller can check its attributes.
 export async function guardGroupWrite(
   api: CoreApi,
   groupUuid: string,
-): Promise<Result<void, GroupRefusal | AuthentikFailure>> {
+): Promise<Result<Group, GroupRefusal | AuthentikFailure>> {
   const group = await call("groups.retrieve", () =>
     api.coreGroupsRetrieve({ groupUuid }),
   );
   if (!group.ok) return group;
   const allowed = checkGroupWrite(group.value.name);
-  if (!allowed.ok)
+  if (!allowed.ok) {
     console.warn(`authentik guard: refused write on group ${groupUuid}`);
-  return allowed;
+    return allowed;
+  }
+  return group;
 }
