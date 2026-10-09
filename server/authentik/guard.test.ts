@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { checkGroupWrite, checkUserWrite, type UserTarget } from "./guard";
+import { describe, expect, it, vi } from "vitest";
+import {
+  checkGroupWrite,
+  checkUserWrite,
+  guardGroupWrite,
+  type UserTarget,
+} from "./guard";
+import {
+  ADMINS as ADMINS_GROUP,
+  fakeAuthentik,
+  fakeGroup,
+  POD,
+} from "./testing";
 
 const ADMINS = "admins-uuid";
 const target = (over: Partial<UserTarget> = {}): UserTarget => ({
@@ -62,5 +73,46 @@ describe("checkGroupWrite (AC-4)", () => {
         ok: false,
         error: "not_pod_group",
       });
+  });
+});
+
+// covers: spec 0004 AC-2, AC-11 (the undo checks the fresh group's attributes)
+describe("guardGroupWrite (AC-4)", () => {
+  it("returns the freshly read pod group, attributes included", async () => {
+    const pod = fakeGroup("pod-2-uuid", "pod-lab-2", { hol_testbed_id: "t1" });
+    const ak = fakeAuthentik([], { groups: [pod] });
+    const r = await guardGroupWrite(ak.api, pod.pk);
+    expect(r).toMatchObject({
+      ok: true,
+      value: { pk: pod.pk, name: "pod-lab-2", attributes: pod.attributes },
+    });
+    expect(ak.writes).toEqual([]);
+  });
+
+  it("refuses a group not named pod-, writing nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ak = fakeAuthentik([]);
+    expect(await guardGroupWrite(ak.api, ADMINS_GROUP.pk)).toEqual({
+      ok: false,
+      error: "not_pod_group",
+    });
+    expect(ak.writes).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("passes not_found through for a group that is gone", async () => {
+    const ak = fakeAuthentik([]);
+    expect(await guardGroupWrite(ak.api, "missing-uuid")).toEqual({
+      ok: false,
+      error: "not_found",
+    });
+  });
+
+  it("returns unavailable when Authentik cannot be reached", async () => {
+    const ak = fakeAuthentik([], { down: true });
+    expect(await guardGroupWrite(ak.api, POD.pk)).toEqual({
+      ok: false,
+      error: "unavailable",
+    });
   });
 });

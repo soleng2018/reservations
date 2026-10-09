@@ -13,7 +13,7 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import { createTestbed, listTestbeds, undoTestbedCreate } from "./testbeds";
-import { createTestbedType } from "./testbed-types";
+import { createTestbedType, listTestbedTypes } from "./testbed-types";
 
 const unique = () => crypto.randomUUID().slice(0, 8);
 
@@ -72,6 +72,40 @@ describe.skipIf(!hasDb)("createTestbedType (AC-1)", () => {
           admin.id,
         ),
       ).toEqual({ ok: false, error: "duplicate_name" });
+    }));
+
+  it("lets a deleted type's name be used again", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin", company: null });
+      const name = `Type ${unique()}`;
+      await makeType(trx, { name, deleted_at: new Date() });
+      const created = await createTestbedType(
+        asConn(trx),
+        { name, durationValue: 3, durationUnit: "days" },
+        admin.id,
+      );
+      expect(created.ok).toBe(true);
+    }));
+});
+
+describe.skipIf(!hasDb)("listTestbedTypes (AC-1)", () => {
+  it("lists live types by name ignoring case, with their duration", () =>
+    inRollback(async (trx) => {
+      const tag = unique();
+      const b = await makeType(trx, { name: `b ${tag}` });
+      const a = await makeType(trx, {
+        name: `A ${tag}`,
+        duration_value: 5,
+        duration_unit: "days",
+      });
+      await makeType(trx, { name: `c ${tag}`, deleted_at: new Date() });
+      const mine = (await listTestbedTypes(trx)).filter((t) =>
+        t.name.endsWith(tag),
+      );
+      expect(mine).toEqual([
+        { id: a.id, name: a.name, durationValue: 5, durationUnit: "days" },
+        { id: b.id, name: b.name, durationValue: 2, durationUnit: "hours" },
+      ]);
     }));
 });
 
