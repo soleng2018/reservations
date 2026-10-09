@@ -3,6 +3,7 @@
 import {
   startTransition,
   useActionState,
+  useId,
   useState,
   type FormEvent,
 } from "react";
@@ -53,7 +54,10 @@ function TestbedFields({
   readonly submit: (data: FormData) => void;
 }) {
   // Stable ids for the client rows, so removing one keeps the others' input.
-  const [rows, setRows] = useState<readonly string[]>([]);
+  // Plain numbers: random UUIDs are missing on plain http (dev), see
+  // tests/client-secure-context.test.ts.
+  const [rows, setRows] = useState<readonly number[]>([]);
+  const prefix = useId();
   const fields = state.kind === "error" ? state.fields : {};
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -95,11 +99,12 @@ function TestbedFields({
         {rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">No clients yet.</p>
         ) : null}
-        {rows.map((rowId, i) => {
+        {rows.map((row, i) => {
+          const rowId = `${prefix}client-${row}`;
           const err = (f: string) => fields[`clients.${i}.${f}`];
           return (
             <div
-              key={rowId}
+              key={row}
               className="grid grid-cols-1 gap-3 rounded-lg border p-3 sm:grid-cols-[8rem_1fr_1fr_auto] sm:items-end"
             >
               <FormField id={`${rowId}-kind`} label="Kind" error={err("kind")}>
@@ -131,7 +136,7 @@ function TestbedFields({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setRows(rows.filter((r) => r !== rowId))}
+                onClick={() => setRows(rows.filter((r) => r !== row))}
               >
                 Remove
               </Button>
@@ -142,7 +147,8 @@ function TestbedFields({
           type="button"
           variant="outline"
           className="self-start"
-          onClick={() => setRows([...rows, crypto.randomUUID()])}
+          // Rows stay in ascending order, so last + 1 is unused.
+          onClick={() => setRows([...rows, (rows.at(-1) ?? -1) + 1])}
         >
           Add client
         </Button>
