@@ -15,6 +15,7 @@ import {
   type Keyring,
 } from "@/server/crypto/secrets";
 import { db } from "@/server/db";
+import { apiKeyBlockers } from "@/server/db/delete-blockers";
 import {
   asConn,
   hasDb,
@@ -26,6 +27,7 @@ import {
 import type { DB } from "@/server/db/types";
 import {
   createApiKey,
+  deleteApiKey,
   listApiKeys,
   listApiKeysQuery,
   updateApiKey,
@@ -468,5 +470,85 @@ describe.skipIf(!hasDb)("updateApiKey (AC-4, AC-5)", () => {
           idp.actor.id,
         ),
       ).toEqual({ ok: true, value: undefined });
+    }));
+});
+
+describe.skipIf(!hasDb)("deleteApiKey (AC-6)", () => {
+  const create = async (trx: Transaction<DB>, name?: string) => {
+    const actor = await makeUser(trx, { role: "admin" });
+    const created = await createApiKey(
+      asConn(trx),
+      KEYRING,
+      input(name ? { name } : {}),
+      actor.id,
+    );
+    if (!created.ok) throw new Error("expected a create");
+    return { actor, id: created.value.id };
+  };
+
+  it("soft deletes an unused key once, audits it, and frees its name", () =>
+    inRollback(async (trx) => {
+      const name = `Okta ${unique()}`;
+      const { actor, id } = await create(trx, name);
+      expect(await deleteApiKey(asConn(trx), id, actor.id)).toEqual({
+        ok: true,
+        value: undefined,
+      });
+      expect((await stored(trx, id)).deleted_at).toBeInstanceOf(Date);
+      expect((await auditsFor(trx, id)).map((a) => a.action)).toEqual([
+        "api_key.created",
+        "api_key.deleted",
+      ]);
+      expect(await deleteApiKey(asConn(trx), id, actor.id)).toEqual({
+        ok: false,
+        error: { kind: "not_found" },
+      });
+      expect((await create(trx, name)).id).not.toBe(id);
+    }));
+
+  it("is blocked by live testbeds using the key, listed by lower(name)", () =>
+    inRollback(async (trx) => {
+      const { actor, id } = await create(trx);
+      const type = await makeType(trx);
+      const tag = unique();
+      const zeta = await makeTestbed(trx, type.id, {
+        name: `zeta ${tag}`,
+        idp_api_key_id: id,
+      });
+      const alpha = await makeTestbed(trx, type.id, {
+        name: `Alpha ${tag}`,
+        idp_api_key_id: id,
+      });
+      await makeTestbed(trx, type.id, {
+        name: `gone ${tag}`,
+        idp_api_key_id: id,
+        deleted_at: new Date(),
+      });
+      expect(await deleteApiKey(asConn(trx), id, actor.id)).toEqual({
+        ok: false,
+        error: {
+          kind: "blocked",
+          blockers: [
+            { id: alpha.id, label: alpha.name },
+            { id: zeta.id, label: zeta.name },
+          ],
+        },
+      });
+      expect((await stored(trx, id)).deleted_at).toBeNull();
+    }));
+
+  it("catches a testbed assigned between the check and the remove", () =>
+    inRollback(async (trx) => {
+      const { actor, id } = await create(trx);
+      expect(await apiKeyBlockers(trx, id)).toEqual([]);
+      const type = await makeType(trx);
+      const late = await makeTestbed(trx, type.id, { idp_api_key_id: id });
+      expect(await deleteApiKey(asConn(trx), id, actor.id)).toEqual({
+        ok: false,
+        error: {
+          kind: "blocked",
+          blockers: [{ id: late.id, label: late.name }],
+        },
+      });
     }));
 });
