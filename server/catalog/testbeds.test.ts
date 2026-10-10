@@ -109,6 +109,55 @@ describe.skipIf(!hasDb)("listTestbedTypes (AC-1)", () => {
     }));
 });
 
+// covers: spec 0005 AC-12, Value sourcing (DataTable rows): the testbeds page
+// shows `pod-<slug>` when groupReady, else the "Not ready" badge
+describe.skipIf(!hasDb)("listTestbeds", () => {
+  it("lists live testbeds by name ignoring case, with type name and slug", () =>
+    inRollback(async (trx) => {
+      const tag = unique();
+      const type = await makeType(trx, { name: `Type ${tag}` });
+      const b = await makeTestbed(trx, type.id, {
+        name: `b ${tag}`,
+        slug: `b-${tag}`,
+      });
+      const a = await makeTestbed(trx, type.id, {
+        name: `A ${tag}`,
+        slug: `a-${tag}`,
+      });
+      await makeTestbed(trx, type.id, {
+        name: `c ${tag}`,
+        deleted_at: new Date(),
+      });
+      const mine = (await listTestbeds(trx)).filter((t) =>
+        t.name.endsWith(tag),
+      );
+      expect(mine).toEqual([
+        {
+          id: a.id,
+          name: a.name,
+          slug: `a-${tag}`,
+          typeName: type.name,
+          groupReady: true,
+        },
+        {
+          id: b.id,
+          name: b.name,
+          slug: `b-${tag}`,
+          typeName: type.name,
+          groupReady: true,
+        },
+      ]);
+    }));
+
+  it("marks a testbed whose group pk is missing as not ready", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id, { authentik_group_pk: null });
+      const listed = (await listTestbeds(trx)).find((t) => t.id === tb.id);
+      expect(listed?.groupReady).toBe(false);
+    }));
+});
+
 // covers: AC-2, AC-11 (the undo the sweeper shares)
 describe.skipIf(!hasDb)("createTestbed (AC-2)", () => {
   it("inserts the row, creates pod-<slug> stamped with its id, then stores the pk", () =>
