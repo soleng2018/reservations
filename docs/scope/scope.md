@@ -33,7 +33,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 2 | Coding standards & tooling | Foundation | done |
 | 3 | Data model | Foundation | done |
 | 4 | Authentik sign in & provisioning | Foundation | done |
-| 5 | Design system & UI foundation | Foundation | planned |
+| 5 | Design system & UI foundation | Foundation | in-progress |
 | 6 | Core booking loop | Slice 1 | done |
 | 7 | Admin: Testbed Types | Slice 2 | planned |
 | 8 | Admin: API Keys | Slice 2 | planned |
@@ -92,10 +92,19 @@ Sign in through Authentik for two roles (admin, learner). Admin accounts already
 spec [0003](../specs/0003-authentik-sign-in-provisioning/index.md) · code in `server/auth/`, `server/authentik/`, `server/booking/guest-booking.ts`, `server/jobs/send-welcome.ts`, `app/reservations/`, `scripts/authentik-setup.ts`
 (basis: auth is high risk and every slice depends on it, so it is a foundation at a higher tier)
 
-### 5. Design system & UI foundation · needs a decision
+### 5. Design system & UI foundation · in-progress
 Take the Nile visual language from the mock (colors, type, logo, rounded cards and pills) and turn it into design tokens and base components: the admin shell with sidebar and mobile nav, searchable table, form modal, delete confirm, the "in use" blocked dialog, and the toast.
 **Done when:** `design.md` covers tokens and components, the base components handle keyboard and focus, and the admin shell matches the mock at desktop and mobile widths.
-- [ ] Design it (spec): `/architect design system & UI foundation`
+- [x] Design it (spec): `/architect design system & UI foundation`
+- [ ] Build it: `/develop design system & UI foundation`
+  - [ ] Tokens, Inter, logo and icons, with the contrast and style guard tests (AC-1, 2)
+  - [ ] Shell tracer on Testbed Types: nav plus Sheet, PageHeader, PageBody, DataTable, FormDialog, toast (AC-3, 4, 5, 6, 7, 9, 12, 14)
+  - [ ] Testbeds section, placeholders, delete flow, and the dev gallery (AC-5, 8, 9, 12, 13)
+  - [ ] Admin sign in card and learner frame (AC-10, 11, 14)
+  - [ ] Axe, keyboard and screenshot specs, and the root `design.md` (AC-14, 15, 16)
+- [ ] Verify it: `/check verify design system & UI foundation`
+- [ ] Test it: `/test design system & UI foundation`
+spec [0005](../specs/0005-design-system-ui-foundation/index.md)
 
 ## Slice 1: Core booking loop
 
@@ -191,6 +200,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Usage analytics**: bookings, utilisation per testbed, no shows · needs a decision
 - **Hook API keys into the labs**: actually use the stored IDP and AI credentials (for example, a testbed's IDP or an AI service in the lab). The owner may drop this entirely, since Authentik groups already protect the labs · needs a decision
 - **Booking controls**: admin approval of new learners, or booking limited to allowed email domains
+- **Admin table sorting and pagination**: revisit search, sort, and paging once an admin list passes about 200 rows (Users is the likely first) · from spec 0005
 
 ## Legend
 
