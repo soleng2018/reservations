@@ -1,6 +1,5 @@
 import type { Kysely } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
-import type { TestbedTypeInput } from "@/lib/catalog-input";
 import { db } from "@/server/db";
 import {
   asConn,
@@ -13,7 +12,6 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import {
-  changedFields,
   deleteTestbedType,
   listTestbedTypes,
   updateTestbedType,
@@ -40,37 +38,6 @@ const typeRow = (trx: Kysely<DB>, id: string) =>
     .executeTakeFirstOrThrow();
 
 afterAll(() => (hasDb ? db().destroy() : undefined));
-
-describe("changedFields", () => {
-  const before: TestbedTypeInput = {
-    name: "Basic",
-    durationValue: 2,
-    durationUnit: "hours",
-  };
-
-  it("is empty when nothing changed", () => {
-    expect(changedFields(before, { ...before })).toEqual({});
-  });
-
-  it("lists only the changed fields, with from and to", () => {
-    expect(
-      changedFields(before, {
-        ...before,
-        durationValue: 3,
-        durationUnit: "days",
-      }),
-    ).toEqual({
-      durationValue: { from: 2, to: 3 },
-      durationUnit: { from: "hours", to: "days" },
-    });
-  });
-
-  it("counts a change of case in the name as a change", () => {
-    expect(changedFields(before, { ...before, name: "BASIC" })).toEqual({
-      name: { from: "Basic", to: "BASIC" },
-    });
-  });
-});
 
 describe.skipIf(!hasDb)("listTestbedTypes usage count", () => {
   it("counts only the live testbeds of each type", () =>

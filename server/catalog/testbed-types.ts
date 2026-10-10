@@ -1,6 +1,7 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
 import type { TestbedTypeInput } from "@/lib/catalog-input";
+import { changedFields } from "@/lib/changed-fields";
 import { DurationUnit } from "@/lib/db-enums";
 import type { Blocker } from "@/lib/delete-flow";
 import { err, ok, type Result } from "@/lib/result";
@@ -55,18 +56,6 @@ export async function createTestbedType(
   });
 }
 
-// The fields an edit changed, as { field: { from, to } }. Empty when the
-// edit changed nothing.
-export const changedFields = (
-  before: TestbedTypeInput,
-  after: TestbedTypeInput,
-): Readonly<Record<string, { readonly from: unknown; readonly to: unknown }>> =>
-  Object.fromEntries(
-    (["name", "durationValue", "durationUnit"] as const)
-      .filter((k) => before[k] !== after[k])
-      .map((k) => [k, { from: before[k], to: after[k] }]),
-  );
-
 // Feature 7. A new duration applies to new bookings and reschedules only:
 // a booking keeps the ends_at it was given (spec 0002). The row lock waits
 // for a booking that holds the type FOR SHARE. A duplicate name aborts the
@@ -88,6 +77,7 @@ export async function updateTestbedType(
         .executeTakeFirst();
       if (!row) return err("not_found");
       const changed = changedFields(
+        ["name", "durationValue", "durationUnit"],
         {
           name: row.name,
           durationValue: row.duration_value,

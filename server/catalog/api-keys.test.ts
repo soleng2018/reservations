@@ -5,6 +5,7 @@ import {
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
+  type Transaction,
 } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ApiKeyCreateInput } from "@/lib/catalog-input";
@@ -14,9 +15,21 @@ import {
   type Keyring,
 } from "@/server/crypto/secrets";
 import { db } from "@/server/db";
-import { asConn, hasDb, inRollback, makeUser } from "@/server/db/testing";
+import {
+  asConn,
+  hasDb,
+  inRollback,
+  makeTestbed,
+  makeType,
+  makeUser,
+} from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
-import { createApiKey, listApiKeys, listApiKeysQuery } from "./api-keys";
+import {
+  createApiKey,
+  listApiKeys,
+  listApiKeysQuery,
+  updateApiKey,
+} from "./api-keys";
 
 // Feature 8 (spec 0006): API keys with write only, row bound secrets. DB
 // tests run inside inRollback with an in memory keyring (no keyring file).
@@ -216,5 +229,244 @@ describe.skipIf(!hasDb)("createApiKey and listApiKeys", () => {
       ]);
       expect(mine[0].secretUpdatedAt).toBeInstanceOf(Date);
       expect(JSON.stringify(mine)).not.toMatch(/canary|v1:/);
+    }));
+});
+
+describe.skipIf(!hasDb)("updateApiKey (AC-4, AC-5)", () => {
+  // A key created by an admin, with its secret dated a day ago.
+  const setup = async (
+    trx: Transaction<DB>,
+    overrides: Partial<ApiKeyCreateInput> = {},
+  ) => {
+    const actor = await makeUser(trx, { role: "admin" });
+    const fields = input(overrides);
+    const created = await createApiKey(asConn(trx), KEYRING, fields, actor.id);
+    if (!created.ok) throw new Error("expected a create");
+    const id = created.value.id;
+    await trx
+      .updateTable("api_keys")
+      .set({ secret_updated_at: new Date(Date.now() - 86_400_000) })
+      .where("id", "=", id)
+      .execute();
+    return { actor, id, fields, before: await stored(trx, id) };
+  };
+  const edit = (
+    fields: ApiKeyCreateInput,
+    changes: Partial<ApiKeyCreateInput> = {},
+  ) => ({
+    name: fields.name,
+    type: fields.type,
+    baseUrl: fields.baseUrl,
+    secret: "",
+    ...changes,
+  });
+  const updates = async (trx: Kysely<DB>, id: string) =>
+    (await auditsFor(trx, id)).filter((a) => a.action !== "api_key.created");
+
+  it("keeps the secret and its date when the key is left blank", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields, before } = await setup(trx);
+      const result = await updateApiKey(
+        asConn(trx),
+        KEYRING,
+        id,
+        edit(fields, { baseUrl: "https://new.okta.example" }),
+        actor.id,
+      );
+      expect(result).toEqual({ ok: true, value: undefined });
+      const after = await stored(trx, id);
+      expect(after.base_url).toBe("https://new.okta.example");
+      expect(after.secret_ciphertext).toBe(before.secret_ciphertext);
+      expect(after.secret_updated_at).toEqual(before.secret_updated_at);
+      expect(await updates(trx, id)).toEqual([
+        {
+          action: "api_key.updated",
+          actor_user_id: actor.id,
+          summary: "API key updated",
+          metadata: {
+            baseUrl: { from: fields.baseUrl, to: "https://new.okta.example" },
+          },
+        },
+      ]);
+    }));
+
+  it("replaces the secret with a fresh ciphertext and today's date", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields, before } = await setup(trx);
+      const result = await updateApiKey(
+        asConn(trx),
+        KEYRING,
+        id,
+        edit(fields, { secret: "new-canary" }),
+        actor.id,
+      );
+      expect(result.ok).toBe(true);
+      const after = await stored(trx, id);
+      expect(after.secret_ciphertext).not.toBe(before.secret_ciphertext);
+      const aad = secretAad("api_keys", "secret_ciphertext", id);
+      expect(decryptSecret(KEYRING, after.secret_ciphertext, aad)).toBe(
+        "new-canary",
+      );
+      const [{ now }] = await trx
+        .selectNoFrom((eb) => eb.fn<Date>("now").as("now"))
+        .execute();
+      expect(after.secret_updated_at).toEqual(now);
+      const audits = await updates(trx, id);
+      expect(audits).toEqual([
+        {
+          action: "api_key.secret_replaced",
+          actor_user_id: actor.id,
+          summary: "API key secret replaced",
+          metadata: {},
+        },
+      ]);
+      expect(JSON.stringify(audits)).not.toMatch(/canary|v1:/);
+    }));
+
+  it("writes both audit rows when fields and the key change together", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const name = `${fields.name} renamed`;
+      await updateApiKey(
+        asConn(trx),
+        KEYRING,
+        id,
+        edit(fields, { name, type: "AI", secret: "x" }),
+        actor.id,
+      );
+      expect(
+        (await updates(trx, id)).map((a) => [a.action, a.metadata]),
+      ).toEqual([
+        [
+          "api_key.updated",
+          {
+            name: { from: fields.name, to: name },
+            type: { from: "IDP", to: "AI" },
+          },
+        ],
+        ["api_key.secret_replaced", {}],
+      ]);
+    }));
+
+  it("writes nothing when nothing changed", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields, before } = await setup(trx);
+      expect(
+        await updateApiKey(asConn(trx), KEYRING, id, edit(fields), actor.id),
+      ).toEqual({ ok: true, value: undefined });
+      expect(await stored(trx, id)).toEqual(before);
+      expect(await updates(trx, id)).toEqual([]);
+    }));
+
+  it("refuses a name another live key has, ignoring case", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const other = await setup(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { name: other.fields.name.toUpperCase() }),
+          actor.id,
+        ),
+      ).toEqual({ ok: false, error: "duplicate_name" });
+    }));
+
+  it("reports a deleted or missing key as not found and writes nothing", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", id)
+        .execute();
+      const changes = edit(fields, { name: "Renamed", secret: "s" });
+      expect(
+        await updateApiKey(asConn(trx), KEYRING, id, changes, actor.id),
+      ).toEqual({
+        ok: false,
+        error: "not_found",
+      });
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          crypto.randomUUID(),
+          changes,
+          actor.id,
+        ),
+      ).toEqual({ ok: false, error: "not_found" });
+      expect(await updates(trx, id)).toEqual([]);
+    }));
+
+  it("refuses IDP to AI while a live testbed uses the key, naming them in order", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields, before } = await setup(trx);
+      const type = await makeType(trx);
+      const tag = unique();
+      await makeTestbed(trx, type.id, {
+        name: `zeta ${tag}`,
+        idp_api_key_id: id,
+      });
+      await makeTestbed(trx, type.id, {
+        name: `Alpha ${tag}`,
+        idp_api_key_id: id,
+      });
+      await makeTestbed(trx, type.id, {
+        name: `gone ${tag}`,
+        idp_api_key_id: id,
+        deleted_at: new Date(),
+      });
+
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { type: "AI", secret: "s" }),
+          actor.id,
+        ),
+      ).toEqual({
+        ok: false,
+        error: { kind: "type_in_use", names: [`Alpha ${tag}`, `zeta ${tag}`] },
+      });
+      expect(await stored(trx, id)).toEqual(before);
+      expect(await updates(trx, id)).toEqual([]);
+
+      // Other edits to a key in use still save.
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { baseUrl: "https://moved.okta.example" }),
+          actor.id,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+    }));
+
+  it("allows AI to IDP, and IDP to AI once no live testbed uses the key", () =>
+    inRollback(async (trx) => {
+      const ai = await setup(trx, { type: "AI" });
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          ai.id,
+          edit(ai.fields, { type: "IDP" }),
+          ai.actor.id,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      const idp = await setup(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          idp.id,
+          edit(idp.fields, { type: "AI" }),
+          idp.actor.id,
+        ),
+      ).toEqual({ ok: true, value: undefined });
     }));
 });

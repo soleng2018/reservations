@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { KeyRoundIcon, PlusIcon } from "lucide-react";
+import { KeyRoundIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { ApiKeyFields } from "@/components/admin/api-key-fields";
 import { DataTable } from "@/components/admin/data-table";
 import { FormDialog } from "@/components/admin/form-dialog";
@@ -21,7 +21,7 @@ import { requireAdmin } from "@/server/auth/require";
 import { listApiKeys } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
 import { assertEncryptionEnv } from "@/server/env";
-import { createApiKeyAction } from "../actions";
+import { createApiKeyAction, updateApiKeyAction } from "../actions";
 
 export const metadata: Metadata = { title: "API Keys" };
 
@@ -70,6 +70,22 @@ export default async function ApiKeysPage() {
           </div>
         ),
       },
+      actions: (
+        <FormDialog
+          trigger={
+            <Button variant="outline" size="icon" aria-label={`Edit ${k.name}`}>
+              <PencilIcon aria-hidden="true" />
+            </Button>
+          }
+          title="Edit API Key"
+          action={updateApiKeyAction.bind(null, k.id)}
+        >
+          <ApiKeyFields
+            defaults={{ name: k.name, type: k.type, baseUrl: k.baseUrl }}
+            lastChanged={changed}
+          />
+        </FormDialog>
+      ),
     };
   });
 

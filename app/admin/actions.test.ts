@@ -54,6 +54,7 @@ vi.mock("@/server/db", async (importOriginal) => {
 const {
   checkTestbedTypeDelete,
   createApiKeyAction,
+  updateApiKeyAction,
   createTestbedAction,
   createTestbedTypeAction,
   deleteTestbedTypeAction,
@@ -425,6 +426,19 @@ describe.skipIf(!hasDb)("API key actions", () => {
 
   const newName = () => `Key ${crypto.randomUUID().slice(0, 8)}`;
 
+  // A key inserted directly (the encrypt path is covered by createApiKey).
+  const makeKey = (trx: Kysely<DB>, name = newName()) =>
+    trx
+      .insertInto("api_keys")
+      .values({
+        name,
+        type: "IDP",
+        base_url: "https://acme.okta.example",
+        secret_ciphertext: "v1:test:placeholder",
+      })
+      .returning(["id", "name"])
+      .executeTakeFirstOrThrow();
+
   // covers: AC-10
   it.each([
     ["anonymous", "/l0gin"],
@@ -434,6 +448,12 @@ describe.skipIf(!hasDb)("API key actions", () => {
       const name = newName();
       expect(
         await redirectOf(() => createApiKeyAction(IDLE, keyForm(name))),
+      ).toBe(to);
+      expect(await keysNamed(trx, name)).toEqual([]);
+
+      const key = await makeKey(trx);
+      expect(
+        await redirectOf(() => updateApiKeyAction(key.id, IDLE, keyForm(name))),
       ).toBe(to);
       expect(await keysNamed(trx, name)).toEqual([]);
     }),
@@ -484,6 +504,81 @@ describe.skipIf(!hasDb)("API key actions", () => {
           fields: {},
         });
         expect(await keysNamed(trx, name)).toEqual([]);
+      },
+      false,
+    ));
+
+  // covers: AC-4, AC-5
+  it("saves an edit, keeping a blank key, and maps every refusal", () =>
+    as("admin", async (trx) => {
+      const key = await makeKey(trx);
+      const name = newName();
+      expect(await updateApiKeyAction(key.id, IDLE, keyForm(name, ""))).toEqual(
+        { kind: "saved", message: `Updated ${name}.` },
+      );
+      const row = await trx
+        .selectFrom("api_keys")
+        .select(["name", "secret_ciphertext"])
+        .where("id", "=", key.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ name, secret_ciphertext: "v1:test:placeholder" });
+
+      const other = await makeKey(trx);
+      expect(
+        await updateApiKeyAction(key.id, IDLE, keyForm(other.name, "")),
+      ).toEqual({
+        kind: "error",
+        fields: { name: "An API key with this name already exists." },
+      });
+
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id, {
+        idp_api_key_id: key.id,
+      });
+      const toAi = keyForm(name, "");
+      toAi.set("type", "AI");
+      expect(await updateApiKeyAction(key.id, IDLE, toAi)).toEqual({
+        kind: "error",
+        fields: {
+          type: `Used as the IDP by: ${testbed.name}. Remove it from them first.`,
+        },
+      });
+    }));
+
+  it("says the key is gone for a deleted key or a malformed id", () =>
+    as("admin", async (trx) => {
+      const key = await makeKey(trx);
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", key.id)
+        .execute();
+      const gone = {
+        kind: "error",
+        message: "This API key no longer exists.",
+        fields: {},
+      };
+      expect(
+        await updateApiKeyAction(key.id, IDLE, keyForm(newName())),
+      ).toEqual(gone);
+      expect(
+        await updateApiKeyAction("not-a-uuid", IDLE, keyForm(newName())),
+      ).toEqual(gone);
+    }));
+
+  it("refuses an edit without a keyring and writes nothing (AC-9)", () =>
+    as(
+      "admin",
+      async (trx) => {
+        const key = await makeKey(trx);
+        expect(
+          await updateApiKeyAction(key.id, IDLE, keyForm(newName(), "")),
+        ).toEqual({
+          kind: "error",
+          message: "Encryption isn't configured.",
+          fields: {},
+        });
+        expect(await keysNamed(trx, key.name)).toHaveLength(1);
       },
       false,
     ));

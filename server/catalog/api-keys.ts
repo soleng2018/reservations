@@ -1,6 +1,7 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
-import type { ApiKeyCreateInput } from "@/lib/catalog-input";
+import type { ApiKeyCreateInput, ApiKeyUpdateInput } from "@/lib/catalog-input";
+import { changedFields } from "@/lib/changed-fields";
 import { ApiKeyType } from "@/lib/db-enums";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
@@ -10,6 +11,7 @@ import {
   type Keyring,
 } from "@/server/crypto/secrets";
 import { mapConstraintError } from "@/server/db/constraint-errors";
+import { apiKeyBlockers } from "@/server/db/delete-blockers";
 import type { DB } from "@/server/db/types";
 
 // Feature 8 (spec 0006). A secret is written here and nowhere else: it is
@@ -98,6 +100,97 @@ export async function createApiKey(
         metadata: { type: input.type, baseUrl: input.baseUrl },
       });
       return ok({ id });
+    });
+  } catch (e) {
+    if (isDuplicateName(e)) return err("duplicate_name");
+    throw new Error(WRITE_FAILED);
+  }
+}
+
+export type ApiKeyUpdateError =
+  | "duplicate_name"
+  | "not_found"
+  | { readonly kind: "type_in_use"; readonly names: readonly string[] };
+
+const AUDITED_FIELDS = ["name", "type", "baseUrl"] as const;
+
+// AC-4, AC-5. The row lock serializes concurrent saves (the last one wins)
+// and holds the key while the type change check runs. A blank secret keeps
+// the stored one; a typed one is stored fresh (new IV) and bumps
+// secret_updated_at. A save that changes nothing writes nothing. A duplicate
+// name aborts the transaction, so it is mapped outside it.
+export async function updateApiKey(
+  conn: Kysely<DB>,
+  keyring: Keyring,
+  id: string,
+  input: ApiKeyUpdateInput,
+  actorId: string,
+): Promise<Result<void, ApiKeyUpdateError>> {
+  const ciphertext =
+    input.secret === ""
+      ? undefined
+      : encryptSecret(keyring, input.secret, aad(id));
+  try {
+    return await conn.transaction().execute(async (trx) => {
+      const row = await trx
+        .selectFrom("api_keys")
+        .select(["name", "type", "base_url"])
+        .where("id", "=", id)
+        .where("deleted_at", "is", null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row) return err("not_found");
+      const before = {
+        name: row.name,
+        type: ApiKeyType.parse(row.type),
+        baseUrl: row.base_url,
+      };
+      const changed = changedFields(AUDITED_FIELDS, before, input);
+      const fieldsChanged = Object.keys(changed).length > 0;
+      if (!fieldsChanged && ciphertext === undefined) return ok(undefined);
+
+      if (before.type === "IDP" && input.type === "AI") {
+        const blockers = await apiKeyBlockers(trx, id);
+        if (blockers.length > 0)
+          return err({
+            kind: "type_in_use",
+            names: blockers.map((b) => b.label),
+          });
+      }
+
+      await trx
+        .updateTable("api_keys")
+        .set({
+          ...("name" in changed ? { name: input.name } : {}),
+          ...("type" in changed ? { type: input.type } : {}),
+          ...("baseUrl" in changed ? { base_url: input.baseUrl } : {}),
+          ...(ciphertext === undefined
+            ? {}
+            : {
+                secret_ciphertext: ciphertext,
+                secret_updated_at: sql<Date>`now()`,
+              }),
+        })
+        .where("id", "=", id)
+        .execute();
+      if (fieldsChanged)
+        await audit(trx, {
+          actorUserId: actorId,
+          action: "api_key.updated",
+          targetType: "api_key",
+          targetId: id,
+          summary: "API key updated",
+          metadata: changed,
+        });
+      if (ciphertext !== undefined)
+        await audit(trx, {
+          actorUserId: actorId,
+          action: "api_key.secret_replaced",
+          targetType: "api_key",
+          targetId: id,
+          summary: "API key secret replaced",
+        });
+      return ok(undefined);
     });
   } catch (e) {
     if (isDuplicateName(e)) return err("duplicate_name");

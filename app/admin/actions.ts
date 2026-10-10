@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { API_KEY_MESSAGES } from "@/lib/api-keys";
+import { API_KEY_MESSAGES, typeInUseMessage } from "@/lib/api-keys";
 import {
   ApiKeyCreateInput,
+  ApiKeyUpdateInput,
   TestbedInput,
   TestbedTypeInput,
 } from "@/lib/catalog-input";
@@ -13,7 +14,7 @@ import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { ok, err, type Result } from "@/lib/result";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
-import { createApiKey } from "@/server/catalog/api-keys";
+import { createApiKey, updateApiKey } from "@/server/catalog/api-keys";
 import { createTestbed } from "@/server/catalog/testbeds";
 import {
   createTestbedType,
@@ -174,6 +175,57 @@ export async function createApiKeyAction(
   if (!created.ok) return DUPLICATE_KEY;
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
+}
+
+// AC-4, AC-5, AC-9. The page binds the row's id; a blank key keeps the
+// stored one.
+export async function updateApiKeyAction(
+  id: string,
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  const { user } = await requireAdmin();
+  const encryption = assertEncryptionEnv();
+  if (!encryption.ok) return NOT_CONFIGURED;
+  const parsed = ApiKeyUpdateInput.safeParse(apiKeyFields(form));
+  if (!parsed.success)
+    return { kind: "error", fields: fieldErrors(parsed.error) };
+  if (!isId(id))
+    return { kind: "error", message: API_KEY_MESSAGES.gone, fields: {} };
+
+  const updated = await updateApiKey(
+    db(),
+    encryption.value.keyring,
+    id,
+    parsed.data,
+    user.id,
+  );
+  if (!updated.ok) {
+    const e = updated.error;
+    if (typeof e === "object") {
+      switch (e.kind) {
+        case "type_in_use":
+          return { kind: "error", fields: { type: typeInUseMessage(e.names) } };
+        default: {
+          const never: never = e.kind;
+          return never;
+        }
+      }
+    }
+    switch (e) {
+      case "duplicate_name":
+        return DUPLICATE_KEY;
+      case "not_found":
+        revalidatePath("/admin", "layout");
+        return { kind: "error", message: API_KEY_MESSAGES.gone, fields: {} };
+      default: {
+        const never: never = e;
+        return never;
+      }
+    }
+  }
+  revalidatePath("/admin", "layout");
+  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
 }
 
 // AC-2. Clients arrive as parallel lists in form order.
