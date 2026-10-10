@@ -33,7 +33,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 2 | Coding standards & tooling | Foundation | done |
 | 3 | Data model | Foundation | done |
 | 4 | Authentik sign in & provisioning | Foundation | done |
-| 5 | Design system & UI foundation | Foundation | in-progress |
+| 5 | Design system & UI foundation | Foundation | done |
 | 6 | Core booking loop | Slice 1 | done |
 | 7 | Admin: Testbed Types | Slice 2 | planned |
 | 8 | Admin: API Keys | Slice 2 | planned |
@@ -92,7 +92,7 @@ Sign in through Authentik for two roles (admin, learner). Admin accounts already
 spec [0003](../specs/0003-authentik-sign-in-provisioning/index.md) · code in `server/auth/`, `server/authentik/`, `server/booking/guest-booking.ts`, `server/jobs/send-welcome.ts`, `app/reservations/`, `scripts/authentik-setup.ts`
 (basis: auth is high risk and every slice depends on it, so it is a foundation at a higher tier)
 
-### 5. Design system & UI foundation · in-progress
+### 5. Design system & UI foundation · done
 Take the Nile visual language from the mock (colors, type, logo, rounded cards and pills) and turn it into design tokens and base components: the admin shell with sidebar and mobile nav, searchable table, form modal, delete confirm, the "in use" blocked dialog, and the toast.
 **Done when:** `design.md` covers tokens and components, the base components handle keyboard and focus, and the admin shell matches the mock at desktop and mobile widths.
 - [x] Design it (spec): `/architect design system & UI foundation`
@@ -102,8 +102,8 @@ Take the Nile visual language from the mock (colors, type, logo, rounded cards a
   - [x] Testbeds section, placeholders, delete flow, and the dev gallery (AC-5, 8, 9, 12, 13)
   - [x] Admin sign in card and learner frame (AC-10, 11, 14)
   - [x] Axe, keyboard and screenshot specs, and the root `design.md` (AC-14, 15, 16)
-- [ ] Verify it: `/check verify design system & UI foundation`
-- [ ] Test it: `/test design system & UI foundation`
+- [x] Verify it: `/check verify design system & UI foundation`
+- [x] Test it: `/test design system & UI foundation`
 spec [0005](../specs/0005-design-system-ui-foundation/index.md) · code in `app/globals.css`, `components/ui/`, `components/admin/`, `components/learner-frame.tsx`, `app/admin/`, `design.md`
 
 ## Slice 1: Core booking loop
