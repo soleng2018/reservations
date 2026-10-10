@@ -148,3 +148,14 @@ export function dbEnv(): DbEnv {
   });
   return cached;
 }
+
+// Spec 0005: the only NODE_ENV read. Next sets it itself; anything other
+// than "production" (including a missing value) is not production.
+const nodeEnvSchema = z
+  .enum(["development", "production", "test"])
+  .optional()
+  .catch(undefined);
+
+export function isProduction(): boolean {
+  return nodeEnvSchema.parse(process.env.NODE_ENV) === "production";
+}

@@ -36,14 +36,17 @@ export function DataTable({
   rows,
   searchPlaceholder,
   noun,
+  defaultQuery = "",
 }: {
   readonly columns: readonly DataTableColumn[];
   readonly rows: readonly DataTableRow[];
   readonly searchPlaceholder: string;
   readonly noun: { readonly one: string; readonly many: string };
+  // Starts the search filled in (the gallery's no match state).
+  readonly defaultQuery?: string;
 }) {
   const searchId = useId();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(defaultQuery);
   const [touched, setTouched] = useState(false);
   const shown = filterRows(rows, query);
   const hasActions = rows.some((r) => r.actions !== undefined);

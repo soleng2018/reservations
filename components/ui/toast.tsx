@@ -72,6 +72,8 @@ function ToastTitle({ className, ...props }: ToastPrimitive.Title.Props) {
   return (
     <ToastPrimitive.Title
       data-slot="toast-title"
+      // A div, not Base UI's default h2: toasts stay out of the outline.
+      render={<div />}
       className={cn("text-sm font-semibold", className)}
       {...props}
     />
