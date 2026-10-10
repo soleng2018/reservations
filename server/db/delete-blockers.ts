@@ -1,14 +1,13 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
 import { LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
+import type { Blocker } from "@/lib/delete-flow";
 import type { DB } from "./types";
 
 // What stops a catalog soft delete (AC-4). The caller's transaction first
 // locks the target with lockForDelete, then runs the blocker query, then sets
 // deleted_at, so a concurrent booking (which holds FOR SHARE) cannot slip in
 // between the check and the delete (AC-14).
-
-export type Blocker = { readonly id: string; readonly label: string };
 
 // Locks a live catalog row FOR UPDATE. False when it is missing or already
 // soft deleted.

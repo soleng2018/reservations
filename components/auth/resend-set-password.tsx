@@ -43,7 +43,11 @@ export function ResendSetPassword({ siteKey }: { readonly siteKey: string }) {
       >
         {pending ? "Sending…" : "Resend the email"}
       </button>
-      <p role="status" aria-live="polite" className="text-sm text-zinc-500">
+      <p
+        role="status"
+        aria-live="polite"
+        className="text-sm text-muted-foreground"
+      >
         {state?.message}
       </p>
     </form>

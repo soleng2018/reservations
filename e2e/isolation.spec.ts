@@ -153,7 +153,7 @@ test("an admin opens leo before and after signing in to HOL", async ({
   await authentikLogin(page, admin);
   await expect.poll(() => new URL(page.url()).host).toBe(leo?.host);
   await signIn(page, "/l0gin", admin);
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin\/testbed-types$/);
   await open(page, leo?.launch ?? "");
   await expect.poll(() => new URL(page.url()).host).toBe(leo?.host);
 });

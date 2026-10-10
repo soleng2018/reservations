@@ -26,7 +26,7 @@ const text = (form: FormData, key: string) => {
 const texts = (form: FormData, key: string) =>
   form.getAll(key).map((v) => (typeof v === "string" ? v : ""));
 
-// AC-1. Create only; the list on /admin shows the result.
+// AC-1. Create only; the list on /admin/testbed-types shows the result.
 export async function createTestbedTypeAction(
   _prev: AdminFormState,
   form: FormData,
@@ -46,7 +46,7 @@ export async function createTestbedTypeAction(
       kind: "error",
       fields: { name: "A testbed type with this name already exists." },
     };
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
 }
 
@@ -94,6 +94,6 @@ export async function createTestbedAction(
       }
     }
   }
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
 }

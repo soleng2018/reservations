@@ -31,13 +31,13 @@ async function expectSignedOutOfAuthentik(
 }
 
 // covers: AC-1, AC-2, AC-12
-test("an admin signs in at the entry page, lands on /admin, and signs out back to it", async ({
+test("an admin signs in at the entry page, lands on the console, and signs out back to it", async ({
   page,
 }) => {
   await signIn(page, ADMIN_ENTRY, admin);
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin\/testbed-types$/);
   await expect(
-    page.getByRole("heading", { name: "Admin console" }),
+    page.getByRole("heading", { name: "Testbed Types" }),
   ).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
 
@@ -85,5 +85,5 @@ test("a learner who opens /admin is told they are not authorized", async ({
   await page.goto("/admin");
   await expect(page).toHaveURL(/reason=not_authorized/);
   await expect(page.getByText(/not authorized/i)).toBeVisible();
-  await expect(page.getByText(/admin console/i)).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Admin" })).toHaveCount(0);
 });

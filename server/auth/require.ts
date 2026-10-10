@@ -1,6 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { UserRole, UserStatus } from "@/lib/db-enums";
 import { db } from "@/server/db";
 import { adminEntryPath } from "@/server/env";
@@ -24,9 +25,12 @@ export type CurrentSession = {
   };
 };
 
-// The signed in app user, or undefined. Reads the DB session every time, so a
-// deleted session or deactivated row takes effect at once.
-export async function currentSession(): Promise<CurrentSession | undefined> {
+// The signed in app user, or undefined. Reads the DB session on every
+// request, so a deleted session or deactivated row takes effect at once;
+// cache() shares that one read between a layout and its page.
+export const currentSession = cache(async function currentSession(): Promise<
+  CurrentSession | undefined
+> {
   const found = await auth().api.getSession({ headers: await headers() });
   if (!found) return undefined;
   const row = await db()
@@ -47,7 +51,7 @@ export async function currentSession(): Promise<CurrentSession | undefined> {
       authUserId: found.user.id,
     },
   };
-}
+});
 
 async function requireRole(
   role: UserRole,

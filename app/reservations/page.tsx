@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ResendSetPassword } from "@/components/auth/resend-set-password";
-import { SignOutButton } from "@/components/auth/sign-out-button";
+import { LearnerFrame } from "@/components/learner-frame";
+import { Button } from "@/components/ui/button";
 import { currentSession } from "@/server/auth/require";
 import { turnstileEnv } from "@/server/env";
 import { signInWithSso } from "../auth/actions";
@@ -18,33 +19,32 @@ export default async function ReservationsPage() {
 
   if (!current)
     return (
-      <main className="flex flex-1 items-center justify-center p-6">
-        <div className="flex w-full max-w-sm flex-col gap-8 rounded-lg border p-8">
-          <form action={signInWithSso} className="flex flex-col gap-6">
-            <h1 className="text-xl font-semibold">
-              Manage an existing reservation
-            </h1>
-            <p className="text-sm text-zinc-500">
-              Sign in with the account you set up from your booking email.
-            </p>
-            <button
-              type="submit"
-              className="rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
-            >
-              Sign in
-            </button>
-          </form>
-          <ResendSetPassword siteKey={turnstileEnv().TURNSTILE_SITE_KEY} />
+      <LearnerFrame>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="flex w-full max-w-sm flex-col gap-8 rounded-lg border bg-card p-8">
+            <form action={signInWithSso} className="flex flex-col gap-6">
+              <h1 className="text-xl font-semibold">
+                Manage an existing reservation
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Sign in with the account you set up from your booking email.
+              </p>
+              <Button type="submit">Sign in</Button>
+            </form>
+            <ResendSetPassword siteKey={turnstileEnv().TURNSTILE_SITE_KEY} />
+          </div>
         </div>
-      </main>
+      </LearnerFrame>
     );
 
-  // Placeholder learner area until the reservations slice lands.
+  // Placeholder learner area until the reservations slice lands. Sign out
+  // is in the frame's top bar.
   return (
-    <main className="flex flex-1 flex-col gap-2 p-8">
-      <h1 className="text-xl font-semibold">Your reservations</h1>
-      <p>Signed in as {current.user.name}.</p>
-      <SignOutButton />
-    </main>
+    <LearnerFrame>
+      <div className="flex flex-1 flex-col gap-2 p-8">
+        <h1 className="text-xl font-semibold">Your reservations</h1>
+        <p>Signed in as {current.user.name}.</p>
+      </div>
+    </LearnerFrame>
   );
 }

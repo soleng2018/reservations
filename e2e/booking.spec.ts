@@ -38,26 +38,34 @@ test("an admin creates a type and a testbed, then a guest books it", async ({
 
   // AC-1, AC-2: the admin side.
   await signIn(page, ADMIN_ENTRY, admin);
-  await expect(page).toHaveURL(/\/admin$/);
-  await page.getByLabel("Name").first().fill(typeName);
-  await page.getByLabel("Duration").fill("1");
-  await page.getByRole("button", { name: "Create type" }).click();
+  await expect(page).toHaveURL(/\/admin\/testbed-types$/);
+  await page.getByRole("button", { name: "Add type" }).click();
+  const typeDialog = page.getByRole("dialog", { name: "Add testbed type" });
+  await typeDialog.getByLabel("Name").fill(typeName);
+  await typeDialog.getByLabel("Duration").fill("1");
+  await typeDialog.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(`Created ${typeName}.`)).toBeVisible();
+  await expect(typeDialog).toBeHidden();
+  await page.getByLabel("Search testbed types").fill(typeName);
   await expect(page.getByRole("cell", { name: typeName })).toBeVisible();
 
-  const testbedForm = page.locator("form", {
-    has: page.getByRole("button", { name: "Create testbed" }),
-  });
-  await testbedForm.getByLabel("Name").fill(testbedName);
+  await page.getByRole("link", { name: "Testbeds", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/testbeds$/);
+  await page.getByRole("button", { name: "Add testbed" }).click();
+  const testbedDialog = page.getByRole("dialog", { name: "Add testbed" });
+  await testbedDialog.getByLabel("Name").fill(testbedName);
   await choose(page, "Type", typeName);
-  await testbedForm
+  await testbedDialog
     .getByLabel("Nile Portal URL")
     .fill("https://portal.nile-test.invalid");
-  await testbedForm.getByLabel("LMS URL").fill("https://lms.nile-test.invalid");
-  await page.getByRole("button", { name: "Create testbed" }).click();
+  await testbedDialog
+    .getByLabel("LMS URL")
+    .fill("https://lms.nile-test.invalid");
+  await testbedDialog.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText(`Created ${testbedName}.`)).toBeVisible({
     timeout: 30_000,
   });
+  await page.getByLabel("Search testbeds").fill(testbedName);
   await expect(page.getByRole("cell", { name: `pod-${slug}` })).toBeVisible();
 
   if (haveApi) {
