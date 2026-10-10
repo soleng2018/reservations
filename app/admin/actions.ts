@@ -1,13 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { TestbedInput, TestbedTypeInput } from "@/lib/catalog-input";
+import type { Blocker, DeleteRemoveError } from "@/lib/delete-flow";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
+import { ok, err, type Result } from "@/lib/result";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
 import { createTestbed } from "@/server/catalog/testbeds";
-import { createTestbedType } from "@/server/catalog/testbed-types";
+import {
+  createTestbedType,
+  deleteTestbedType,
+  updateTestbedType,
+} from "@/server/catalog/testbed-types";
 import { db } from "@/server/db";
+import { testbedTypeBlockers } from "@/server/db/delete-blockers";
 
 export type AdminFormState =
   | { readonly kind: "idle" }
@@ -26,28 +34,96 @@ const text = (form: FormData, key: string) => {
 const texts = (form: FormData, key: string) =>
   form.getAll(key).map((v) => (typeof v === "string" ? v : ""));
 
-// AC-1. Create only; the list on /admin/testbed-types shows the result.
+const isId = (id: unknown): id is string => z.uuid().safeParse(id).success;
+
+const parseTestbedType = (form: FormData) =>
+  TestbedTypeInput.safeParse({
+    name: text(form, "name"),
+    durationValue: text(form, "durationValue"),
+    durationUnit: text(form, "durationUnit"),
+  });
+
+const DUPLICATE_TYPE: AdminFormState = {
+  kind: "error",
+  fields: { name: "A testbed type with this name already exists." },
+};
+const TYPE_GONE = "This testbed type no longer exists.";
+
+// AC-1. The list on /admin/testbed-types shows the result.
 export async function createTestbedTypeAction(
   _prev: AdminFormState,
   form: FormData,
 ): Promise<AdminFormState> {
   const { user } = await requireAdmin();
-  const parsed = TestbedTypeInput.safeParse({
-    name: text(form, "name"),
-    durationValue: text(form, "durationValue"),
-    durationUnit: text(form, "durationUnit"),
-  });
+  const parsed = parseTestbedType(form);
   if (!parsed.success)
     return { kind: "error", fields: fieldErrors(parsed.error) };
 
   const created = await createTestbedType(db(), parsed.data, user.id);
-  if (!created.ok)
-    return {
-      kind: "error",
-      fields: { name: "A testbed type with this name already exists." },
-    };
+  if (!created.ok) return DUPLICATE_TYPE;
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
+}
+
+// Feature 7. The page binds the row's id.
+export async function updateTestbedTypeAction(
+  id: string,
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  const { user } = await requireAdmin();
+  const parsed = parseTestbedType(form);
+  if (!parsed.success)
+    return { kind: "error", fields: fieldErrors(parsed.error) };
+  if (!isId(id)) return { kind: "error", message: TYPE_GONE, fields: {} };
+
+  const updated = await updateTestbedType(db(), id, parsed.data, user.id);
+  if (!updated.ok) {
+    switch (updated.error) {
+      case "duplicate_name":
+        return DUPLICATE_TYPE;
+      case "not_found":
+        revalidatePath("/admin", "layout");
+        return { kind: "error", message: TYPE_GONE, fields: {} };
+      default: {
+        const never: never = updated.error;
+        return never;
+      }
+    }
+  }
+  revalidatePath("/admin", "layout");
+  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+}
+
+// Feature 7, the delete flow's check: the live testbeds using this type.
+export async function checkTestbedTypeDelete(
+  id: string,
+): Promise<Result<readonly Blocker[], "unavailable">> {
+  await requireAdmin();
+  if (!isId(id)) return ok([]);
+  return ok(await testbedTypeBlockers(db(), id));
+}
+
+// Feature 7, the delete flow's remove (spec 0002 AC-4, AC-14).
+export async function deleteTestbedTypeAction(
+  id: string,
+): Promise<Result<void, DeleteRemoveError>> {
+  const { user } = await requireAdmin();
+  if (!isId(id)) return err({ kind: "failed", message: TYPE_GONE });
+
+  const deleted = await deleteTestbedType(db(), id, user.id);
+  revalidatePath("/admin", "layout");
+  if (deleted.ok) return ok(undefined);
+  switch (deleted.error.kind) {
+    case "blocked":
+      return err(deleted.error);
+    case "not_found":
+      return err({ kind: "failed", message: TYPE_GONE });
+    default: {
+      const never: never = deleted.error;
+      return never;
+    }
+  }
 }
 
 // AC-2. Clients arrive as parallel lists in form order.

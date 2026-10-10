@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { PlusIcon } from "lucide-react";
+import { PencilIcon, PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
+import { DeleteFlow } from "@/components/admin/delete-flow";
 import { FormDialog } from "@/components/admin/form-dialog";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
@@ -10,12 +11,19 @@ import { formatDuration } from "@/lib/duration";
 import { requireAdmin } from "@/server/auth/require";
 import { listTestbedTypes } from "@/server/catalog/testbed-types";
 import { db } from "@/server/db";
-import { createTestbedTypeAction } from "../actions";
+import {
+  checkTestbedTypeDelete,
+  createTestbedTypeAction,
+  deleteTestbedTypeAction,
+  updateTestbedTypeAction,
+} from "../actions";
 
 export const metadata: Metadata = { title: "Testbed Types" };
 
-// Spec 0005 AC-12 (spec 0004 AC-1): list and create. Edit and delete come
-// with feature 7.
+const usedBy = (n: number) => `${n} testbed${n === 1 ? "" : "s"}`;
+
+// Spec 0005 AC-12 plus feature 7: list, search, add, edit, and delete, with
+// how many testbeds use each type.
 export default async function TestbedTypesPage() {
   await requireAdmin();
   const types = await listTestbedTypes(db());
@@ -30,7 +38,40 @@ export default async function TestbedTypesPage() {
           <span className="text-cell font-semibold text-fg1">{t.name}</span>
         ),
         duration,
+        usage: usedBy(t.testbedCount),
       },
+      actions: (
+        <>
+          <FormDialog
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={`Edit ${t.name}`}
+              >
+                <PencilIcon aria-hidden="true" />
+              </Button>
+            }
+            title="Edit testbed type"
+            action={updateTestbedTypeAction.bind(null, t.id)}
+          >
+            <TestbedTypeFields
+              defaults={{
+                name: t.name,
+                durationValue: t.durationValue,
+                durationUnit: t.durationUnit,
+              }}
+            />
+          </FormDialog>
+          <DeleteFlow
+            kind="testbed_type"
+            id={t.id}
+            label={t.name}
+            check={checkTestbedTypeDelete}
+            remove={deleteTestbedTypeAction}
+          />
+        </>
+      ),
     };
   });
 
@@ -58,6 +99,7 @@ export default async function TestbedTypesPage() {
           columns={[
             { key: "name", header: "Type" },
             { key: "duration", header: "Duration" },
+            { key: "usage", header: "Used by" },
           ]}
           rows={rows}
           noun={{ one: "testbed type", many: "testbed types" }}

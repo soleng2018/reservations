@@ -35,7 +35,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 4 | Authentik sign in & provisioning | Foundation | done |
 | 5 | Design system & UI foundation | Foundation | done |
 | 6 | Core booking loop | Slice 1 | done |
-| 7 | Admin: Testbed Types | Slice 2 | planned |
+| 7 | Admin: Testbed Types | Slice 2 | in-progress |
 | 8 | Admin: API Keys | Slice 2 | planned |
 | 9 | Admin: Testbeds | Slice 2 | planned |
 | 10 | Admin: Users & user detail | Slice 2 | planned |
@@ -125,10 +125,11 @@ spec [0004](../specs/0004-core-booking-loop/index.md) · code in `app/book/`, `a
 
 ## Slice 2: Admin console (from the mock)
 
-### 7. Admin: Testbed Types
+### 7. Admin: Testbed Types · in-progress
 List, search, add, edit, and delete testbed types (name plus a duration in hours or days), with a count of the testbeds that use each type.
 **Done when:** the screen matches the mock; duration must be at least 1; deleting a type still used by testbeds is blocked and the dialog lists those testbeds.
-- [ ] Build it: `/develop admin: testbed types`
+- [x] Build it: `/develop admin: testbed types`
+code in `app/admin/testbed-types/`, `app/admin/actions.ts`, `server/catalog/testbed-types.ts`, `components/admin/testbed-type-fields.tsx` (rules from specs [0002](../specs/0002-data-model/index.md) AC-4, AC-5, AC-14 and [0005](../specs/0005-design-system-ui-foundation/index.md) delete flow)
 
 ### 8. Admin: API Keys · needs a decision · Full
 List, search, add, edit, and delete IDP and AI credentials (name, type, base URL, secret). Secrets are entered once and are write-only afterward: the list shows only a fixed mask, and there is no reveal or copy. Editing a key leaves the secret unchanged unless the admin types a replacement. Keys are stored only; no part of the app calls them yet (see Deferred).

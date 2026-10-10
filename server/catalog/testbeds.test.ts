@@ -103,8 +103,20 @@ describe.skipIf(!hasDb)("listTestbedTypes (AC-1)", () => {
         t.name.endsWith(tag),
       );
       expect(mine).toEqual([
-        { id: a.id, name: a.name, durationValue: 5, durationUnit: "days" },
-        { id: b.id, name: b.name, durationValue: 2, durationUnit: "hours" },
+        {
+          id: a.id,
+          name: a.name,
+          durationValue: 5,
+          durationUnit: "days",
+          testbedCount: 0,
+        },
+        {
+          id: b.id,
+          name: b.name,
+          durationValue: 2,
+          durationUnit: "hours",
+          testbedCount: 0,
+        },
       ]);
     }));
 });

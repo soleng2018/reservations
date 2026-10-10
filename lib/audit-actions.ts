@@ -25,5 +25,8 @@ export const AuditAction = z.enum([
   // The reconciler added or removed a learner in a pod group.
   "access.granted",
   "access.revoked",
+  // Feature 7.
+  "testbed_type.updated",
+  "testbed_type.deleted",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
