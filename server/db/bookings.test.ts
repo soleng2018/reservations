@@ -2,8 +2,10 @@ import { sql, type Insertable, type Kysely } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import {
+  bookableTestbedsOfType,
   cancelBooking,
   completeEndedForUser,
+  dbNow,
   lockBookableTestbed,
   rescheduleBooking,
 } from "./bookings";
@@ -374,6 +376,41 @@ describe.skipIf(!hasDb)("booking data rules", () => {
           error: "not_bookable",
         });
       }
+    }));
+
+  // covers: spec 0004 AC-5 (assignment order), AC-3 (bookable source)
+  it("lists a type's bookable testbeds by name ignoring case, skipping the rest", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const other = await makeType(trx);
+      const tag = crypto.randomUUID().slice(0, 8);
+      const b = await makeTestbed(trx, type.id, { name: `b ${tag}` });
+      const a = await makeTestbed(trx, type.id, { name: `A ${tag}` });
+      const c = await makeTestbed(trx, type.id, { name: `C ${tag}` });
+      await makeTestbed(trx, type.id, { authentik_group_pk: null });
+      await makeTestbed(trx, type.id, { deleted_at: new Date() });
+      await makeTestbed(trx, other.id);
+      expect(await bookableTestbedsOfType(trx, type.id)).toEqual([
+        { id: a.id, name: a.name },
+        { id: b.id, name: b.name },
+        { id: c.id, name: c.name },
+      ]);
+      expect(await bookableTestbedsOfType(trx, crypto.randomUUID())).toEqual(
+        [],
+      );
+    }));
+
+  // covers: spec 0004 AC-3, AC-7 (the DB is the clock)
+  it("reads now() from the database, fixed for the whole transaction", () =>
+    inRollback(async (trx) => {
+      const { rows } = await sql<{
+        now: Date;
+      }>`select now() as now`.execute(trx);
+      const first = await dbNow(trx);
+      await sql`select pg_sleep(0.01)`.execute(trx);
+      expect(first).toBeInstanceOf(Date);
+      expect(first).toEqual(rows[0]?.now);
+      expect(await dbNow(trx)).toEqual(first);
     }));
 
   it("lets a reschedule overlap its own old range but not another booking (AC-1, AC-12)", () =>

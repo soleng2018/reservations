@@ -101,6 +101,34 @@ export function turnstileEnv(): TurnstileEnv {
   return cachedTurnstile;
 }
 
+// Spec 0004. TRUST_PROXY_HEADERS is true only where every request arrives
+// through the Cloudflare Tunnel (production), so CF-Connecting-IP is real.
+const requestSchema = z.object({
+  TRUST_PROXY_HEADERS: z.stringbool().default(false),
+});
+
+let cachedRequest: z.infer<typeof requestSchema> | undefined;
+
+export function trustProxyHeaders(): boolean {
+  cachedRequest ??= requestSchema.parse({
+    TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS || undefined,
+  });
+  return cachedRequest.TRUST_PROXY_HEADERS;
+}
+
+// Worker only (spec 0001, 0004): `npm run worker` exits unless this is true.
+const workerSchema = z.object({
+  WORKER_ENABLED: z.stringbool().default(false),
+});
+
+export type WorkerEnv = z.infer<typeof workerSchema>;
+
+export function workerEnv(): WorkerEnv {
+  return workerSchema.parse({
+    WORKER_ENABLED: process.env.WORKER_ENABLED || undefined,
+  });
+}
+
 // The admin entry path only, for proxy.ts (it must not need the auth secrets).
 export function adminEntryPath(): string {
   return authSchema.shape.ADMIN_ENTRY_PATH.parse(

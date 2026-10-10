@@ -15,35 +15,64 @@ import {
   startGuestBooking,
   type GuestBookingInput,
   type SagaRef,
+  type StartedBooking,
+  type StepOneError,
 } from "@/server/db/guest-saga";
 import type { DB } from "@/server/db/types";
 import { enqueueWelcome, welcomeKey } from "@/server/jobs/send-welcome";
 
 // The guest booking saga with its Authentik step (spec 0001 saga, spec 0002
-// data steps, spec 0003 AC-5, 6, 15, 16). Feature 6 adds the form, Turnstile,
-// and booking rate limits in front of it. Constraint errors from step 1
-// propagate: map them with mapConstraintError.
+// data steps, spec 0003 AC-5, 6, 15, 16, spec 0004 AC-5 to AC-10). /book puts
+// Turnstile and the rate limits in front of it. It never writes pod group
+// membership: the worker's reconciler owns that.
 
 export type GuestBookingError =
-  | "admin_email" // "This email can't be used for booking."
-  | "refused" // the generic refusal
-  | "not_bookable"
+  | StepOneError
   | "unavailable" // "Sign in is temporarily unavailable, try again shortly"
   | "gone"; // the sweeper removed the hold: try again
+
+export type BookedGuest = StartedBooking & {
+  readonly newUser: boolean; // this saga created the Authentik user
+};
+
+// Thrown inside the step 1 transaction so a refusal rolls back every write
+// (the new users row included), then turned back into a Result outside.
+class StepOneRefusal extends Error {
+  constructor(readonly code: StepOneError) {
+    super(code);
+  }
+}
+
+async function runStepOne(
+  conn: Kysely<DB>,
+  input: GuestBookingInput,
+): Promise<Result<StartedBooking, StepOneError>> {
+  try {
+    return ok(
+      await conn.transaction().execute(async (trx) => {
+        const started = await startGuestBooking(trx, input);
+        if (!started.ok) throw new StepOneRefusal(started.error);
+        return started.value;
+      }),
+    );
+  } catch (e) {
+    if (e instanceof StepOneRefusal) return err(e.code);
+    throw e;
+  }
+}
 
 export async function bookAsGuest(
   api: CoreApi,
   conn: Kysely<DB>,
   input: GuestBookingInput,
-): Promise<Result<SagaRef, GuestBookingError>> {
-  const started = await conn
-    .transaction()
-    .execute((trx) => startGuestBooking(trx, input));
+): Promise<Result<BookedGuest, GuestBookingError>> {
+  const started = await runStepOne(conn, input);
   if (!started.ok) {
     if (started.error === "admin_email") await auditAdminEmail(conn, input);
     return started;
   }
-  const ref = started.value;
+  const booked = started.value;
+  const ref: SagaRef = { userId: booked.userId, bookingId: booked.bookingId };
 
   try {
     const learner = await findOrCreateLearner(api, {
@@ -52,7 +81,7 @@ export async function bookAsGuest(
       holUserId: ref.userId,
     });
     if (!learner.ok) {
-      await compensate(api, conn, ref);
+      await compensateGuestSaga(api, conn, ref);
       return err(await refusal(conn, ref, learner.error));
     }
     const { pk, created, tagged } = learner.value;
@@ -73,17 +102,26 @@ export async function bookAsGuest(
 
     const confirmed = await conn.transaction().execute(async (trx) => {
       const done = await confirmGuestBooking(trx, ref);
-      if (done.ok && created)
+      if (!done.ok) return done;
+      if (created)
         await enqueueWelcome(trx, ref.userId, welcomeKey(ref.userId));
+      await audit(trx, {
+        actorUserId: null,
+        action: "booking.created",
+        targetType: "booking",
+        targetId: ref.bookingId,
+        summary: "Guest booking confirmed",
+        metadata: { userId: ref.userId, testbedId: booked.testbedId },
+      });
       return done;
     });
     if (!confirmed.ok) {
-      await compensate(api, conn, ref);
+      await compensateGuestSaga(api, conn, ref);
       return confirmed;
     }
-    return ok(ref);
+    return ok({ ...booked, newUser: created });
   } catch (e) {
-    await compensate(api, conn, ref);
+    await compensateGuestSaga(api, conn, ref);
     throw e;
   }
 }
@@ -154,8 +192,9 @@ async function auditAdminEmail(
 }
 
 // Undo, never masking the outcome the user sees. A failed Authentik delete
-// is logged; the user it created stays tagged with its hol_user_id.
-async function compensate(
+// is logged; the user it created stays tagged with its hol_user_id. The
+// worker's saga sweeper runs the same undo.
+export async function compensateGuestSaga(
   api: CoreApi,
   conn: Kysely<DB>,
   ref: SagaRef,

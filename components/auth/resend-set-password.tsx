@@ -1,17 +1,11 @@
 "use client";
 
-import Script from "next/script";
 import { useActionState, useEffect } from "react";
 import {
   resendSetPassword,
   type ResendState,
 } from "@/app/reservations/actions";
-
-declare global {
-  interface Window {
-    turnstile?: { reset: () => void };
-  }
-}
+import { resetTurnstile, Turnstile } from "@/components/turnstile";
 
 // "Resend the set password email" (spec 0003 AC-8). The Turnstile widget
 // adds its token to the form as `cf-turnstile-response`.
@@ -23,15 +17,11 @@ export function ResendSetPassword({ siteKey }: { readonly siteKey: string }) {
 
   // A token is single use: get a fresh one after each reply.
   useEffect(() => {
-    if (state) window.turnstile?.reset();
+    if (state) resetTurnstile();
   }, [state]);
 
   return (
     <form action={action} className="flex flex-col gap-3">
-      <Script
-        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-        strategy="afterInteractive"
-      />
       <h2 className="text-sm font-medium">
         Didn&apos;t get the set password email?
       </h2>
@@ -45,7 +35,7 @@ export function ResendSetPassword({ siteKey }: { readonly siteKey: string }) {
           className="rounded-md border px-3 py-2"
         />
       </label>
-      <div className="cf-turnstile" data-sitekey={siteKey} />
+      <Turnstile siteKey={siteKey} />
       <button
         type="submit"
         disabled={pending}

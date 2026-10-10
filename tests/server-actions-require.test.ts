@@ -8,6 +8,9 @@ const PUBLIC_ACTIONS = new Set([
   "app/auth/actions.ts#signInWithSso",
   "app/auth/actions.ts#signOut",
   "app/reservations/actions.ts#resendSetPassword",
+  // Spec 0004 AC-13: guest booking, guarded by Turnstile and rate limits.
+  "app/book/actions.ts#loadStartsAction",
+  "app/book/actions.ts#bookAction",
 ]);
 
 const root = path.resolve(__dirname, "..");
