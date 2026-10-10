@@ -14,7 +14,11 @@ import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { ok, err, type Result } from "@/lib/result";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
-import { createApiKey, updateApiKey } from "@/server/catalog/api-keys";
+import {
+  createApiKey,
+  deleteApiKey,
+  updateApiKey,
+} from "@/server/catalog/api-keys";
 import { createTestbed } from "@/server/catalog/testbeds";
 import {
   createTestbedType,
@@ -22,7 +26,10 @@ import {
   updateTestbedType,
 } from "@/server/catalog/testbed-types";
 import { db } from "@/server/db";
-import { testbedTypeBlockers } from "@/server/db/delete-blockers";
+import {
+  apiKeyBlockers,
+  testbedTypeBlockers,
+} from "@/server/db/delete-blockers";
 import { assertEncryptionEnv } from "@/server/env";
 
 export type AdminFormState =
@@ -226,6 +233,39 @@ export async function updateApiKeyAction(
   }
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+}
+
+// AC-6, the delete flow's check: the live testbeds using this key as their
+// IDP.
+export async function checkApiKeyDelete(
+  id: string,
+): Promise<Result<readonly Blocker[], "unavailable">> {
+  await requireAdmin();
+  if (!isId(id)) return ok([]);
+  return ok(await apiKeyBlockers(db(), id));
+}
+
+// AC-6, the delete flow's remove (spec 0002 AC-14).
+export async function deleteApiKeyAction(
+  id: string,
+): Promise<Result<void, DeleteRemoveError>> {
+  const { user } = await requireAdmin();
+  const gone = { kind: "failed", message: API_KEY_MESSAGES.gone } as const;
+  if (!isId(id)) return err(gone);
+
+  const deleted = await deleteApiKey(db(), id, user.id);
+  revalidatePath("/admin", "layout");
+  if (deleted.ok) return ok(undefined);
+  switch (deleted.error.kind) {
+    case "blocked":
+      return err(deleted.error);
+    case "not_found":
+      return err(gone);
+    default: {
+      const never: never = deleted.error;
+      return never;
+    }
+  }
 }
 
 // AC-2. Clients arrive as parallel lists in form order.

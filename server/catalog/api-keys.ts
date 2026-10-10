@@ -3,6 +3,7 @@ import { sql, type Kysely } from "kysely";
 import type { ApiKeyCreateInput, ApiKeyUpdateInput } from "@/lib/catalog-input";
 import { changedFields } from "@/lib/changed-fields";
 import { ApiKeyType } from "@/lib/db-enums";
+import type { Blocker } from "@/lib/delete-flow";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
 import {
@@ -11,7 +12,7 @@ import {
   type Keyring,
 } from "@/server/crypto/secrets";
 import { mapConstraintError } from "@/server/db/constraint-errors";
-import { apiKeyBlockers } from "@/server/db/delete-blockers";
+import { apiKeyBlockers, lockForDelete } from "@/server/db/delete-blockers";
 import type { DB } from "@/server/db/types";
 
 // Feature 8 (spec 0006). A secret is written here and nowhere else: it is
@@ -194,6 +195,44 @@ export async function updateApiKey(
     });
   } catch (e) {
     if (isDuplicateName(e)) return err("duplicate_name");
+    throw new Error(WRITE_FAILED);
+  }
+}
+
+export type DeleteApiKeyError =
+  | { readonly kind: "blocked"; readonly blockers: readonly Blocker[] }
+  | { readonly kind: "not_found" };
+
+// AC-6 (spec 0002 AC-14). Lock, check the blockers again, then soft delete,
+// so a testbed assigned meanwhile cannot slip in. The name is free for
+// reuse afterwards (unique among live rows only).
+export async function deleteApiKey(
+  conn: Kysely<DB>,
+  id: string,
+  actorId: string,
+): Promise<Result<void, DeleteApiKeyError>> {
+  try {
+    return await conn.transaction().execute(async (trx) => {
+      if (!(await lockForDelete(trx, "api_keys", id)))
+        return err({ kind: "not_found" });
+      const blockers = await apiKeyBlockers(trx, id);
+      if (blockers.length > 0) return err({ kind: "blocked", blockers });
+
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: sql<Date>`now()` })
+        .where("id", "=", id)
+        .execute();
+      await audit(trx, {
+        actorUserId: actorId,
+        action: "api_key.deleted",
+        targetType: "api_key",
+        targetId: id,
+        summary: "API key deleted",
+      });
+      return ok(undefined);
+    });
+  } catch {
     throw new Error(WRITE_FAILED);
   }
 }

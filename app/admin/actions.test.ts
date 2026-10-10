@@ -52,8 +52,10 @@ vi.mock("@/server/db", async (importOriginal) => {
 });
 
 const {
+  checkApiKeyDelete,
   checkTestbedTypeDelete,
   createApiKeyAction,
+  deleteApiKeyAction,
   updateApiKeyAction,
   createTestbedAction,
   createTestbedTypeAction,
@@ -456,6 +458,11 @@ describe.skipIf(!hasDb)("API key actions", () => {
         await redirectOf(() => updateApiKeyAction(key.id, IDLE, keyForm(name))),
       ).toBe(to);
       expect(await keysNamed(trx, name)).toEqual([]);
+      expect(await redirectOf(() => checkApiKeyDelete(key.id))).toBe(to);
+      expect(await redirectOf(() => deleteApiKeyAction(key.id))).toBe(to);
+      expect(await keysNamed(trx, key.name)).toMatchObject([
+        { deleted_at: null },
+      ]);
     }),
   );
 
@@ -582,4 +589,44 @@ describe.skipIf(!hasDb)("API key actions", () => {
       },
       false,
     ));
+
+  // covers: AC-6
+  it("checks and deletes a key, blocked while a testbed uses it", () =>
+    as("admin", async (trx) => {
+      const key = await makeKey(trx);
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id, {
+        idp_api_key_id: key.id,
+      });
+      const blockers = [{ id: testbed.id, label: testbed.name }];
+      expect(await checkApiKeyDelete(key.id)).toEqual({
+        ok: true,
+        value: blockers,
+      });
+      expect(await deleteApiKeyAction(key.id)).toEqual({
+        ok: false,
+        error: { kind: "blocked", blockers },
+      });
+
+      await trx
+        .updateTable("testbeds")
+        .set({ idp_api_key_id: null })
+        .where("id", "=", testbed.id)
+        .execute();
+      expect(await checkApiKeyDelete(key.id)).toEqual({ ok: true, value: [] });
+      expect(await deleteApiKeyAction(key.id)).toEqual({
+        ok: true,
+        value: undefined,
+      });
+      const gone = {
+        ok: false,
+        error: { kind: "failed", message: "This API key no longer exists." },
+      };
+      expect(await deleteApiKeyAction(key.id)).toEqual(gone);
+      expect(await deleteApiKeyAction("not-a-uuid")).toEqual(gone);
+      expect(await checkApiKeyDelete("not-a-uuid")).toEqual({
+        ok: true,
+        value: [],
+      });
+    }));
 });

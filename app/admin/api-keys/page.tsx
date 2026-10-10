@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { KeyRoundIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { ApiKeyFields } from "@/components/admin/api-key-fields";
 import { DataTable } from "@/components/admin/data-table";
+import { DeleteFlow } from "@/components/admin/delete-flow";
 import { FormDialog } from "@/components/admin/form-dialog";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
@@ -21,7 +22,12 @@ import { requireAdmin } from "@/server/auth/require";
 import { listApiKeys } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
 import { assertEncryptionEnv } from "@/server/env";
-import { createApiKeyAction, updateApiKeyAction } from "../actions";
+import {
+  checkApiKeyDelete,
+  createApiKeyAction,
+  deleteApiKeyAction,
+  updateApiKeyAction,
+} from "../actions";
 
 export const metadata: Metadata = { title: "API Keys" };
 
@@ -71,20 +77,33 @@ export default async function ApiKeysPage() {
         ),
       },
       actions: (
-        <FormDialog
-          trigger={
-            <Button variant="outline" size="icon" aria-label={`Edit ${k.name}`}>
-              <PencilIcon aria-hidden="true" />
-            </Button>
-          }
-          title="Edit API Key"
-          action={updateApiKeyAction.bind(null, k.id)}
-        >
-          <ApiKeyFields
-            defaults={{ name: k.name, type: k.type, baseUrl: k.baseUrl }}
-            lastChanged={changed}
+        <>
+          <FormDialog
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={`Edit ${k.name}`}
+              >
+                <PencilIcon aria-hidden="true" />
+              </Button>
+            }
+            title="Edit API Key"
+            action={updateApiKeyAction.bind(null, k.id)}
+          >
+            <ApiKeyFields
+              defaults={{ name: k.name, type: k.type, baseUrl: k.baseUrl }}
+              lastChanged={changed}
+            />
+          </FormDialog>
+          <DeleteFlow
+            kind="api_key"
+            id={k.id}
+            label={k.name}
+            check={checkApiKeyDelete}
+            remove={deleteApiKeyAction}
           />
-        </FormDialog>
+        </>
       ),
     };
   });
