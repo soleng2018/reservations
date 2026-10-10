@@ -19,3 +19,9 @@ export function durationMs(value: number, unit: DurationUnit): number {
     }
   }
 }
+
+// A type's length as admins read it: "1 hour", "2 days".
+export function formatDuration(value: number, unit: DurationUnit): string {
+  const singular = unit === "hours" ? "hour" : "day";
+  return `${value} ${value === 1 ? singular : unit}`;
+}

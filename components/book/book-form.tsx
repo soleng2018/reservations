@@ -14,7 +14,7 @@ import {
   loadStartsAction,
   type BookState,
 } from "@/app/book/actions";
-import { errorId, FormField } from "@/components/form-field";
+import { Field } from "@/components/field";
 import { FormSelect, type SelectOption } from "@/components/form-select";
 import { resetTurnstile, Turnstile } from "@/components/turnstile";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import { browserTimeZone, timezoneOptions } from "@/lib/timezones";
 import { BookingConfirmation } from "./booking-confirmation";
 
 const VISIBLE_DAYS = 7;
+const STARTS_ERROR_ID = "book-startsAt-error";
 const IDLE: BookState = { kind: "idle" };
 
 type Starts =
@@ -104,10 +105,6 @@ export function BookForm({
   if (state.kind === "booked") return <BookingConfirmation booking={state} />;
 
   const fields = state.kind === "error" ? state.fields : {};
-  const invalid = (name: string) => ({
-    "aria-invalid": Boolean(fields[name]) || undefined,
-    "aria-describedby": fields[name] ? errorId(`book-${name}`) : undefined,
-  });
   const days =
     starts.kind === "ready"
       ? groupByDay(
@@ -120,56 +117,41 @@ export function BookForm({
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
       <div className="grid gap-4 sm:grid-cols-2">
-        <FormField id="book-name" label="Name" error={fields.name}>
+        <Field path="name" label="Name" error={fields.name}>
+          <Input name="name" autoComplete="name" required maxLength={200} />
+        </Field>
+        <Field path="company" label="Company" error={fields.company}>
           <Input
-            id="book-name"
-            name="name"
-            autoComplete="name"
-            required
-            maxLength={200}
-            {...invalid("name")}
-          />
-        </FormField>
-        <FormField id="book-company" label="Company" error={fields.company}>
-          <Input
-            id="book-company"
             name="company"
             autoComplete="organization"
             required
             maxLength={200}
-            {...invalid("company")}
           />
-        </FormField>
-        <FormField id="book-email" label="Email" error={fields.email}>
+        </Field>
+        <Field path="email" label="Email" error={fields.email}>
           <Input
-            id="book-email"
             name="email"
             type="email"
             autoComplete="email"
             required
             maxLength={254}
-            {...invalid("email")}
           />
-        </FormField>
-        <FormField id="book-timezone" label="Timezone" error={fields.timezone}>
+        </Field>
+        <Field path="timezone" label="Timezone" error={fields.timezone}>
           <FormSelect
-            id="book-timezone"
             name="timezone"
             options={zones}
             placeholder="Choose a timezone"
             value={timezone}
             onValueChange={setChosenZone}
-            invalid={Boolean(fields.timezone)}
-            describedBy={fields.timezone ? errorId("book-timezone") : undefined}
           />
-        </FormField>
-        <FormField
-          id="book-testbedTypeId"
+        </Field>
+        <Field
+          path="testbedTypeId"
           label="Lab type"
           error={fields.testbedTypeId}
         >
           <FormSelect
-            id="book-testbedTypeId"
             name="testbedTypeId"
             options={types}
             placeholder="Choose a lab type"
@@ -180,19 +162,13 @@ export function BookForm({
               setAllDays(false);
               void reload(id);
             }}
-            invalid={Boolean(fields.testbedTypeId)}
-            describedBy={
-              fields.testbedTypeId ? errorId("book-testbedTypeId") : undefined
-            }
           />
-        </FormField>
+        </Field>
       </div>
 
       <fieldset
         className="flex flex-col gap-4"
-        aria-describedby={
-          fields.startsAt ? errorId("book-startsAt") : undefined
-        }
+        aria-describedby={fields.startsAt ? STARTS_ERROR_ID : undefined}
       >
         <legend className="mb-2 text-sm font-medium">Start time</legend>
         {starts.kind === "none" ? (
@@ -253,7 +229,7 @@ export function BookForm({
           </>
         )}
         {fields.startsAt ? (
-          <p id={errorId("book-startsAt")} className="text-sm text-destructive">
+          <p id={STARTS_ERROR_ID} className="text-sm text-destructive">
             {fields.startsAt}
           </p>
         ) : null}
