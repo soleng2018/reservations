@@ -168,7 +168,12 @@ export function DeleteFlow({
           <DialogDescription className="mt-2">
             {copy.message(label)}
           </DialogDescription>
-          <ul className="mt-3.5 flex max-h-40 flex-col gap-1.5 overflow-y-auto">
+          {/* Focusable, so a keyboard can scroll a long list. */}
+          <ul
+            tabIndex={0}
+            aria-label={copy.listLabel}
+            className="mt-3.5 flex max-h-40 flex-col gap-1.5 overflow-y-auto rounded-sm"
+          >
             {blockers.map((b) => (
               <li
                 key={b.id}

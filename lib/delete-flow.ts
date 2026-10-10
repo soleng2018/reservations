@@ -26,6 +26,7 @@ export type DeleteRemove = (
 type BlockedCopy = {
   readonly title: string;
   readonly message: (label: string) => string;
+  readonly listLabel: string; // the blocker list's accessible name
 };
 
 // The blocked dialog's copy per kind, from the mock.
@@ -34,16 +35,19 @@ export const BLOCKED_COPY: Readonly<Record<DeleteKind, BlockedCopy>> = {
     title: "API key in use",
     message: (label) =>
       `"${label}" is assigned to the testbeds below. Remove it from them first.`,
+    listLabel: "Testbeds using this key",
   },
   testbed_type: {
     title: "Testbed type in use",
     message: (label) =>
       `"${label}" is assigned to the testbeds below. Reassign or delete them first.`,
+    listLabel: "Testbeds using this type",
   },
   testbed: {
     title: "Testbed has active reservations",
     message: (label) =>
       `"${label}" has upcoming or current reservations below. Resolve them first.`,
+    listLabel: "Upcoming and current reservations",
   },
 };
 

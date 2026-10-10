@@ -96,15 +96,15 @@ spec [0003](../specs/0003-authentik-sign-in-provisioning/index.md) · code in `s
 Take the Nile visual language from the mock (colors, type, logo, rounded cards and pills) and turn it into design tokens and base components: the admin shell with sidebar and mobile nav, searchable table, form modal, delete confirm, the "in use" blocked dialog, and the toast.
 **Done when:** `design.md` covers tokens and components, the base components handle keyboard and focus, and the admin shell matches the mock at desktop and mobile widths.
 - [x] Design it (spec): `/architect design system & UI foundation`
-- [ ] Build it: `/develop design system & UI foundation`
+- [x] Build it: `/develop design system & UI foundation`
   - [x] Tokens, Inter, logo and icons, with the contrast and style guard tests (AC-1, 2)
   - [x] Shell tracer on Testbed Types: nav plus Sheet, PageHeader, PageBody, DataTable, FormDialog, toast (AC-3, 4, 5, 6, 7, 9, 12, 14)
   - [x] Testbeds section, placeholders, delete flow, and the dev gallery (AC-5, 8, 9, 12, 13)
   - [x] Admin sign in card and learner frame (AC-10, 11, 14)
-  - [ ] Axe, keyboard and screenshot specs, and the root `design.md` (AC-14, 15, 16)
+  - [x] Axe, keyboard and screenshot specs, and the root `design.md` (AC-14, 15, 16)
 - [ ] Verify it: `/check verify design system & UI foundation`
 - [ ] Test it: `/test design system & UI foundation`
-spec [0005](../specs/0005-design-system-ui-foundation/index.md)
+spec [0005](../specs/0005-design-system-ui-foundation/index.md) · code in `app/globals.css`, `components/ui/`, `components/admin/`, `components/learner-frame.tsx`, `app/admin/`, `design.md`
 
 ## Slice 1: Core booking loop
 

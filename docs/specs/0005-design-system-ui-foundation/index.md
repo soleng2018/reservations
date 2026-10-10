@@ -323,7 +323,7 @@ Tracer Bullet: first one real admin screen runs through the new tokens, shell, t
 3. [x] Thicken the console: `/admin/testbeds` with `TestbedFields` (client rows) in the form modal and the type list loaded for its select, the API Keys and Users placeholders, delete `use-form-key.ts`, `FormStatus` and `form-field.tsx`, and update `e2e/booking.spec.ts` to the modals and "Save", satisfies **AC-5**, **AC-12**
 4. [x] Delete flow and gallery: `lib/delete-flow.ts` (types, copy, `Blocker` moved), DeleteFlow with the confirm and blocked dialogs and thrown error handling, the error toast, `isProduction()` in `server/env.ts` (and its unit test), and `/admin/ui-gallery` with browser fakes (including ones that throw), satisfies **AC-8**, **AC-9**, **AC-13**
 5. [x] Sign in card and learner frame: restyle the admin entry page; build LearnerFrame (with its Sign out form) and wrap `/`, `/book`, `/reservations` and `/auth/error` in it where they are; turn each page's own `<main>` into a `<div>`; replace the raw `bg-black`, `dark:` and `zinc` classes in `/reservations` and `/auth/error` with `Button` and tokens, satisfies **AC-10**, **AC-11**, **AC-14**
-6. [ ] Proof and reference: add `@axe-core/playwright`; write the axe and keyboard specs and the screenshot spec at 1280 and 390; write the root `design.md`, satisfies **AC-14**, **AC-15**, **AC-16**
+6. [x] Proof and reference: add `@axe-core/playwright`; write the axe and keyboard specs and the screenshot spec at 1280 and 390; write the root `design.md`, satisfies **AC-14**, **AC-15**, **AC-16**
 
 ## Consequences
 
