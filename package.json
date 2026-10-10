@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "authentik:setup": "tsx scripts/authentik-setup.ts",
+    "secrets:keygen": "tsx --conditions=react-server scripts/secrets-keygen.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
