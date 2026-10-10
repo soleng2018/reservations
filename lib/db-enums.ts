@@ -31,11 +31,22 @@ export const JobKind = z.enum([
   "send_email",
   "calendar_upsert",
   "calendar_delete",
+  "send_welcome",
 ]);
 export type JobKind = z.infer<typeof JobKind>;
 
 export const JobStatus = z.enum(["pending", "running", "done", "failed"]);
 export type JobStatus = z.infer<typeof JobStatus>;
+
+export const AuditTargetType = z.enum([
+  "testbed_type",
+  "testbed",
+  "api_key",
+  "user",
+  "booking",
+  "authentik_group",
+]);
+export type AuditTargetType = z.infer<typeof AuditTargetType>;
 
 // Statuses that hold a testbed slot and count toward one live booking per user.
 export const LIVE_BOOKING_STATUSES = [
@@ -53,4 +64,5 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "bookings.cancel_source": CancelSource.options,
   "jobs.kind": JobKind.options,
   "jobs.status": JobStatus.options,
+  "audit_events.target_type": AuditTargetType.options,
 };
