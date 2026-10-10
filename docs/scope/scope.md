@@ -97,7 +97,7 @@ Take the Nile visual language from the mock (colors, type, logo, rounded cards a
 **Done when:** `design.md` covers tokens and components, the base components handle keyboard and focus, and the admin shell matches the mock at desktop and mobile widths.
 - [x] Design it (spec): `/architect design system & UI foundation`
 - [ ] Build it: `/develop design system & UI foundation`
-  - [ ] Tokens, Inter, logo and icons, with the contrast and style guard tests (AC-1, 2)
+  - [x] Tokens, Inter, logo and icons, with the contrast and style guard tests (AC-1, 2)
   - [ ] Shell tracer on Testbed Types: nav plus Sheet, PageHeader, PageBody, DataTable, FormDialog, toast (AC-3, 4, 5, 6, 7, 9, 12, 14)
   - [ ] Testbeds section, placeholders, delete flow, and the dev gallery (AC-5, 8, 9, 12, 13)
   - [ ] Admin sign in card and learner frame (AC-10, 11, 14)

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Button } from "@/components/ui/button";
 import { signInWithSso } from "../actions";
 
 // Served only at ADMIN_ENTRY_PATH (proxy.ts rewrites to it and 404s this
@@ -16,12 +17,7 @@ export default function AdminEntryPage() {
         className="flex w-full max-w-sm flex-col gap-6 rounded-lg border p-8"
       >
         <h1 className="text-xl font-semibold">Nile Hands-On Lab admin</h1>
-        <button
-          type="submit"
-          className="rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
-        >
-          Sign in with SSO
-        </button>
+        <Button type="submit">Sign in with SSO</Button>
       </form>
     </main>
   );

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ResendSetPassword } from "@/components/auth/resend-set-password";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { Button } from "@/components/ui/button";
 import { currentSession } from "@/server/auth/require";
 import { turnstileEnv } from "@/server/env";
 import { signInWithSso } from "../auth/actions";
@@ -24,15 +25,10 @@ export default async function ReservationsPage() {
             <h1 className="text-xl font-semibold">
               Manage an existing reservation
             </h1>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted-foreground">
               Sign in with the account you set up from your booking email.
             </p>
-            <button
-              type="submit"
-              className="rounded-md bg-black px-4 py-2 text-white dark:bg-white dark:text-black"
-            >
-              Sign in
-            </button>
+            <Button type="submit">Sign in</Button>
           </form>
           <ResendSetPassword siteKey={turnstileEnv().TURNSTILE_SITE_KEY} />
         </div>

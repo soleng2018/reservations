@@ -28,7 +28,7 @@ export default async function AuthErrorPage({
             Reserve a lab
           </Link>
         ) : (
-          <Link href="/" className="text-sm text-zinc-500 underline">
+          <Link href="/" className="text-sm text-muted-foreground underline">
             Back to the home page
           </Link>
         )}
