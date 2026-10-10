@@ -35,7 +35,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 4 | Authentik sign in & provisioning | Foundation | done |
 | 5 | Design system & UI foundation | Foundation | done |
 | 6 | Core booking loop | Slice 1 | done |
-| 7 | Admin: Testbed Types | Slice 2 | in-progress |
+| 7 | Admin: Testbed Types | Slice 2 | done |
 | 8 | Admin: API Keys | Slice 2 | planned |
 | 9 | Admin: Testbeds | Slice 2 | planned |
 | 10 | Admin: Users & user detail | Slice 2 | planned |
@@ -125,7 +125,7 @@ spec [0004](../specs/0004-core-booking-loop/index.md) · code in `app/book/`, `a
 
 ## Slice 2: Admin console (from the mock)
 
-### 7. Admin: Testbed Types · in-progress
+### 7. Admin: Testbed Types · done
 List, search, add, edit, and delete testbed types (name plus a duration in hours or days), with a count of the testbeds that use each type.
 **Done when:** the screen matches the mock; duration must be at least 1; deleting a type still used by testbeds is blocked and the dialog lists those testbeds.
 - [x] Build it: `/develop admin: testbed types`
