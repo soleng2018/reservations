@@ -2,12 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { TestbedInput, TestbedTypeInput } from "@/lib/catalog-input";
+import { API_KEY_MESSAGES } from "@/lib/api-keys";
+import {
+  ApiKeyCreateInput,
+  TestbedInput,
+  TestbedTypeInput,
+} from "@/lib/catalog-input";
 import type { Blocker, DeleteRemoveError } from "@/lib/delete-flow";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { ok, err, type Result } from "@/lib/result";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
+import { createApiKey } from "@/server/catalog/api-keys";
 import { createTestbed } from "@/server/catalog/testbeds";
 import {
   createTestbedType,
@@ -16,6 +22,7 @@ import {
 } from "@/server/catalog/testbed-types";
 import { db } from "@/server/db";
 import { testbedTypeBlockers } from "@/server/db/delete-blockers";
+import { assertEncryptionEnv } from "@/server/env";
 
 export type AdminFormState =
   | { readonly kind: "idle" }
@@ -124,6 +131,49 @@ export async function deleteTestbedTypeAction(
       return never;
     }
   }
+}
+
+// Feature 8 (spec 0006). The secret is read from the form, encrypted, and
+// never sent back: errors carry fixed messages, and the dialog keeps what
+// was typed on the client.
+const apiKeyFields = (form: FormData) => ({
+  name: text(form, "name"),
+  type: text(form, "type"),
+  baseUrl: text(form, "baseUrl"),
+  secret: text(form, "secret") ?? "",
+});
+
+const NOT_CONFIGURED: AdminFormState = {
+  kind: "error",
+  message: API_KEY_MESSAGES.notConfigured,
+  fields: {},
+};
+const DUPLICATE_KEY: AdminFormState = {
+  kind: "error",
+  fields: { name: API_KEY_MESSAGES.duplicateName },
+};
+
+// AC-2, AC-3, AC-9.
+export async function createApiKeyAction(
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  const { user } = await requireAdmin();
+  const encryption = assertEncryptionEnv();
+  if (!encryption.ok) return NOT_CONFIGURED;
+  const parsed = ApiKeyCreateInput.safeParse(apiKeyFields(form));
+  if (!parsed.success)
+    return { kind: "error", fields: fieldErrors(parsed.error) };
+
+  const created = await createApiKey(
+    db(),
+    encryption.value.keyring,
+    parsed.data,
+    user.id,
+  );
+  if (!created.ok) return DUPLICATE_KEY;
+  revalidatePath("/admin", "layout");
+  return { kind: "saved", message: `Created ${parsed.data.name}.` };
 }
 
 // AC-2. Clients arrive as parallel lists in form order.

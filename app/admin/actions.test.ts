@@ -1,5 +1,7 @@
+import { randomBytes } from "node:crypto";
 import type { Kysely } from "kysely";
 import { describe, expect, it, vi } from "vitest";
+import type { Keyring } from "@/server/crypto/secrets";
 import type { DB } from "@/server/db/types";
 
 class Redirect extends Error {
@@ -11,6 +13,8 @@ class Redirect extends Error {
 const ctx = vi.hoisted(() => ({
   conn: undefined as Kysely<DB> | undefined,
   authUserId: undefined as string | undefined,
+  // The keyring the API key actions see; undefined means not configured.
+  keyring: undefined as Keyring | undefined,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -37,6 +41,10 @@ vi.mock("@/server/auth", () => ({
 vi.mock("@/server/env", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   adminEntryPath: () => "/l0gin",
+  assertEncryptionEnv: () =>
+    ctx.keyring
+      ? { ok: true, value: { keyring: ctx.keyring } }
+      : { ok: false, error: "Encryption env: APP_ENCRYPTION_KEYS is missing" },
 }));
 vi.mock("@/server/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/db")>();
@@ -45,6 +53,7 @@ vi.mock("@/server/db", async (importOriginal) => {
 
 const {
   checkTestbedTypeDelete,
+  createApiKeyAction,
   createTestbedAction,
   createTestbedTypeAction,
   deleteTestbedTypeAction,
@@ -358,4 +367,124 @@ describe.skipIf(!hasDb)("testbed type edit and delete actions", () => {
       });
       expect((await row(trx, type.id)).deleted_at).toBeNull();
     }));
+});
+
+// Feature 8 (spec 0006): API key actions.
+describe.skipIf(!hasDb)("API key actions", () => {
+  const KEYRING: Keyring = {
+    activeKeyId: "ktest",
+    keys: new Map([["ktest", randomBytes(32)]]),
+  };
+  const CANARY = `canary-${crypto.randomUUID()}`;
+
+  const keyForm = (name: string, secret = CANARY) => {
+    const f = new FormData();
+    f.set("name", name);
+    f.set("type", "IDP");
+    f.set("baseUrl", "https://acme.okta.example");
+    f.set("secret", secret);
+    return f;
+  };
+
+  // Runs `body` as a fresh admin, learner, or anonymous caller, with the
+  // test keyring unless `configured` is false.
+  const as = (
+    who: "admin" | "learner" | "anonymous",
+    body: (trx: Kysely<DB>) => Promise<void>,
+    configured = true,
+  ) =>
+    inRollback(async (trx) => {
+      ctx.conn = asConn(trx);
+      ctx.keyring = configured ? KEYRING : undefined;
+      try {
+        if (who !== "anonymous") {
+          const authId = await makeAuthUser(
+            trx,
+            9200 + (who === "admin" ? 1 : 2),
+          );
+          await makeUser(trx, {
+            auth_user_id: authId,
+            ...(who === "admin" ? { role: "admin", company: null } : {}),
+          });
+          ctx.authUserId = authId;
+        }
+        await body(trx);
+      } finally {
+        ctx.conn = undefined;
+        ctx.authUserId = undefined;
+        ctx.keyring = undefined;
+      }
+    });
+
+  const keysNamed = (trx: Kysely<DB>, name: string) =>
+    trx
+      .selectFrom("api_keys")
+      .select(["id", "name", "deleted_at"])
+      .where("name", "=", name)
+      .execute();
+
+  const newName = () => `Key ${crypto.randomUUID().slice(0, 8)}`;
+
+  // covers: AC-10
+  it.each([
+    ["anonymous", "/l0gin"],
+    ["learner", "/auth/error?reason=not_authorized"],
+  ] as const)("sends a %s caller to %s and writes nothing (AC-10)", (who, to) =>
+    as(who, async (trx) => {
+      const name = newName();
+      expect(
+        await redirectOf(() => createApiKeyAction(IDLE, keyForm(name))),
+      ).toBe(to);
+      expect(await keysNamed(trx, name)).toEqual([]);
+    }),
+  );
+
+  // covers: AC-2, AC-3, AC-8
+  it("creates a key, with field errors that never echo the key", () =>
+    as("admin", async (trx) => {
+      const bad = keyForm("  ", CANARY.repeat(100));
+      bad.set("baseUrl", "https://u:p@acme.okta.example");
+      const refused = await createApiKeyAction(IDLE, bad);
+      expect(refused).toEqual({
+        kind: "error",
+        fields: {
+          name: "Enter a name.",
+          baseUrl: "Remove credentials from the URL.",
+          secret: "Use at most 4096 characters.",
+        },
+      });
+
+      const name = newName();
+      const saved = await createApiKeyAction(IDLE, keyForm(name));
+      expect(saved).toEqual({ kind: "saved", message: `Created ${name}.` });
+      expect(await keysNamed(trx, name)).toHaveLength(1);
+
+      const duplicate = await createApiKeyAction(
+        IDLE,
+        keyForm(name.toUpperCase()),
+      );
+      expect(duplicate).toEqual({
+        kind: "error",
+        fields: { name: "An API key with this name already exists." },
+      });
+      expect(JSON.stringify([refused, saved, duplicate])).not.toMatch(
+        /canary|v1:/,
+      );
+    }));
+
+  // covers: AC-9
+  it("refuses to save without a keyring and writes nothing (AC-9)", () =>
+    as(
+      "admin",
+      async (trx) => {
+        const name = newName();
+        expect(await createApiKeyAction(IDLE, keyForm(name))).toEqual({
+          kind: "error",
+          message: "Encryption isn't configured.",
+          fields: {},
+        });
+        expect(await keysNamed(trx, name)).toEqual([]);
+      },
+      false,
+    ));
 });

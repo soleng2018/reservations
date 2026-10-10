@@ -16,6 +16,9 @@ export type DurationUnit = z.infer<typeof DurationUnit>;
 export const TestbedClientKind = z.enum(["wired", "wireless"]);
 export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 
+export const ApiKeyType = z.enum(["IDP", "AI"]);
+export type ApiKeyType = z.infer<typeof ApiKeyType>;
+
 export const BookingStatus = z.enum([
   "provisioning",
   "confirmed",
@@ -60,6 +63,7 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "users.status": UserStatus.options,
   "testbed_types.duration_unit": DurationUnit.options,
   "testbed_clients.kind": TestbedClientKind.options,
+  "api_keys.type": ApiKeyType.options,
   "bookings.status": BookingStatus.options,
   "bookings.cancel_source": CancelSource.options,
   "jobs.kind": JobKind.options,
