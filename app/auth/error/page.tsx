@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { LearnerFrame } from "@/components/learner-frame";
 import { authErrorView } from "@/lib/auth-errors";
 
 export const metadata: Metadata = {
@@ -19,20 +20,22 @@ export default async function AuthErrorPage({
     error: first(params.error),
   });
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-lg border p-8">
-        <h1 className="text-xl font-semibold">{view.title}</h1>
-        <p>{view.message}</p>
-        {view.reserveLink ? (
-          <Link href="/" className="font-medium underline">
-            Reserve a lab
-          </Link>
-        ) : (
-          <Link href="/" className="text-sm text-muted-foreground underline">
-            Back to the home page
-          </Link>
-        )}
+    <LearnerFrame>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-8">
+          <h1 className="text-xl font-semibold">{view.title}</h1>
+          <p>{view.message}</p>
+          {view.reserveLink ? (
+            <Link href="/" className="font-medium underline">
+              Reserve a lab
+            </Link>
+          ) : (
+            <Link href="/" className="text-sm text-muted-foreground underline">
+              Back to the home page
+            </Link>
+          )}
+        </div>
       </div>
-    </main>
+    </LearnerFrame>
   );
 }
