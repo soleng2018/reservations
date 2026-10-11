@@ -255,6 +255,12 @@ export function adminEntryPath(): string {
   );
 }
 
+// The public origin only, for the landing metadata, robots.txt, and the
+// sitemap (spec 0009): public routes must not need the auth secrets.
+export function appUrl(): string {
+  return authSchema.shape.APP_URL.parse(process.env.APP_URL);
+}
+
 // Parsed lazily on first use, never at import, so `next build` needs no values.
 // Shared by web, worker, and the migrate script.
 export function dbEnv(): DbEnv {

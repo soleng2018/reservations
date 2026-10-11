@@ -8,13 +8,16 @@ import { currentSession } from "@/server/auth/require";
 
 // The learner pages' frame (spec 0005 AC-11): the Nile top bar and the
 // page's one <main>. Sign out shows only with a session. It never links to
-// the admin entry path (spec 0003 AC-3).
+// the admin entry path (spec 0003 AC-3). With showSignOut off (the landing,
+// spec 0009 AC-1) it reads no session at all.
 export async function LearnerFrame({
   children,
+  showSignOut = true,
 }: {
   readonly children: ReactNode;
+  readonly showSignOut?: boolean;
 }) {
-  const session = await currentSession();
+  const session = showSignOut ? await currentSession() : null;
   return (
     <>
       <SkipLink />
@@ -29,7 +32,7 @@ export async function LearnerFrame({
             width={44}
             height={22}
             className="h-5.5 w-auto"
-            priority
+            loading="eager"
           />
           <span className="border-l pl-2.25 text-[0.8125rem] font-semibold">
             Hands-On Labs
