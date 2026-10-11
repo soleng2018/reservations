@@ -258,3 +258,48 @@ test("robots.txt and the sitemap open only / to crawlers", async ({
     expect(body).not.toContain("/auth/admin-entry");
   }
 });
+
+async function expectFooter(page: Page) {
+  const footer = page.locator("main + footer");
+  await expect(footer).toHaveCount(1);
+  await expect(footer).toContainText("Nile Hands-On Labs · nilesecure.com");
+  await expect(footer).toContainText(
+    `Copyright © ${new Date().getUTCFullYear()} Nile. All rights reserved.`,
+  );
+  const link = footer.getByRole("link", { name: "nilesecure.com" });
+  await expect(link).toHaveAttribute("href", "https://www.nilesecure.com");
+  await expect(link).toHaveCSS("text-decoration-line", "underline");
+}
+
+// covers: AC-5
+test("every learner page ends with the Nile footer", async ({ page }) => {
+  for (const path of ["/", "/book", "/auth/error", "/reservations"]) {
+    await page.goto(path);
+    await expectFooter(page);
+  }
+  test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+  await signIn(page, "/reservations", learner);
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expectFooter(page);
+});
+
+// covers: AC-5
+test("admin pages and the admin entry have no footer", async ({
+  adminPage: page,
+  browser,
+}) => {
+  test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+  await page.goto("/admin/testbed-types");
+  await expect(
+    page.getByRole("heading", { name: "Testbed Types" }),
+  ).toBeVisible();
+  await expect(page.locator("footer")).toHaveCount(0);
+
+  const anonymous = await browser.newPage();
+  await anonymous.goto(ADMIN_ENTRY);
+  await expect(
+    anonymous.getByRole("heading", { name: "Sign in" }),
+  ).toBeVisible();
+  await expect(anonymous.locator("footer")).toHaveCount(0);
+  await anonymous.close();
+});

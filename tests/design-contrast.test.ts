@@ -88,6 +88,8 @@ const pairs = (t: Tokens): readonly Pair[] => {
       t.cta.map((stop, i) => [`bg-nile-cta stop ${i + 1}`, stop] as const),
     ),
     ...on("nile-blue", c("nile-blue"), [["nile-blue-100", c("nile-blue-100")]]),
+    // The learner footer's link (spec 0009 AC-5).
+    ...on("primary", v("primary"), [mist]),
     ...on("success-fg", c("success-fg"), [["teal-100", c("teal-100")]]),
     ...on("violet-fg", c("violet-fg"), [["violet-100", c("violet-100")]]),
     ...on("sidebar-foreground", v("sidebar-foreground"), [

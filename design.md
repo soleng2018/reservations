@@ -99,7 +99,8 @@ The mock's values that failed AA, and what replaced them:
 
 Other checked pairs: white on `nile-blue` 7.70, white on `danger-strong` 5.62,
 `nile-blue` on `nile-blue-100` 6.23, `#AFC6E6` on `nile-ink` 9.84, `--ring`
-on white 4.70. `tests/design-contrast.test.ts` checks every one.
+on white 4.70, `fg2` on `cloud-mist` 6.02 and `primary` on `cloud-mist` 7.24
+(the learner footer). `tests/design-contrast.test.ts` checks every one.
 
 ### Type
 
@@ -170,7 +171,8 @@ on the container.
 | FormDialog | `components/admin/form-dialog.tsx` | create and edit forms. `trigger`, `title`, `action` (an `AdminFormState` Server Action), and the fields as children. |
 | DeleteFlow | `components/admin/delete-flow.tsx` | a row's delete: `kind`, `id`, `label`, `check`, `remove` (see the contract below). |
 | ComingSoon | `components/admin/coming-soon.tsx` | an admin section not built yet. |
-| LearnerFrame | `components/learner-frame.tsx` | wraps every learner page: the top bar and the one `<main>`. |
+| LearnerFrame | `components/learner-frame.tsx` | wraps every learner page: the top bar, the one `<main>`, and LearnerFooter. `showSignOut={false}` (the landing) reads no session. |
+| LearnerFooter | `components/learner-footer.tsx` | the Nile sign off from the emails, rendered by LearnerFrame only. Its `nilesecure.com` link stays underlined (color alone fails AA against the text). |
 | SkipLink | `components/skip-link.tsx` | first in the admin layout and the learner frame. |
 | Toasts | `components/notify.ts` | `notifySuccess(message)` (4s, polite) and `notifyError(message)` (8s, assertive, with Close). One region, mounted in the root layout. |
 | shadcn | `components/ui/` | Card, Input, Label, Select, Alert, Empty, Separator, Skeleton, Spinner, Table, Dialog, AlertDialog, Sheet, Toast, all restyled to these tokens. Use them before writing custom markup. |
