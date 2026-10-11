@@ -6,7 +6,7 @@ The app's side of the shared Authentik: the API client, the write guard, and lea
 
 - `client.ts`: `authentik()` builds the pinned `@goauthentik/api` `CoreApi` on the provisioning token (`AUTHENTIK_PROVISIONING_TOKEN_FILE`), with a 10 second timeout. Wrap every SDK call in `call(label, fn)`, which returns a `Result` (`unavailable` | `not_found`).
 - `guard.ts`: the only gate for Authentik writes. It re-reads the target before each write; `guardGroupWrite` returns the fresh group so a delete can check its `hol_testbed_id`.
-- `learners.ts`: `findOrCreateLearner` (guest saga), `issueSetPasswordLink`, `deactivateLearner`, `reactivateLearner`, `deleteSagaLearner`.
+- `learners.ts`: `findOrCreateLearner` (guest saga), `issueSetPasswordLink`, `updateLearnerIdentity` (an admin's name or email fix; the new email also becomes the username), `deactivateLearner`, `reactivateLearner`, `deleteSagaLearner`.
 - `groups.ts`: testbed `pod-` groups: create (stamped with `hol_testbed_id`), find by name, delete, and membership. Only the worker's access reconciler (`server/worker/reconcile.ts`) adds or removes members.
 - `sessions.ts`: ends every Authentik session of a user (used by sign out and deactivate).
 - `testing.ts`: test support only, an in memory fake Authentik behind the real SDK that records every write.
@@ -18,6 +18,7 @@ The app's side of the shared Authentik: the API client, the write guard, and lea
 - New learners: username = lowercased email, path `hol/learners`, type `external`, no password, attributes `hol_learner` and `hol_user_id`. Reuse only adds missing attributes and never changes `type` or `path`.
 - Recovery links are asked for with `tokenDuration: "hours=72"` on every request. Authentik returns the same link while a token is still valid; never store the link.
 - Reading and deleting sessions writes no user, so the guard does not apply there.
+- `deactivateLearner` and `reactivateLearner` run in one transaction under the learner row lock (`FOR UPDATE`), calling Authentik while holding it, and raise `Refusal` so every write rolls back ([spec 0008](../../docs/specs/0008-admin-users/index.md)). Deactivate also cancels every confirmed booking that has not ended, and refuses while a booking is still `provisioning`.
 - Tests use the fake from `testing.ts` and assert on `writes` (a refusal must record no write). DB backed functions run inside `inRollback` with `asConn(trx)`.
 
 ## Agent skills

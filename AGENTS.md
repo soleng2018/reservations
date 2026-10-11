@@ -52,6 +52,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Functional style: pure functions by default, no shared mutable state (module variables are constants, lazy caches aside), side effects (DB, Authentik, Google, Cloudflare) kept at the edges in `server/`.
 - Prefer plain functions and composition over classes; `map`/`filter`/`reduce` over loops when clearer; never mutate inputs (`readonly` types).
 - Errors: expected failures return a typed `Result` (`{ ok: true, value } | { ok: false, error }`); throw only for bugs and broken invariants. Server Actions map a `Result` to a user facing message. The type and `ok`/`err` helpers live in `lib/result.ts`; DB constraint violations become a `Result` through `mapConstraintError` in `server/db/constraint-errors.ts`.
+- Refusals inside a transaction: throw `Refusal` from `server/db/refusal.ts` and wrap the transaction in `refusable()`, so every write rolls back and the caller still gets a `Result` (the lock first pattern in `server/users/learners.ts` is the reference).
 - Schema: `server/db/types.ts` is generated (never hand edit; Prettier skips it). Constraint and index names are a contract with `mapConstraintError`, so renaming one is a breaking change. Every `CHECK (col in (...))` list has a matching Zod enum in `lib/db-enums.ts`, registered in `checkLists`; a parity test compares them to the live schema.
 - Strict TypeScript: no `any`, no non null `!` without a comment, exhaustive `switch` on unions (`never` check). Parse every boundary (input, env, external API) with Zod.
 - Env: each process validates its env through the Zod schemas in `server/env.ts`, failing fast at start, never during `next build`. No `process.env` reads elsewhere.
@@ -67,6 +68,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
 - Test helpers: `asConn(trx)` in `server/db/testing.ts` lets code that opens its own `conn.transaction()` run inside `inRollback`; `server/authentik/testing.ts` is the in memory fake Authentik behind the real SDK.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
+- Search indexing: every page is `noindex, nofollow` by default (root layout metadata), and a page opts in explicitly (today only `/`). A page whose metadata uses relative URLs sets `metadataBase` from `appUrl()` in `server/env.ts` and is `force-dynamic`, so `next build` reads no env. Nothing public (`robots.txt`, sitemap, learner pages) names `ADMIN_ENTRY_PATH`.
 
 ## Tooling
 
@@ -102,5 +104,6 @@ MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setu
 <!-- Nested AGENTS.md files are listed here as they are created -->
 - [server/authentik/AGENTS.md](server/authentik/AGENTS.md): Authentik API client, the write guard, learner provisioning, and token rules
 - [server/worker/AGENTS.md](server/worker/AGENTS.md): the background worker, its lock, tick loop, sweepers, and the access reconciler
+- [server/users/AGENTS.md](server/users/AGENTS.md): learner admin from the console, the add saga, the lock first pattern, and the admin timezone
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
