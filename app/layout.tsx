@@ -16,6 +16,9 @@ export const metadata: Metadata = {
     default: "Nile Hands-On Labs",
   },
   description: "Reserve a remote Nile lab and get hands on with real gear.",
+  // noindex by default: a page joins search only by opting in, and today
+  // that is / alone (spec 0009 AC-7).
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

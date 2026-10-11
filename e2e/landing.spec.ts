@@ -216,3 +216,45 @@ test("/ sends its title, description, and social card", async ({
   expect(bytes.length).toBeLessThan(500 * 1024);
   expect(jpegSize(bytes)).toEqual({ width: 1200, height: 630 });
 });
+
+// covers: AC-7
+test("every page but / is noindex", async ({ page }) => {
+  for (const path of ["/book", "/reservations", "/auth/error"]) {
+    await page.goto(path);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "noindex, nofollow",
+    );
+  }
+  const admin = await page.request.get("/admin/testbed-types", {
+    maxRedirects: 0,
+  });
+  expect(admin.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+});
+
+// covers: AC-8, AC-9
+test("robots.txt and the sitemap open only / to crawlers", async ({
+  page,
+  baseURL,
+}) => {
+  const origin = new URL(baseURL ?? "").origin;
+  const robots = await page.request.get("/robots.txt");
+  expect(robots.status()).toBe(200);
+  const rules = await robots.text();
+  expect(rules).toContain("Allow: /\n");
+  expect(rules).toContain("Disallow: /admin\n");
+  expect(rules).toContain("Disallow: /api/\n");
+  expect(rules).toContain(`Sitemap: ${origin}/sitemap.xml`);
+
+  const sitemap = await page.request.get("/sitemap.xml");
+  expect(sitemap.status()).toBe(200);
+  const xml = await sitemap.text();
+  expect([...xml.matchAll(/<loc>([^<]*)<\/loc>/g)].map((m) => m[1])).toEqual([
+    `${origin}/`,
+  ]);
+
+  for (const body of [rules, xml]) {
+    expect(body).not.toContain(ADMIN_ENTRY);
+    expect(body).not.toContain("/auth/admin-entry");
+  }
+});

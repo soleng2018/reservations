@@ -13,11 +13,8 @@ import { bookableTypes } from "@/server/booking/availability";
 import { db } from "@/server/db";
 import { turnstileEnv } from "@/server/env";
 
-// noindex until feature 11 decides on SEO (spec 0004 security model).
-export const metadata: Metadata = {
-  title: "Book a lab",
-  robots: { index: false, follow: false },
-};
+// noindex through the root layout's default (spec 0009 AC-7).
+export const metadata: Metadata = { title: "Book a lab" };
 
 // The guest booking tracer (spec 0004 AC-3). Public; no link to the admin
 // URL anywhere in the flow (AC-13).
