@@ -21,6 +21,7 @@ import {
   sweepGuestSagas,
   sweepTestbedCreates,
 } from "@/server/worker/sweep";
+import { teardownDeletedTestbeds } from "@/server/worker/teardown";
 
 const PURGE = "purge rate limits";
 
@@ -76,6 +77,10 @@ async function main(): Promise<number> {
         run: () => sweepTestbedCreates(api, conn),
       },
       { name: "access reconciler", run: () => reconcileAccess(api, conn) },
+      {
+        name: "testbed teardown",
+        run: () => teardownDeletedTestbeds(api, conn),
+      },
       ...(purgeDue(lastPurge, now)
         ? [{ name: PURGE, run: () => purgeRateLimits(conn) }]
         : []),

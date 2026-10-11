@@ -140,6 +140,9 @@ export function fakeAuthentik(
 
     if (method === "GET" && path === "/core/users/") {
       const inGroups = q.getAll("groups_by_pk");
+      // Like Authentik's filter: an unknown group is a bad choice, not a 404.
+      if (inGroups.some((g) => !groups.some((x) => x.pk === g)))
+        return json({ groups_by_pk: ["Select a valid choice."] }, 400);
       return json(
         page(
           users.filter(

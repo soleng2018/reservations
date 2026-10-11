@@ -12,6 +12,7 @@ import {
 import type { Blocker, DeleteRemoveError } from "@/lib/delete-flow";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { ok, err, type Result } from "@/lib/result";
+import { TESTBED_MESSAGES, type TestbedEditDefaults } from "@/lib/testbeds";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
 import {
@@ -19,7 +20,12 @@ import {
   deleteApiKey,
   updateApiKey,
 } from "@/server/catalog/api-keys";
-import { createTestbed } from "@/server/catalog/testbeds";
+import {
+  createTestbed,
+  deleteTestbed,
+  getTestbedForEdit,
+  updateTestbed,
+} from "@/server/catalog/testbeds";
 import {
   createTestbedType,
   deleteTestbedType,
@@ -28,6 +34,7 @@ import {
 import { db } from "@/server/db";
 import {
   apiKeyBlockers,
+  testbedBlockers,
   testbedTypeBlockers,
 } from "@/server/db/delete-blockers";
 import { assertEncryptionEnv } from "@/server/env";
@@ -268,22 +275,54 @@ export async function deleteApiKeyAction(
   }
 }
 
-// AC-2. Clients arrive as parallel lists in form order.
+// Feature 9 (spec 0007). Clients arrive as parallel lists in form order; an
+// OS login is never echoed back (errors carry fixed messages, and the dialog
+// keeps what was typed on the client).
+const parseTestbed = (form: FormData) => {
+  const kinds = texts(form, "clientKind");
+  const names = texts(form, "clientName");
+  const urls = texts(form, "clientUrl");
+  const osUsernames = texts(form, "clientOsUsername");
+  const osPasswords = texts(form, "clientOsPassword");
+  return TestbedInput.safeParse({
+    name: text(form, "name"),
+    testbedTypeId: text(form, "testbedTypeId"),
+    idpApiKeyId: text(form, "idpApiKeyId"),
+    portalUrl: text(form, "portalUrl"),
+    lmsUrl: text(form, "lmsUrl"),
+    clients: kinds.map((kind, i) => ({
+      kind,
+      name: names[i],
+      url: urls[i],
+      osUsername: osUsernames[i],
+      osPassword: osPasswords[i],
+    })),
+  });
+};
+
+const testbedError = {
+  duplicateName: {
+    kind: "error",
+    fields: { name: TESTBED_MESSAGES.duplicateName },
+  },
+  typeGone: {
+    kind: "error",
+    fields: { testbedTypeId: TESTBED_MESSAGES.typeGone },
+  },
+  idpGone: {
+    kind: "error",
+    fields: { idpApiKeyId: TESTBED_MESSAGES.idpGone },
+  },
+  gone: { kind: "error", message: TESTBED_MESSAGES.gone, fields: {} },
+} as const satisfies Record<string, AdminFormState>;
+
+// Spec 0004 AC-2, spec 0007 AC-2.
 export async function createTestbedAction(
   _prev: AdminFormState,
   form: FormData,
 ): Promise<AdminFormState> {
   const { user } = await requireAdmin();
-  const kinds = texts(form, "clientKind");
-  const names = texts(form, "clientName");
-  const urls = texts(form, "clientUrl");
-  const parsed = TestbedInput.safeParse({
-    name: text(form, "name"),
-    testbedTypeId: text(form, "testbedTypeId"),
-    portalUrl: text(form, "portalUrl"),
-    lmsUrl: text(form, "lmsUrl"),
-    clients: kinds.map((kind, i) => ({ kind, name: names[i], url: urls[i] })),
-  });
+  const parsed = parseTestbed(form);
   if (!parsed.success)
     return { kind: "error", fields: fieldErrors(parsed.error) };
 
@@ -291,19 +330,15 @@ export async function createTestbedAction(
   if (!created.ok) {
     switch (created.error) {
       case "duplicate_name":
-        return {
-          kind: "error",
-          fields: { name: "A testbed with this name already exists." },
-        };
+        return testbedError.duplicateName;
       case "type_not_found":
-        return {
-          kind: "error",
-          fields: { testbedTypeId: "That type no longer exists." },
-        };
+        return testbedError.typeGone;
+      case "idp_not_found":
+        return testbedError.idpGone;
       case "group_failed":
         return {
           kind: "error",
-          message: "Couldn't create the testbed's access group, try again",
+          message: TESTBED_MESSAGES.groupFailed,
           fields: {},
         };
       default: {
@@ -314,4 +349,90 @@ export async function createTestbedAction(
   }
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
+}
+
+// AC-3, the edit dialog's load on open: the one payload with OS logins.
+export async function loadTestbedForEdit(
+  id: string,
+): Promise<Result<TestbedEditDefaults, "not_found">> {
+  await requireAdmin();
+  if (!isId(id)) return err("not_found");
+  return getTestbedForEdit(db(), id);
+}
+
+// AC-3, AC-4, AC-5. The page binds the row's id.
+export async function updateTestbedAction(
+  id: string,
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  const { user } = await requireAdmin();
+  const parsed = parseTestbed(form);
+  if (!parsed.success)
+    return { kind: "error", fields: fieldErrors(parsed.error) };
+  if (!isId(id)) return testbedError.gone;
+
+  const updated = await updateTestbed(db(), id, parsed.data, user.id);
+  if (!updated.ok) {
+    switch (updated.error) {
+      case "duplicate_name":
+        return testbedError.duplicateName;
+      case "type_not_found":
+        return testbedError.typeGone;
+      case "idp_not_found":
+        return testbedError.idpGone;
+      case "not_ready":
+        return {
+          kind: "error",
+          message: TESTBED_MESSAGES.notReady,
+          fields: {},
+        };
+      case "not_found":
+        revalidatePath("/admin", "layout");
+        return testbedError.gone;
+      default: {
+        const never: never = updated.error;
+        return never;
+      }
+    }
+  }
+  revalidatePath("/admin", "layout");
+  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+}
+
+// AC-6, the delete flow's check: the testbed's Upcoming, Current, and
+// Pending reservations, phased by the DB clock in the same transaction.
+export async function checkTestbedDelete(
+  id: string,
+): Promise<Result<readonly Blocker[], "unavailable">> {
+  await requireAdmin();
+  if (!isId(id)) return ok([]);
+  const blockers = await db()
+    .transaction()
+    .execute((trx) => testbedBlockers(trx, id));
+  revalidatePath("/admin", "layout");
+  return ok(blockers);
+}
+
+// AC-6, the delete flow's remove (spec 0002 AC-14).
+export async function deleteTestbedAction(
+  id: string,
+): Promise<Result<void, DeleteRemoveError>> {
+  const { user } = await requireAdmin();
+  const gone = { kind: "failed", message: TESTBED_MESSAGES.gone } as const;
+  if (!isId(id)) return err(gone);
+
+  const deleted = await deleteTestbed(db(), id, user.id);
+  revalidatePath("/admin", "layout");
+  if (deleted.ok) return ok(undefined);
+  switch (deleted.error.kind) {
+    case "blocked":
+      return err(deleted.error);
+    case "not_found":
+      return err(gone);
+    default: {
+      const never: never = deleted.error;
+      return never;
+    }
+  }
 }

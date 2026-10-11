@@ -89,8 +89,88 @@ describe("TestbedInput (AC-2)", () => {
   };
 
   it("parses a testbed with its clients, and one with none", () => {
-    expect(TestbedInput.parse(valid)).toEqual(valid);
+    expect(TestbedInput.parse(valid)).toEqual({
+      ...valid,
+      idpApiKeyId: null,
+      clients: [{ ...valid.clients[0], osUsername: null, osPassword: null }],
+    });
     expect(TestbedInput.parse({ ...valid, clients: [] }).clients).toEqual([]);
+  });
+
+  // covers: spec 0007 AC-2 (IDP and OS login rules)
+  it("turns an empty IDP into none and refuses one that is not a uuid", () => {
+    expect(TestbedInput.parse({ ...valid, idpApiKeyId: "" }).idpApiKeyId).toBe(
+      null,
+    );
+    expect(
+      TestbedInput.parse({ ...valid, idpApiKeyId: TYPE_ID }).idpApiKeyId,
+    ).toBe(TYPE_ID);
+    const e = errorsOf(TestbedInput.safeParse({ ...valid, idpApiKeyId: "x" }));
+    expect(fieldErrors(e)).toEqual({ idpApiKeyId: "Choose an IDP." });
+  });
+
+  it("stores an empty OS username and password as none", () => {
+    const [c] = TestbedInput.parse({
+      ...valid,
+      clients: [{ ...valid.clients[0], osUsername: "  ", osPassword: "" }],
+    }).clients;
+    expect(c).toMatchObject({ osUsername: null, osPassword: null });
+  });
+
+  it("trims the OS username and keeps the password exactly as typed", () => {
+    const [c] = TestbedInput.parse({
+      ...valid,
+      clients: [
+        { ...valid.clients[0], osUsername: " lab ", osPassword: "  p w  " },
+      ],
+    }).clients;
+    expect(c).toMatchObject({ osUsername: "lab", osPassword: "  p w  " });
+  });
+
+  it("refuses a password without a username, on that row's username", () => {
+    const e = errorsOf(
+      TestbedInput.safeParse({
+        ...valid,
+        clients: [
+          valid.clients[0],
+          { ...valid.clients[0], osUsername: "", osPassword: "canary" },
+        ],
+      }),
+    );
+    expect(fieldErrors(e)).toEqual({
+      "clients.1.osUsername": "Enter the OS username for this password.",
+    });
+    expect(JSON.stringify(e.issues)).not.toContain("canary");
+  });
+
+  it("caps the OS username and password at 200 characters", () => {
+    const e = errorsOf(
+      TestbedInput.safeParse({
+        ...valid,
+        clients: [
+          {
+            ...valid.clients[0],
+            osUsername: "u".repeat(201),
+            osPassword: "canary".repeat(40),
+          },
+        ],
+      }),
+    );
+    expect(fieldErrors(e)).toEqual({
+      "clients.0.osUsername": "Use at most 200 characters.",
+      "clients.0.osPassword": "Use at most 200 characters.",
+    });
+    expect(JSON.stringify(e.issues)).not.toContain("canary");
+  });
+
+  it("allows 20 clients and refuses 21", () => {
+    const many = (n: number) =>
+      Array.from({ length: n }, () => valid.clients[0]);
+    expect(
+      TestbedInput.safeParse({ ...valid, clients: many(20) }).success,
+    ).toBe(true);
+    const e = errorsOf(TestbedInput.safeParse({ ...valid, clients: many(21) }));
+    expect(fieldErrors(e)).toEqual({ clients: "Use at most 20 clients." });
   });
 
   it("refuses http and other non https URLs", () => {

@@ -1,7 +1,9 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
-import { LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
+import { bookingPhase } from "@/lib/booking-phase";
+import { BookingStatus, LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
 import type { Blocker } from "@/lib/delete-flow";
+import { dbNow } from "./bookings";
 import type { DB } from "./types";
 
 // What stops a catalog soft delete (AC-4). The caller's transaction first
@@ -55,18 +57,39 @@ export async function apiKeyBlockers(
     .execute();
 }
 
-// Live bookings on this testbed that have not ended, labelled by learner.
+// Live bookings on this testbed that have not ended, by start, labelled
+// `<learner> — <phase> reservation` (spec 0007 AC-6). The phase uses the
+// DB clock read in the same transaction as the query.
 export async function testbedBlockers(
   trx: Kysely<DB>,
   testbedId: string,
 ): Promise<readonly Blocker[]> {
-  return trx
+  const rows = await trx
     .selectFrom("bookings")
     .innerJoin("users", "users.id", "bookings.user_id")
-    .select(["bookings.id", "users.name as label"])
+    .select([
+      "bookings.id",
+      "bookings.status",
+      "bookings.starts_at",
+      "bookings.ends_at",
+      "users.name",
+    ])
     .where("bookings.testbed_id", "=", testbedId)
     .where("bookings.status", "in", LIVE_BOOKING_STATUSES)
     .where("bookings.ends_at", ">", sql<Date>`now()`)
     .orderBy("bookings.starts_at")
     .execute();
+  if (rows.length === 0) return [];
+  const now = await dbNow(trx);
+  return rows.map((r) => {
+    const phase = bookingPhase(
+      {
+        status: BookingStatus.parse(r.status),
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+      },
+      now,
+    );
+    return { id: r.id, label: `${r.name} — ${phase} reservation` };
+  });
 }

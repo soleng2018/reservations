@@ -28,18 +28,49 @@ export const TestbedTypeInput = z.object({
 });
 export type TestbedTypeInput = z.infer<typeof TestbedTypeInput>;
 
-export const TestbedClientInput = z.object({
-  kind: TestbedClientKind,
-  name: CatalogName,
-  url: HttpsUrl,
-});
+export const MAX_TESTBED_CLIENTS = 20;
+
+const emptyToNull = (v: string | undefined) => (v ? v : null);
+
+// Spec 0007 AC-2: a client's OS login, both optional. The username is
+// trimmed; the password is kept exactly as typed. Fixed messages only, so a
+// password never reaches an issue.
+export const TestbedClientInput = z
+  .object({
+    kind: TestbedClientKind,
+    name: CatalogName,
+    url: HttpsUrl,
+    osUsername: z
+      .string()
+      .trim()
+      .max(200, "Use at most 200 characters.")
+      .optional()
+      .transform(emptyToNull),
+    osPassword: z
+      .string()
+      .max(200, "Use at most 200 characters.")
+      .optional()
+      .transform(emptyToNull),
+  })
+  .refine((c) => c.osPassword === null || c.osUsername !== null, {
+    message: "Enter the OS username for this password.",
+    path: ["osUsername"],
+  });
+export type TestbedClientInput = z.infer<typeof TestbedClientInput>;
 
 export const TestbedInput = z.object({
   name: CatalogName,
   testbedTypeId: z.uuid("Choose a type."),
+  // Empty (the None option) or missing means no IDP.
+  idpApiKeyId: z.preprocess(
+    (v) => (v === "" || v === undefined ? null : v),
+    z.uuid("Choose an IDP.").nullable(),
+  ),
   portalUrl: HttpsUrl,
   lmsUrl: HttpsUrl,
-  clients: z.array(TestbedClientInput),
+  clients: z
+    .array(TestbedClientInput)
+    .max(MAX_TESTBED_CLIENTS, `Use at most ${MAX_TESTBED_CLIENTS} clients.`),
 });
 export type TestbedInput = z.infer<typeof TestbedInput>;
 

@@ -55,7 +55,7 @@ describe.skipIf(!hasDb)("delete blockers", () => {
 
       const upcoming = await book(learner.id, 24, 26);
       expect(await testbedBlockers(trx, tb.id)).toEqual([
-        { id: upcoming.id, label: "Priya" },
+        { id: upcoming.id, label: "Priya — Upcoming reservation" },
       ]);
 
       // With only Past bookings left, the delete goes through and history
@@ -102,6 +102,34 @@ describe.skipIf(!hasDb)("delete blockers", () => {
         ok: false,
         error: "not_bookable",
       });
+    }));
+
+  // covers: spec 0007 AC-6 (phase labels by the DB clock)
+  it("labels a provisioning booking Pending and a started one Current", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id);
+      const insert = (name: string, status: "provisioning" | "confirmed") =>
+        makeUser(trx, { name }).then((u) =>
+          trx
+            .insertInto("bookings")
+            .values({
+              user_id: u.id,
+              testbed_id: tb.id,
+              testbed_type_id: type.id,
+              starts_at: slot(status === "confirmed" ? -1 : 24),
+              ends_at: slot(status === "confirmed" ? 1 : 26),
+              status,
+            })
+            .returning("id")
+            .executeTakeFirstOrThrow(),
+        );
+      const current = await insert("Cam", "confirmed");
+      const pending = await insert("Dee", "provisioning");
+      expect(await testbedBlockers(trx, tb.id)).toEqual([
+        { id: current.id, label: "Cam — Current reservation" },
+        { id: pending.id, label: "Dee — Pending reservation" },
+      ]);
     }));
 
   it("ignores cancelled and completed bookings when blocking a testbed (AC-3, AC-4)", () =>

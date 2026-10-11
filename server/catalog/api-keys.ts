@@ -65,6 +65,19 @@ export async function listApiKeys(
   }));
 }
 
+// Spec 0007 AC-2: the testbed form's IDP choices, live `IDP` keys by name.
+export async function listIdpKeyOptions(
+  conn: Kysely<DB>,
+): Promise<readonly { readonly id: string; readonly name: string }[]> {
+  return conn
+    .selectFrom("api_keys")
+    .select(["id", "name"])
+    .where("type", "=", "IDP")
+    .where("deleted_at", "is", null)
+    .orderBy(sql`lower(name)`)
+    .execute();
+}
+
 // AC-2, AC-7. The id is made here so the ciphertext can be bound to its row
 // before the insert. A live key with the same name ignoring case is refused
 // through api_keys_name_lower_uq (ON CONFLICT DO NOTHING); secret_updated_at

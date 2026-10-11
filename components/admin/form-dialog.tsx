@@ -37,16 +37,24 @@ const GENERIC = "Something went wrong. Try again.";
 // breakpoint up, a bottom sheet below it. The form lives inside the popup,
 // so closing unmounts it: reopening starts empty, with no stale errors.
 // While a save is pending nothing can close it, so its result never lands
-// on a closed dialog.
+// on a closed dialog. A form that loads its defaults (spec 0007 AC-3)
+// starts on `onOpen`, keeps Save off with `canSave` until they arrive, and
+// may drop them on `onClosed`, once the close animation is done.
 export function FormDialog({
   trigger,
   title,
   action,
+  onOpen,
+  onClosed,
+  canSave = true,
   children,
 }: {
   readonly trigger: ReactElement;
   readonly title: string;
   readonly action: AdminFormAction;
+  readonly onOpen?: () => void;
+  readonly onClosed?: () => void;
+  readonly canSave?: boolean;
   readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -59,6 +67,10 @@ export function FormDialog({
       onOpenChange={(next) => {
         if (!next && pending) return;
         setOpen(next);
+        if (next) onOpen?.();
+      }}
+      onOpenChangeComplete={(isOpen) => {
+        if (!isOpen) onClosed?.();
       }}
     >
       <DialogTrigger render={trigger} />
@@ -73,6 +85,7 @@ export function FormDialog({
         <FormBody
           title={title}
           action={action}
+          canSave={canSave}
           pending={pending}
           startTransition={startTransition}
           onSaved={(message) => {
@@ -90,6 +103,7 @@ export function FormDialog({
 function FormBody({
   title,
   action,
+  canSave,
   pending,
   startTransition,
   onSaved,
@@ -97,6 +111,7 @@ function FormBody({
 }: {
   readonly title: string;
   readonly action: AdminFormAction;
+  readonly canSave: boolean;
   readonly pending: boolean;
   readonly startTransition: TransitionStartFunction;
   readonly onSaved: (message: string) => void;
@@ -119,6 +134,7 @@ function FormBody({
   // the fields when the server returns an error.
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!canSave) return;
     const data = new FormData(e.currentTarget);
     startTransition(async () => {
       const next = await action(state, data).catch((): AdminFormState => ({
@@ -174,7 +190,7 @@ function FormBody({
         >
           Cancel
         </DialogClose>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !canSave}>
           {pending ? <Spinner data-icon="inline-start" /> : null}
           Save
         </Button>

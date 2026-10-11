@@ -53,13 +53,17 @@ vi.mock("@/server/db", async (importOriginal) => {
 
 const {
   checkApiKeyDelete,
+  checkTestbedDelete,
   checkTestbedTypeDelete,
   createApiKeyAction,
   deleteApiKeyAction,
+  deleteTestbedAction,
   updateApiKeyAction,
   createTestbedAction,
   createTestbedTypeAction,
   deleteTestbedTypeAction,
+  loadTestbedForEdit,
+  updateTestbedAction,
   updateTestbedTypeAction,
 } = await import("./actions");
 const {
@@ -70,6 +74,7 @@ const {
   makeTestbed,
   makeType,
   makeUser,
+  slot,
 } = await import("@/server/db/testing");
 
 const IDLE = { kind: "idle" } as const;
@@ -625,6 +630,242 @@ describe.skipIf(!hasDb)("API key actions", () => {
       expect(await deleteApiKeyAction(key.id)).toEqual(gone);
       expect(await deleteApiKeyAction("not-a-uuid")).toEqual(gone);
       expect(await checkApiKeyDelete("not-a-uuid")).toEqual({
+        ok: true,
+        value: [],
+      });
+    }));
+});
+
+// Feature 9 (spec 0007): testbed load, edit, and delete actions.
+describe.skipIf(!hasDb)("testbed actions", () => {
+  const GONE = "This testbed no longer exists.";
+
+  // Runs `body` as a fresh admin, learner, or anonymous caller.
+  const as = (
+    who: "admin" | "learner" | "anonymous",
+    body: (trx: Kysely<DB>) => Promise<void>,
+  ) =>
+    inRollback(async (trx) => {
+      ctx.conn = asConn(trx);
+      try {
+        if (who !== "anonymous") {
+          const authId = await makeAuthUser(
+            trx,
+            9300 + (who === "admin" ? 1 : 2),
+          );
+          await makeUser(trx, {
+            auth_user_id: authId,
+            ...(who === "admin" ? { role: "admin", company: null } : {}),
+          });
+          ctx.authUserId = authId;
+        }
+        await body(trx);
+      } finally {
+        ctx.conn = undefined;
+        ctx.authUserId = undefined;
+      }
+    });
+
+  // A testbed with one client carrying an OS login.
+  const makeLab = async (trx: Kysely<DB>) => {
+    const type = await makeType(trx);
+    const testbed = await makeTestbed(trx, type.id);
+    await trx
+      .insertInto("testbed_clients")
+      .values({
+        testbed_id: testbed.id,
+        kind: "wireless",
+        name: "Air 1",
+        url: "https://a1.example.test",
+        os_username: "lab",
+        os_password: "pw",
+        position: 0,
+      })
+      .execute();
+    return { type, testbed };
+  };
+
+  const editForm = (name: string, typeId: string) => {
+    const f = testbedForm(name, typeId);
+    f.set("idpApiKeyId", "");
+    f.append("clientKind", "wireless");
+    f.append("clientName", "Air 1");
+    f.append("clientUrl", "https://a1.example.test");
+    f.append("clientOsUsername", "lab");
+    f.append("clientOsPassword", "pw");
+    return f;
+  };
+
+  const row = (trx: Kysely<DB>, id: string) =>
+    trx
+      .selectFrom("testbeds")
+      .select(["name", "deleted_at"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow();
+
+  // covers: AC-9
+  it.each([
+    ["anonymous", "/l0gin"],
+    ["learner", "/auth/error?reason=not_authorized"],
+  ] as const)("sends a %s caller to %s and changes nothing (AC-9)", (who, to) =>
+    as(who, async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+
+      expect(await redirectOf(() => loadTestbedForEdit(testbed.id))).toBe(to);
+      expect(
+        await redirectOf(() =>
+          updateTestbedAction(testbed.id, IDLE, editForm("Changed", type.id)),
+        ),
+      ).toBe(to);
+      expect(await redirectOf(() => checkTestbedDelete(testbed.id))).toBe(to);
+      expect(await redirectOf(() => deleteTestbedAction(testbed.id))).toBe(to);
+      expect(await row(trx, testbed.id)).toEqual({
+        name: testbed.name,
+        deleted_at: null,
+      });
+    }),
+  );
+
+  // covers: AC-3
+  it("loads a testbed for edit, OS logins included, or says it is gone", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      expect(await loadTestbedForEdit(testbed.id)).toMatchObject({
+        ok: true,
+        value: {
+          name: testbed.name,
+          groupName: `pod-${testbed.slug}`,
+          testbedTypeId: type.id,
+          clients: [{ name: "Air 1", osUsername: "lab", osPassword: "pw" }],
+        },
+      });
+      const gone = { ok: false, error: "not_found" };
+      expect(await loadTestbedForEdit("not-a-uuid")).toEqual(gone);
+      await trx
+        .updateTable("testbeds")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", testbed.id)
+        .execute();
+      expect(await loadTestbedForEdit(testbed.id)).toEqual(gone);
+    }));
+
+  // covers: AC-3, AC-4
+  it("saves an edit and maps every refusal", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const name = `Edited ${crypto.randomUUID().slice(0, 8)}`;
+      expect(
+        await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id)),
+      ).toEqual({ kind: "saved", message: `Updated ${name}.` });
+      expect((await row(trx, testbed.id)).name).toBe(name);
+
+      const taken = await makeTestbed(trx, type.id);
+      expect(
+        await updateTestbedAction(
+          testbed.id,
+          IDLE,
+          editForm(taken.name.toLowerCase(), type.id),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: { name: "A testbed with this name already exists." },
+      });
+
+      const noUser = editForm(name, type.id);
+      noUser.set("clientOsUsername", "");
+      expect(await updateTestbedAction(testbed.id, IDLE, noUser)).toEqual({
+        kind: "error",
+        fields: {
+          "clients.0.osUsername": "Enter the OS username for this password.",
+        },
+      });
+
+      const notReady = await makeTestbed(trx, type.id, {
+        authentik_group_pk: null,
+      });
+      expect(
+        await updateTestbedAction(notReady.id, IDLE, editForm("X", type.id)),
+      ).toEqual({
+        kind: "error",
+        message: "This testbed is still being set up. Try again in a minute.",
+        fields: {},
+      });
+      const gone = { kind: "error", message: GONE, fields: {} };
+      expect(
+        await updateTestbedAction("not-a-uuid", IDLE, editForm("X", type.id)),
+      ).toEqual(gone);
+    }));
+
+  // covers: AC-2 (the IDP must be a live IDP key)
+  it("refuses an IDP key deleted meanwhile, on create and edit", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const key = await trx
+        .insertInto("api_keys")
+        .values({
+          name: `Key ${crypto.randomUUID().slice(0, 8)}`,
+          type: "IDP",
+          base_url: "https://idp.example.test",
+          secret_ciphertext: "v1:test:placeholder",
+          deleted_at: new Date(),
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const idpGone = {
+        kind: "error",
+        fields: { idpApiKeyId: "That IDP key no longer exists." },
+      };
+      const form = editForm(`New ${crypto.randomUUID().slice(0, 8)}`, type.id);
+      form.set("idpApiKeyId", key.id);
+      expect(await createTestbedAction(IDLE, form)).toEqual(idpGone);
+      expect(await updateTestbedAction(testbed.id, IDLE, form)).toEqual(
+        idpGone,
+      );
+    }));
+
+  // covers: AC-6
+  it("checks and deletes a testbed, blocked while a reservation is live", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const learner = await makeUser(trx, { name: "Priya" });
+      const booking = await trx
+        .insertInto("bookings")
+        .values({
+          user_id: learner.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(24),
+          ends_at: slot(26),
+          status: "confirmed",
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const blockers = [
+        { id: booking.id, label: "Priya — Upcoming reservation" },
+      ];
+      expect(await checkTestbedDelete(testbed.id)).toEqual({
+        ok: true,
+        value: blockers,
+      });
+      expect(await deleteTestbedAction(testbed.id)).toEqual({
+        ok: false,
+        error: { kind: "blocked", blockers },
+      });
+
+      await trx.deleteFrom("bookings").where("id", "=", booking.id).execute();
+      expect(await checkTestbedDelete(testbed.id)).toEqual({
+        ok: true,
+        value: [],
+      });
+      expect(await deleteTestbedAction(testbed.id)).toEqual({
+        ok: true,
+        value: undefined,
+      });
+      expect((await row(trx, testbed.id)).deleted_at).not.toBeNull();
+      const gone = { ok: false, error: { kind: "failed", message: GONE } };
+      expect(await deleteTestbedAction(testbed.id)).toEqual(gone);
+      expect(await deleteTestbedAction("not-a-uuid")).toEqual(gone);
+      expect(await checkTestbedDelete("not-a-uuid")).toEqual({
         ok: true,
         value: [],
       });

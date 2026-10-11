@@ -135,12 +135,15 @@ export interface TestbedClients {
   id: Generated<string>;
   kind: string;
   name: string;
+  os_password: string | null;
+  os_username: string | null;
   position: number;
   testbed_id: string;
   url: string;
 }
 
 export interface Testbeds {
+  authentik_group_deleted_at: Timestamp | null;
   authentik_group_pk: string | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;

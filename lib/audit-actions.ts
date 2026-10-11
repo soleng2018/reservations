@@ -19,7 +19,8 @@ export const AuditAction = z.enum([
   "testbed_type.created",
   "testbed.created",
   "authentik_group.created",
-  // The testbed create undo or its sweeper removed a group it created.
+  // The testbed create undo or its sweeper removed a group it created, or
+  // the worker tore down a deleted testbed's group (spec 0007 AC-7).
   "authentik_group.deleted",
   "booking.created",
   // The reconciler added or removed a learner in a pod group.
@@ -33,5 +34,8 @@ export const AuditAction = z.enum([
   "api_key.updated",
   "api_key.secret_replaced",
   "api_key.deleted",
+  // Feature 9 (spec 0007). Never with a client's OS username or password.
+  "testbed.updated",
+  "testbed.deleted",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

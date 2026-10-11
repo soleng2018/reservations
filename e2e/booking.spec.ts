@@ -54,7 +54,7 @@ test("an admin creates a type and a testbed, then a guest books it", async ({
   await page.getByRole("button", { name: "Add testbed" }).click();
   const testbedDialog = page.getByRole("dialog", { name: "Add testbed" });
   await testbedDialog.getByLabel("Name").fill(testbedName);
-  await choose(page, "Type", typeName);
+  await choose(page, "Testbed type", typeName);
   await testbedDialog
     .getByLabel("Nile Portal URL")
     .fill("https://portal.nile-test.invalid");
@@ -66,7 +66,10 @@ test("an admin creates a type and a testbed, then a guest books it", async ({
     timeout: 30_000,
   });
   await page.getByLabel("Search testbeds").fill(testbedName);
-  await expect(page.getByRole("cell", { name: `pod-${slug}` })).toBeVisible();
+  // Ready: the group pk is stored (spec 0007 AC-1 shows a badge otherwise).
+  const testbedRow = page.getByRole("row").filter({ hasText: testbedName });
+  await expect(testbedRow).toBeVisible();
+  await expect(testbedRow).not.toContainText("Not ready");
 
   if (haveApi) {
     const groups = await authentikGet(

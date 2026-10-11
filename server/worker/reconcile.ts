@@ -38,6 +38,8 @@ export async function reconcileAccess(
     .selectFrom("testbeds")
     .select(["id", "authentik_group_pk", "deleted_at"])
     .where("authentik_group_pk", "is not", null)
+    // Torn down (spec 0007 AC-7): the group no longer exists.
+    .where("authentik_group_deleted_at", "is", null)
     .execute();
   const current = await conn
     .selectFrom("bookings as b")
