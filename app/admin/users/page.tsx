@@ -15,6 +15,7 @@ import {
   learnerStatusLabel,
   reservationCountLabel,
 } from "@/lib/learners";
+import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { listLearnersForAdmin } from "@/server/users/learners";
@@ -40,12 +41,14 @@ export default async function UsersPage() {
         name: (
           <Link
             href={href}
-            className="text-cell font-semibold text-fg1 underline-offset-4 hover:text-nile-blue hover:underline"
+            className="text-cell font-semibold whitespace-normal text-fg1 underline-offset-4 hover:text-nile-blue hover:underline"
           >
             {u.name}
           </Link>
         ),
-        company: u.company ?? (
+        company: u.company ? (
+          <span className="whitespace-normal">{u.company}</span>
+        ) : (
           <>
             <span aria-hidden="true">—</span>
             <span className="sr-only">None</span>
@@ -60,7 +63,7 @@ export default async function UsersPage() {
           <Link
             href={href}
             aria-label={`View ${u.name}`}
-            className={buttonVariants({ variant: "outline", size: "icon" })}
+            className={cn(buttonVariants({ variant: "outline", size: "icon" }))}
           >
             <ArrowRightIcon aria-hidden="true" />
           </Link>

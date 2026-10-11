@@ -31,6 +31,7 @@ import {
   editDefaults,
   learnerStatusLabel,
 } from "@/lib/learners";
+import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { getLearnerDetail, type LearnerDetail } from "@/server/users/learners";
@@ -75,7 +76,7 @@ export default async function UserDetailPage(
         action={
           <Link
             href="/admin/users"
-            className={buttonVariants({ variant: "outline" })}
+            className={cn(buttonVariants({ variant: "outline" }))}
           >
             <ArrowLeftIcon data-icon="inline-start" aria-hidden="true" />
             All users
@@ -145,7 +146,7 @@ export default async function UserDetailPage(
               No reservations yet.
             </p>
           ) : (
-            <Table className="min-w-160">
+            <Table className="min-w-160" region="Reservations">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Status</TableHead>
@@ -167,14 +168,16 @@ export default async function UserDetailPage(
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-cell font-semibold text-fg1">
+                    <TableCell className="text-cell font-semibold whitespace-normal text-fg1">
                       {b.testbedName}
                     </TableCell>
-                    <TableCell className="text-fg2">{b.typeName}</TableCell>
-                    <TableCell className="text-sub text-fg2">
+                    <TableCell className="whitespace-normal text-fg2">
+                      {b.typeName}
+                    </TableCell>
+                    <TableCell className="min-w-36 text-sub whitespace-normal text-fg2">
                       {formatDateTime(b.startsAt, admin.timezone)}
                     </TableCell>
-                    <TableCell className="text-sub text-fg2">
+                    <TableCell className="min-w-36 text-sub whitespace-normal text-fg2">
                       {formatDateTime(b.endsAt, admin.timezone)}
                     </TableCell>
                     <TableCell className="text-right">

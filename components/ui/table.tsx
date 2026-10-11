@@ -3,11 +3,18 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+// `region` names the scroll container and makes it focusable, so a keyboard
+// can scroll a wide table that has no focusable cells of its own.
+function Table({
+  className,
+  region,
+  ...props
+}: React.ComponentProps<"table"> & { readonly region?: string }) {
   return (
     <div
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
+      {...(region ? { role: "region", "aria-label": region, tabIndex: 0 } : {})}
     >
       <table
         data-slot="table"

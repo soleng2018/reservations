@@ -166,17 +166,17 @@ spec [0007](../specs/0007-admin-testbeds/index.md) · code in `app/admin/testbed
 List and search learners (name, company, email, booking count, status); admin accounts live only in Authentik and are not managed here. Add and edit learners, deactivate and reactivate them, and open a detail page with their bookings and statuses. Add, edit, and deactivate are synced to Authentik. The mock's generated password is dropped because Authentik owns credentials. Admins can cancel a booking from the detail page.
 **Done when:** a user added here can sign in through Authentik; deactivating one blocks their sign in, frees their future bookings, and removes them from testbed groups, per the spec; the detail page shows Upcoming, Current, and Past bookings in the admin's timezone.
 - [x] Design it (spec): `/architect admin: users & user detail`
-- [ ] Build it: `/develop admin: users & user detail`
+- [x] Build it: `/develop admin: users & user detail`
   - [x] Read thread: index migration, admin timezone from the browser, Users list and read only detail page (AC-1, 2, 3, 15)
   - [x] Add strand: learner input, add saga with never logged in reuse, add dialog with timezone, unlinked learner sweeper (AC-4, 5, 12, 13)
   - [x] Edit strand: lock first edit with Authentik name and email sync, email lock, resend button (AC-6, 7, 13)
   - [x] Status and cancel strand: deactivate with booking cancels and confirm list, reactivate, reconciler status filter, admin cancel (AC-8, 9, 10, 11, 13)
-  - [ ] Guards and end to end: auth tests for every action, Playwright happy path (AC-1, 2, 4, 6, 8, 9, 14)
+  - [x] Guards and end to end: auth tests for every action, Playwright happy path (AC-1, 2, 4, 6, 8, 9, 14)
 - [ ] Verify it: `/check verify admin: users & user detail`
 - [ ] Test it: `/test admin: users & user detail`
 - [ ] Review it (fresh model): `/check review admin: users & user detail`
 - [ ] Document it: `/document admin: users & user detail`
-spec [0008](../specs/0008-admin-users/index.md)
+spec [0008](../specs/0008-admin-users/index.md) · code in `app/admin/users/`, `server/users/`, `server/authentik/learners.ts`, `server/db/refusal.ts`, `server/worker/sweep.ts`, `server/worker/reconcile.ts`, `components/admin/learner-fields.tsx`, `components/admin/learner-status-actions.tsx`, `components/admin/booking-cancel-button.tsx`, `components/admin/admin-timezone-sync.tsx`, `lib/learners.ts`, `lib/learner-input.ts`, `db/migrations/0007_admin_users.sql`
 
 ## Slice 3: Learner portal (from the mock)
 
