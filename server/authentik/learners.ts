@@ -16,6 +16,9 @@ export type LearnerRef = {
   readonly pk: number;
   readonly created: boolean; // this call created the Authentik user
   readonly tagged: boolean; // this call added the learner attributes
+  // Created, or reused but never signed in (spec 0008 AC-4): the account has
+  // no password yet, so it needs the set password email.
+  readonly neverLoggedIn: boolean;
 };
 
 export type FindOrCreateError =
@@ -97,7 +100,12 @@ export async function findOrCreateLearner(
     }),
   );
   if (!created.ok) return err("unavailable");
-  return ok({ pk: created.value.pk, created: true, tagged: false });
+  return ok({
+    pk: created.value.pk,
+    created: true,
+    tagged: false,
+    neverLoggedIn: true,
+  });
 }
 
 async function reuseLearner(
@@ -111,6 +119,7 @@ async function reuseLearner(
   const user = guarded.value;
   if (user.isActive === false) return err("refused");
 
+  const neverLoggedIn = user.lastLogin == null;
   const attributes = user.attributes ?? {};
   const missing = Object.fromEntries(
     Object.entries(learnerAttributes(holUserId)).filter(
@@ -118,7 +127,7 @@ async function reuseLearner(
     ),
   );
   if (Object.keys(missing).length === 0)
-    return ok({ pk, created: false, tagged: false });
+    return ok({ pk, created: false, tagged: false, neverLoggedIn });
 
   const patched = await call("users.tag", () =>
     api.coreUsersPartialUpdate({
@@ -127,7 +136,7 @@ async function reuseLearner(
     }),
   );
   if (!patched.ok) return err("unavailable");
-  return ok({ pk, created: false, tagged: true });
+  return ok({ pk, created: false, tagged: true, neverLoggedIn });
 }
 
 // Compensation for a saga that created this user (spec 0002 AC-13).

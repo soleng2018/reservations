@@ -20,6 +20,7 @@ import {
   purgeRateLimits,
   sweepGuestSagas,
   sweepTestbedCreates,
+  sweepUnlinkedLearners,
 } from "./sweep";
 
 const ago = (minutes: number) =>
@@ -149,5 +150,48 @@ describe.skipIf(!hasDb)("worker sweepers (AC-11)", () => {
         .where("bucket_key", "=", key)
         .execute();
       expect(left).toHaveLength(1);
+    }));
+});
+
+// covers: spec 0008 AC-12
+describe.skipIf(!hasDb)("sweepUnlinkedLearners (spec 0008 AC-12)", () => {
+  it("deletes only old learner rows with no pk and no bookings", () =>
+    inRollback(async (trx) => {
+      // A user row created `minutes` ago.
+      const aged = async (
+        minutes: number,
+        over: Parameters<typeof makeUser>[1] = {},
+      ) => {
+        const row = await makeUser(trx, over);
+        await trx
+          .updateTable("users")
+          .set({ created_at: ago(minutes) })
+          .where("id", "=", row.id)
+          .execute();
+        return row;
+      };
+      const old = await aged(11);
+      const young = await aged(5);
+      const linked = await aged(11, { authentik_user_pk: 41 });
+      const booked = await aged(11);
+      const admin = await aged(11, { role: "admin" });
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: booked.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(30),
+          ends_at: slot(32),
+          status: "provisioning",
+        })
+        .execute();
+
+      expect(await sweepUnlinkedLearners(trx)).toBeGreaterThanOrEqual(1);
+      expect(await exists(trx, "users", old.id)).toBe(false);
+      for (const kept of [young, linked, booked, admin])
+        expect(await exists(trx, "users", kept.id)).toBe(true);
     }));
 });

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
+import { FormDialog } from "@/components/admin/form-dialog";
+import { LearnerFields } from "@/components/admin/learner-fields";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { toneFor } from "@/lib/badge-tones";
 import {
   learnerSearchText,
@@ -15,6 +17,7 @@ import {
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { listLearnersForAdmin } from "@/server/users/learners";
+import { createLearnerAction } from "./actions";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -65,7 +68,23 @@ export default async function UsersPage() {
 
   return (
     <>
-      <PageHeader section="users" />
+      <PageHeader
+        section="users"
+        action={
+          <FormDialog
+            trigger={
+              <Button>
+                <PlusIcon data-icon="inline-start" aria-hidden="true" />
+                Add user
+              </Button>
+            }
+            title="Add User"
+            action={createLearnerAction}
+          >
+            <LearnerFields />
+          </FormDialog>
+        }
+      />
       <PageBody>
         <DataTable
           columns={[

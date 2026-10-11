@@ -168,7 +168,7 @@ List and search learners (name, company, email, booking count, status); admin ac
 - [x] Design it (spec): `/architect admin: users & user detail`
 - [ ] Build it: `/develop admin: users & user detail`
   - [x] Read thread: index migration, admin timezone from the browser, Users list and read only detail page (AC-1, 2, 3, 15)
-  - [ ] Add strand: learner input, add saga with never logged in reuse, add dialog with timezone, unlinked learner sweeper (AC-4, 5, 12, 13)
+  - [x] Add strand: learner input, add saga with never logged in reuse, add dialog with timezone, unlinked learner sweeper (AC-4, 5, 12, 13)
   - [ ] Edit strand: lock first edit with Authentik name and email sync, email lock, resend button (AC-6, 7, 13)
   - [ ] Status and cancel strand: deactivate with booking cancels and confirm list, reactivate, reconciler status filter, admin cancel (AC-8, 9, 10, 11, 13)
   - [ ] Guards and end to end: auth tests for every action, Playwright happy path (AC-1, 2, 4, 6, 8, 9, 14)

@@ -17,7 +17,7 @@ describe("findOrCreateLearner (AC-5)", () => {
     const r = await findOrCreateLearner(ak.api, input);
     expect(r).toEqual({
       ok: true,
-      value: { pk: 100, created: true, tagged: false },
+      value: { pk: 100, created: true, tagged: false, neverLoggedIn: true },
     });
     expect(ak.writes).toEqual(["POST /core/users/"]);
     expect(ak.users[0]).toMatchObject({
@@ -38,7 +38,7 @@ describe("findOrCreateLearner (AC-5)", () => {
     const r = await findOrCreateLearner(ak.api, input);
     expect(r).toEqual({
       ok: true,
-      value: { pk: 7, created: false, tagged: true },
+      value: { pk: 7, created: false, tagged: true, neverLoggedIn: true },
     });
     expect(ak.writes).toEqual(["PATCH /core/users/7/"]);
     expect(ak.users[0]?.attributes).toEqual({
@@ -57,9 +57,23 @@ describe("findOrCreateLearner (AC-5)", () => {
     ]);
     expect(await findOrCreateLearner(ak.api, input)).toEqual({
       ok: true,
-      value: { pk: 7, created: false, tagged: false },
+      value: { pk: 7, created: false, tagged: false, neverLoggedIn: true },
     });
     expect(ak.writes).toEqual([]);
+  });
+
+  it("marks a reused user who has signed in before (spec 0008 AC-4)", async () => {
+    const ak = fakeAuthentik([
+      user({
+        email: "priya@x.test",
+        attributes: { hol_learner: true, hol_user_id: "row-1" },
+        last_login: "2026-10-01T09:00:00Z",
+      }),
+    ]);
+    expect(await findOrCreateLearner(ak.api, input)).toEqual({
+      ok: true,
+      value: { pk: 7, created: false, tagged: false, neverLoggedIn: false },
+    });
   });
 
   it("refuses an admin email without writing", async () => {

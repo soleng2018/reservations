@@ -53,7 +53,8 @@ export type StepOneError =
 const STALE_OWN_ATTEMPT = sql<Date>`now() - interval '1 minute'`;
 const SWEEP_AFTER = sql<Date>`now() - interval '10 minutes'`;
 // Rechecked in the delete itself, so a booking made meanwhile keeps the row.
-const HAS_NO_BOOKINGS = sql<boolean>`not exists (
+// The statement must name the table `users` (no alias).
+export const HAS_NO_BOOKINGS = sql<boolean>`not exists (
   select 1 from hol_app.bookings b where b.user_id = users.id
 )`;
 

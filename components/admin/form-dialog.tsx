@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type TransitionStartFunction,
 } from "react";
+import Link from "next/link";
 import { CircleAlertIcon, XIcon } from "lucide-react";
 import type { AdminFormState } from "@/app/admin/actions";
 import { FormErrorsContext } from "@/components/form-errors";
@@ -174,6 +175,14 @@ function FormBody({
       <FormErrorsContext value={errors}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5.5">
           {children}
+          {state.kind === "error" && state.link ? (
+            <Link
+              href={state.link.href}
+              className="w-fit text-sm font-semibold text-primary underline-offset-4 hover:underline"
+            >
+              {state.link.label}
+            </Link>
+          ) : null}
           {state.kind === "error" && state.message ? (
             <Alert variant="destructive">
               <CircleAlertIcon aria-hidden="true" />

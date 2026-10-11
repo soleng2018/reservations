@@ -46,6 +46,8 @@ export type AdminFormState =
       readonly kind: "error";
       readonly message?: string;
       readonly fields: FieldErrors;
+      // Shown under the field errors (spec 0008 AC-5: "View user").
+      readonly link?: { readonly href: string; readonly label: string };
     };
 
 const text = (form: FormData, key: string) => {

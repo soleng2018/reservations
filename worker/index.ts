@@ -20,6 +20,7 @@ import {
   purgeRateLimits,
   sweepGuestSagas,
   sweepTestbedCreates,
+  sweepUnlinkedLearners,
 } from "@/server/worker/sweep";
 import { teardownDeletedTestbeds } from "@/server/worker/teardown";
 
@@ -72,6 +73,10 @@ async function main(): Promise<number> {
     const steps: readonly Step[] = [
       { name: "complete ended bookings", run: () => completeEnded(conn) },
       { name: "guest saga sweeper", run: () => sweepGuestSagas(api, conn) },
+      {
+        name: "unlinked learner sweeper",
+        run: () => sweepUnlinkedLearners(conn),
+      },
       {
         name: "testbed create sweeper",
         run: () => sweepTestbedCreates(api, conn),

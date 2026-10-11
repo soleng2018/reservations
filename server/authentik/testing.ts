@@ -13,6 +13,8 @@ export type FakeUser = {
   is_superuser: boolean;
   groups: string[];
   attributes: Record<string, unknown>;
+  // ISO time of the last sign in; absent or null means never.
+  last_login?: string | null;
 };
 
 export type FakeSession = { uuid: string; user: number; username: string };
