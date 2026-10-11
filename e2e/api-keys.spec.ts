@@ -200,3 +200,65 @@ test("a duplicate name, an http URL, and an empty key show field errors", async 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(rowOf(page, name)).toHaveCount(1);
 });
+
+// covers: AC-3
+test("a URL with credentials and a 4097 character key are refused, the key kept whole", async ({
+  adminPage: page,
+}) => {
+  await openPage(page);
+  const dialog = page.getByRole("dialog", { name: "Add API Key" });
+  const keyField = dialog.getByLabel("Key value");
+  const long = `canary${unique()}`.padEnd(4097, "x");
+
+  await page.getByRole("button", { name: "Add API key" }).click();
+  await dialog.getByLabel("Name").fill(`e2e keys ${unique()}`);
+  await dialog.getByLabel("Base URL").fill("https://u:p@acme.okta.example");
+  await keyField.fill(long);
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    dialog.getByText("Remove credentials from the URL."),
+  ).toBeVisible();
+  await expect(dialog.getByText("Use at most 4096 characters.")).toBeVisible();
+  // No maxLength on the key: a pasted secret is never cut short.
+  await expect(keyField).toHaveValue(long);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+});
+
+// covers: AC-1
+test("an AI key is listed with its type, and search matches name and type", async ({
+  adminPage: page,
+}) => {
+  // Hex suffixes and these hosts never spell "ai", so only the type does.
+  const idp = `e2e keys ${unique()}`;
+  const ai = `e2e keys ${unique()}`;
+  created.push(idp, ai);
+  await openPage(page);
+
+  const dialog = page.getByRole("dialog", { name: "Add API Key" });
+  await page.getByRole("button", { name: "Add API key" }).click();
+  await dialog.getByLabel("Name").fill(idp);
+  await dialog.getByLabel("Base URL").fill("https://idp.example");
+  await dialog.getByLabel("Key value").fill("k");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(`Created ${idp}.`)).toBeVisible();
+
+  await page.getByRole("button", { name: "Add API key" }).click();
+  await dialog.getByLabel("Name").fill(ai);
+  await dialog.getByRole("combobox").click();
+  await page.getByRole("option", { name: "AI", exact: true }).click();
+  await dialog.getByLabel("Base URL").fill("https://llm.example");
+  await dialog.getByLabel("Key value").fill("k");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText(`Created ${ai}.`)).toBeVisible();
+  await expect(rowOf(page, ai).getByRole("cell").nth(1)).toHaveText("AI");
+  await expect(rowOf(page, idp).getByRole("cell").nth(1)).toHaveText("IDP");
+
+  const search = page.getByRole("searchbox");
+  await search.fill("AI");
+  await expect(rowOf(page, ai)).toHaveCount(1);
+  await expect(rowOf(page, idp)).toHaveCount(0);
+
+  await search.fill(idp.toUpperCase());
+  await expect(rowOf(page, idp)).toHaveCount(1);
+  await expect(rowOf(page, ai)).toHaveCount(0);
+});

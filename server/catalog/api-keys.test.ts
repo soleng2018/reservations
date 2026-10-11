@@ -360,6 +360,50 @@ describe.skipIf(!hasDb)("updateApiKey (AC-4, AC-5)", () => {
       expect(await updates(trx, id)).toEqual([]);
     }));
 
+  // covers: AC-3, AC-4
+  it("lets a key change the case of its own name, auditing it as a rename", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const upper = fields.name.toUpperCase();
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { name: upper }),
+          actor.id,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect((await stored(trx, id)).name).toBe(upper);
+      expect(await updates(trx, id)).toMatchObject([
+        {
+          action: "api_key.updated",
+          metadata: { name: { from: fields.name, to: upper } },
+        },
+      ]);
+    }));
+
+  // covers: AC-8
+  it("turns an unmapped DB error into a fixed message, no row data", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      // Skips Zod on purpose: api_keys_name_trimmed fails on the UPDATE, and
+      // Postgres puts the failing row, the new ciphertext included, in the
+      // error detail.
+      const e = await thrown(() =>
+        updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { name: " untrimmed ", secret: "canary-replacement" }),
+          actor.id,
+        ),
+      );
+      expect(e.message).toBe("api key write failed");
+      expect(e.cause).toBeUndefined();
+      expect(JSON.stringify(e)).not.toMatch(/canary|v1:/);
+    }));
+
   it("refuses a name another live key has, ignoring case", () =>
     inRollback(async (trx) => {
       const { actor, id, fields } = await setup(trx);
