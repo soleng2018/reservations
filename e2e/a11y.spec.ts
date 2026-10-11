@@ -89,3 +89,33 @@ test("the gallery with each dialog open", async ({ adminPage: page }) => {
   ).toBeVisible();
   await expectNoSeriousViolations(page);
 });
+
+// Spec 0009 AC-10: the landing at both widths, its skip link, and its
+// heading order.
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  // covers: AC-10 (spec 0009)
+  test(`the landing at ${viewport.width}px`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectNoSeriousViolations(page);
+  });
+}
+
+// covers: AC-10 (spec 0009)
+test("the landing's skip link and heading order", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main#content")).toBeFocused();
+
+  const levels = await page
+    .locator("h1, h2, h3, h4, h5, h6")
+    .evaluateAll((hs) => hs.map((h) => Number(h.tagName.slice(1))));
+  expect(levels).toEqual([1, 2, 3, 3, 3]);
+});

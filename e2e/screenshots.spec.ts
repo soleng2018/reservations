@@ -67,9 +67,16 @@ for (const w of WIDTHS) {
     await context.close();
   });
 
-  // covers: AC-15
+  // covers: AC-15, spec 0009 AC-10
   test(`public shots at ${w.name}`, async ({ page }) => {
     await page.setViewportSize({ width: w.width, height: w.height });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(
+      page.locator('main img[src*="hol-hero.jpg"]'),
+    ).toHaveJSProperty("complete", true);
+    await shot(page, w.name, "landing");
+
     await page.goto(ADMIN_ENTRY);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await shot(page, w.name, "sign-in-card");
