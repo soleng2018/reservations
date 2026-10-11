@@ -216,6 +216,13 @@ async function lockLearnerRow(trx: Kysely<DB>, usersId: string) {
   return row;
 }
 
+// A row with no Authentik pk is still being added (or booked); the console
+// never shows or changes it (spec 0008 key invariants), so it is not found.
+function linkedPk(row: { readonly authentik_user_pk: number | null }) {
+  if (row.authentik_user_pk === null) throw new Refusal("not_found");
+  return row.authentik_user_pk;
+}
+
 async function setActive(
   api: CoreApi,
   pk: number,
@@ -247,6 +254,7 @@ export async function deactivateLearner(
   return refusable(() =>
     conn.transaction().execute(async (trx) => {
       const row = await lockLearnerRow(trx, usersId);
+      const pk = linkedPk(row);
       if (row.status === "deactivated") return { cancelled: 0 };
 
       const pending = await trx
@@ -257,16 +265,12 @@ export async function deactivateLearner(
         .executeTakeFirst();
       if (pending) throw new Refusal("booking_pending");
 
-      const pk = row.authentik_user_pk;
-      if (pk !== null) {
-        const user = await setActive(api, pk, false);
-        if (!user.ok && user.error !== "not_found")
-          throw new Refusal(user.error);
-        if (!user.ok) console.warn(`deactivate: Authentik user ${pk} is gone`);
-        else {
-          const ended = await endSessionsOf(api, user.value);
-          if (!ended.ok) throw new Refusal(ended.error);
-        }
+      const user = await setActive(api, pk, false);
+      if (!user.ok && user.error !== "not_found") throw new Refusal(user.error);
+      if (!user.ok) console.warn(`deactivate: Authentik user ${pk} is gone`);
+      else {
+        const ended = await endSessionsOf(api, user.value);
+        if (!ended.ok) throw new Refusal(ended.error);
       }
 
       await trx
@@ -351,12 +355,10 @@ export async function reactivateLearner(
   return refusable(() =>
     conn.transaction().execute(async (trx) => {
       const row = await lockLearnerRow(trx, usersId);
+      const pk = linkedPk(row);
       if (row.status === "active") return;
-      const pk = row.authentik_user_pk;
-      if (pk !== null) {
-        const user = await setActive(api, pk, true);
-        if (!user.ok) throw new Refusal(user.error);
-      }
+      const user = await setActive(api, pk, true);
+      if (!user.ok) throw new Refusal(user.error);
       await trx
         .updateTable("users")
         .set({ status: "active", deactivated_at: null })

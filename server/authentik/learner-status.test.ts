@@ -157,6 +157,41 @@ describe.skipIf(!hasDb)("deactivate and reactivate a learner (AC-9)", () => {
         ),
       ).toEqual({ ok: false, error: "not_found" });
     }));
+
+  // covers: spec 0008 key invariant (a row with no pk is never changed)
+  it("treats a row with no Authentik pk as not found, changing nothing", () =>
+    inRollback(async (trx) => {
+      const { actor } = await setup(trx);
+      const adding = await makeUser(trx);
+      const old = await makeUser(trx, {
+        status: "deactivated",
+        deactivated_at: new Date(),
+      });
+      const ak = fakeAuthentik([LEARNER]);
+      expect(
+        await deactivateLearner(ak.api, asConn(trx), adding.id, actor.id),
+      ).toEqual({ ok: false, error: "not_found" });
+      expect(
+        await reactivateLearner(ak.api, asConn(trx), old.id, actor.id),
+      ).toEqual({ ok: false, error: "not_found" });
+      expect(ak.writes).toEqual([]);
+      const rows = await trx
+        .selectFrom("users")
+        .select(["id", "status"])
+        .where("id", "in", [adding.id, old.id])
+        .execute();
+      expect(Object.fromEntries(rows.map((r) => [r.id, r.status]))).toEqual({
+        [adding.id]: "active",
+        [old.id]: "deactivated",
+      });
+      expect(
+        await trx
+          .selectFrom("audit_events")
+          .select("action")
+          .where("target_id", "in", [adding.id, old.id])
+          .execute(),
+      ).toEqual([]);
+    }));
 });
 
 // A booking of `userId`, `from` to `to` hours from now.
