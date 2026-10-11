@@ -189,8 +189,9 @@ The learner home from the mock: hero, "Reserve a lab" and "Manage an existing re
   - [x] Indexing: root `noindex` default, `robots.txt` and sitemap, build and unreachable database checks (AC-1, 7, 8, 9)
   - [x] Nile footer on every learner page, with contrast pairs (AC-5)
   - [x] Axe and screenshots for `/`, `/book` captured again (AC-5, 10)
-- [ ] Verify it: `/check verify public landing page`
+- [x] Verify it: `/check verify public landing page`
 - [ ] Test it: `/test public landing page`
+- [x] Review it (fresh model): `/check review public landing page`
 spec [0009](../specs/0009-public-landing-page/index.md) · code in `app/page.tsx`, `app/robots.ts`, `app/sitemap.ts`, `app/layout.tsx`, `components/learner-frame.tsx`, `components/learner-footer.tsx`, `server/env.ts` (`appUrl()`), `public/brand/hol-hero.jpg`, `public/brand/hol-social.jpg`, `e2e/landing.spec.ts`
 
 ### 12. Availability & booking rules · needs a decision
