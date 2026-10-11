@@ -22,6 +22,9 @@ import {
   cancelBookingByAdmin,
   createLearner,
   deactivationPreview,
+  getLearnerDetail,
+  isConsoleLearner,
+  listLearnersForAdmin,
   resendSetPasswordByAdmin,
   updateLearner,
 } from "./learners";
@@ -669,5 +672,271 @@ describe.skipIf(!hasDb)("deactivationPreview (spec 0008 AC-8)", () => {
       ]);
       const admin = await makeUser(trx, { role: "admin" });
       expect(await deactivationPreview(trx, admin.id, "UTC")).toEqual([]);
+    }));
+});
+
+// A booking of `userId`, `from` to `to` hours from now, on its own testbed
+// unless one is given; a cancelled one records its source.
+async function bookingOf(
+  trx: Kysely<DB>,
+  userId: string,
+  opts: {
+    readonly from: number;
+    readonly to: number;
+    readonly status: string;
+    readonly cancelSource?: "learner" | "admin" | "deactivation";
+    readonly testbed?: {
+      readonly id: string;
+      readonly testbed_type_id: string;
+    };
+  },
+) {
+  const testbed =
+    opts.testbed ?? (await makeTestbed(trx, (await makeType(trx)).id));
+  return trx
+    .insertInto("bookings")
+    .values({
+      user_id: userId,
+      testbed_id: testbed.id,
+      testbed_type_id: testbed.testbed_type_id,
+      starts_at: slot(opts.from),
+      ends_at: slot(opts.to),
+      status: opts.status,
+      ...(opts.cancelSource
+        ? {
+            cancelled_at: slot(opts.from - 24),
+            cancel_source: opts.cancelSource,
+          }
+        : {}),
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+// covers: AC-1
+describe.skipIf(!hasDb)("listLearnersForAdmin (spec 0008 AC-1)", () => {
+  // The shared database holds other rows, so look only at this test's.
+  const mine = async (trx: Kysely<DB>, ids: readonly string[]) =>
+    (await listLearnersForAdmin(trx)).filter((r) => ids.includes(r.id));
+
+  it("lists learners with a pk, ordered by name ignoring case", () =>
+    inRollback(async (trx) => {
+      const tag = unique();
+      const { row: zed } = await linked(trx, 9401, { name: `zed ${tag}` });
+      const { row: amy } = await linked(trx, 9402, { name: `Amy ${tag}` });
+      const { row: bob } = await linked(trx, 9403, {
+        name: `bob ${tag}`,
+        status: "deactivated",
+        deactivated_at: new Date(),
+      });
+      const pending = await makeUser(trx, { name: `Al ${tag}` });
+      const admin = await makeUser(trx, {
+        name: `Ada ${tag}`,
+        role: "admin",
+        authentik_user_pk: 9404,
+      });
+      const ids = [zed.id, amy.id, bob.id, pending.id, admin.id];
+      expect((await mine(trx, ids)).map((r) => r.id)).toEqual([
+        amy.id,
+        bob.id,
+        zed.id,
+      ]);
+    }));
+
+  it("carries the status and the edit defaults of each row", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401, {
+        status: "deactivated",
+        deactivated_at: new Date(),
+        set_password_pending: false,
+        company: null,
+        timezone: "Asia/Tokyo",
+      });
+      expect(await mine(trx, [row.id])).toEqual([
+        {
+          id: row.id,
+          name: "Pat Lee",
+          company: null,
+          email: row.email,
+          timezone: "Asia/Tokyo",
+          status: "deactivated",
+          reservationCount: 0,
+          emailEditable: false,
+        },
+      ]);
+    }));
+
+  it("counts every booking except cancelled and provisioning ones", () =>
+    inRollback(async (trx) => {
+      const { row: a } = await linked(trx, 9401);
+      await bookingOf(trx, a.id, { from: -30, to: -28, status: "completed" });
+      await bookingOf(trx, a.id, {
+        from: -20,
+        to: -18,
+        status: "cancelled",
+        cancelSource: "learner",
+      });
+      await bookingOf(trx, a.id, { from: 48, to: 50, status: "provisioning" });
+      // A confirmed booking past its end the worker has not completed yet
+      // shows as Past, so it counts.
+      const { row: b } = await linked(trx, 9402);
+      await bookingOf(trx, b.id, { from: -10, to: -8, status: "confirmed" });
+      await bookingOf(trx, b.id, { from: -30, to: -28, status: "completed" });
+      const counts = Object.fromEntries(
+        (await mine(trx, [a.id, b.id])).map((r) => [r.id, r.reservationCount]),
+      );
+      expect(counts).toEqual({ [a.id]: 1, [b.id]: 2 });
+    }));
+});
+
+// covers: AC-2
+describe.skipIf(!hasDb)("getLearnerDetail (spec 0008 AC-2)", () => {
+  it("lists every booking newest first with its phase and canceller", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401);
+      const upcoming = await bookingOf(trx, row.id, {
+        from: 48,
+        to: 50,
+        status: "confirmed",
+      });
+      const past = await bookingOf(trx, row.id, {
+        from: -10,
+        to: -8,
+        status: "completed",
+      });
+      const cancelled = await bookingOf(trx, row.id, {
+        from: -30,
+        to: -28,
+        status: "cancelled",
+        cancelSource: "deactivation",
+      });
+      const found = await getLearnerDetail(trx, row.id);
+      if (!found.ok) throw new Error("expected the learner");
+      expect(
+        found.value.bookings.map((b) => [b.id, b.phase, b.cancelSource]),
+      ).toEqual([
+        [upcoming.id, "Upcoming", null],
+        [past.id, "Past", null],
+        [cancelled.id, "Cancelled", "deactivation"],
+      ]);
+      expect(found.value.bookings[0]).toMatchObject({
+        version: upcoming.version,
+        startsAt: upcoming.starts_at,
+        endsAt: upcoming.ends_at,
+      });
+    }));
+
+  it("shows Current and Pending bookings by their phase", () =>
+    inRollback(async (trx) => {
+      const { row: a } = await linked(trx, 9401);
+      await bookingOf(trx, a.id, { from: -1, to: 2, status: "confirmed" });
+      const { row: b } = await linked(trx, 9402);
+      await bookingOf(trx, b.id, { from: 48, to: 50, status: "provisioning" });
+      const phases = async (id: string) => {
+        const found = await getLearnerDetail(trx, id);
+        return found.ok ? found.value.bookings.map((x) => x.phase) : [];
+      };
+      expect(await phases(a.id)).toEqual(["Current"]);
+      expect(await phases(b.id)).toEqual(["Pending"]);
+    }));
+
+  it("names a soft deleted testbed and type", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401);
+      const type = await makeType(trx, { deleted_at: new Date() });
+      const testbed = await makeTestbed(trx, type.id, {
+        deleted_at: new Date(),
+      });
+      await bookingOf(trx, row.id, {
+        from: -30,
+        to: -28,
+        status: "cancelled",
+        cancelSource: "admin",
+        testbed,
+      });
+      const found = await getLearnerDetail(trx, row.id);
+      if (!found.ok) throw new Error("expected the learner");
+      expect(found.value.bookings).toMatchObject([
+        { testbedName: testbed.name, typeName: type.name },
+      ]);
+    }));
+
+  it("returns the learner's header values and counts like the list", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401, { set_password_pending: true });
+      await bookingOf(trx, row.id, { from: -10, to: -8, status: "completed" });
+      await bookingOf(trx, row.id, {
+        from: -30,
+        to: -28,
+        status: "cancelled",
+        cancelSource: "learner",
+      });
+      const found = await getLearnerDetail(trx, row.id);
+      if (!found.ok) throw new Error("expected the learner");
+      expect(found.value.learner).toEqual({
+        id: row.id,
+        name: "Pat Lee",
+        company: "Acme",
+        email: row.email,
+        timezone: "UTC",
+        status: "active",
+        reservationCount: 1,
+        emailEditable: true,
+        setPasswordPending: true,
+      });
+    }));
+
+  it("returns no bookings for a learner who has none", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401);
+      const found = await getLearnerDetail(trx, row.id);
+      expect(found.ok && found.value.bookings).toEqual([]);
+    }));
+
+  it("is not found for an admin, a learner with no pk, or an unknown id", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, {
+        role: "admin",
+        authentik_user_pk: 9404,
+      });
+      const pending = await makeUser(trx);
+      for (const id of [admin.id, pending.id, crypto.randomUUID()])
+        expect(await getLearnerDetail(trx, id)).toEqual({
+          ok: false,
+          error: "not_found",
+        });
+    }));
+
+  it("writes nothing: an ended confirmed booking stays confirmed", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401);
+      const ended = await bookingOf(trx, row.id, {
+        from: -10,
+        to: -8,
+        status: "confirmed",
+      });
+      await getLearnerDetail(trx, row.id);
+      const after = await trx
+        .selectFrom("bookings")
+        .select(["status", "version"])
+        .where("id", "=", ended.id)
+        .executeTakeFirstOrThrow();
+      expect(after).toEqual({ status: "confirmed", version: ended.version });
+    }));
+});
+
+// covers: AC-1, AC-2 (who the console may show)
+describe.skipIf(!hasDb)("isConsoleLearner (spec 0008)", () => {
+  it("is true only for a learner with a pk", () =>
+    inRollback(async (trx) => {
+      const { row } = await linked(trx, 9401);
+      const admin = await makeUser(trx, {
+        role: "admin",
+        authentik_user_pk: 9404,
+      });
+      const pending = await makeUser(trx);
+      expect(await isConsoleLearner(trx, row.id)).toBe(true);
+      for (const id of [admin.id, pending.id, crypto.randomUUID()])
+        expect(await isConsoleLearner(trx, id)).toBe(false);
     }));
 });

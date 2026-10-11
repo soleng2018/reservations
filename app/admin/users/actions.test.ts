@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { describe, expect, it, vi } from "vitest";
 import type { CoreApi } from "@/server/authentik/client";
 import type { DB } from "@/server/db/types";
@@ -365,3 +365,203 @@ describe.skipIf(!hasDb)("users actions for an admin (spec 0008)", () => {
       ).toBe("Europe/Paris");
     }));
 });
+
+// covers: AC-5, AC-6, AC-8, AC-9, AC-10, AC-14 (what each refusal tells the admin)
+describe.skipIf(!hasDb)(
+  "users actions turn refusals into messages (spec 0008)",
+  () => {
+    const usersWithEmail = (trx: Kysely<DB>, email: string) =>
+      trx
+        .selectFrom("users")
+        .select("id")
+        .where(sql<string>`lower(email)`, "=", email.toLowerCase())
+        .execute();
+
+    it("refuses an admin's email on the email field, adding no row", () =>
+      as("admin", async (trx, me) => {
+        ctx.api = fakeAuthentik([]).api;
+        const admin = await trx
+          .selectFrom("users")
+          .select("email")
+          .where("id", "=", me ?? "")
+          .executeTakeFirstOrThrow();
+        expect(
+          await createLearnerAction(
+            IDLE,
+            learnerForm({ email: admin.email.toUpperCase() }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: { email: "This email can't be used for a learner account." },
+        });
+        expect(await usersWithEmail(trx, admin.email)).toHaveLength(1);
+      }));
+
+    it("says a row with no pk yet is being set up, with no link", () =>
+      as("admin", async (trx) => {
+        ctx.api = fakeAuthentik([]).api;
+        const pending = await makeUser(trx, {
+          email: `half-${unique()}@x.test`,
+        });
+        expect(
+          await createLearnerAction(
+            IDLE,
+            learnerForm({ email: pending.email }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            email:
+              "A user with this email is being set up. Try again in a minute.",
+          },
+        });
+      }));
+
+    it("shows the unavailable message when Authentik is down, adding no row", () =>
+      as("admin", async (trx) => {
+        ctx.api = fakeAuthentik([], { down: true }).api;
+        const email = `down-${unique()}@x.test`;
+        expect(await createLearnerAction(IDLE, learnerForm({ email }))).toEqual(
+          {
+            kind: "error",
+            message:
+              "Authentik is unavailable. Nothing was changed, try again.",
+            fields: {},
+          },
+        );
+        expect(await usersWithEmail(trx, email)).toEqual([]);
+      }));
+
+    it("refuses an email change after sign in on the email field", () =>
+      as("admin", async (trx) => {
+        const { learner, account } = await learnerWithBooking(trx, 9320);
+        await trx
+          .updateTable("users")
+          .set({ set_password_pending: false })
+          .where("id", "=", learner.id)
+          .execute();
+        const ak = fakeAuthentik([account]);
+        ctx.api = ak.api;
+        expect(
+          await updateLearnerAction(
+            learner.id,
+            IDLE,
+            learnerForm({
+              name: learner.name,
+              email: `new-${unique()}@x.test`,
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            email: "This email can't change after the learner signs in.",
+          },
+        });
+        expect(ak.writes).toEqual([]);
+      }));
+
+    it("leaves the row unchanged and says so when Authentik is down on edit", () =>
+      as("admin", async (trx) => {
+        const { learner, account } = await learnerWithBooking(trx, 9321);
+        ctx.api = fakeAuthentik([account], { down: true }).api;
+        expect(
+          await updateLearnerAction(
+            learner.id,
+            IDLE,
+            learnerForm({ name: "Pat Morgan", email: learner.email }),
+          ),
+        ).toEqual({
+          kind: "error",
+          message: "Authentik is unavailable. Nothing was changed, try again.",
+          fields: {},
+        });
+        const after = await trx
+          .selectFrom("users")
+          .select("name")
+          .where("id", "=", learner.id)
+          .executeTakeFirstOrThrow();
+        expect(after.name).toBe("Pat Lee");
+      }));
+
+    it("refuses to deactivate or reactivate an admin row, with no Authentik write", () =>
+      as("admin", async (trx) => {
+        const other = await makeUser(trx, {
+          role: "admin",
+          company: null,
+          authentik_user_pk: 9322,
+        });
+        const ak = fakeAuthentik([]);
+        ctx.api = ak.api;
+        expect(await deactivateLearnerAction(other.id)).toEqual({
+          ok: false,
+          error: "refused",
+        });
+        expect(await reactivateLearnerAction(other.id)).toEqual({
+          ok: false,
+          error: "refused",
+        });
+        expect(ak.writes).toEqual([]);
+        const after = await trx
+          .selectFrom("users")
+          .select("status")
+          .where("id", "=", other.id)
+          .executeTakeFirstOrThrow();
+        expect(after.status).toBe("active");
+      }));
+
+    it("refuses to deactivate while a booking is being set up", () =>
+      as("admin", async (trx) => {
+        const { learner, booking, account } = await learnerWithBooking(
+          trx,
+          9323,
+        );
+        await trx
+          .updateTable("bookings")
+          .set({ status: "provisioning" })
+          .where("id", "=", booking.id)
+          .execute();
+        const ak = fakeAuthentik([account]);
+        ctx.api = ak.api;
+        expect(await deactivateLearnerAction(learner.id)).toEqual({
+          ok: false,
+          error: "booking_pending",
+        });
+        expect(ak.writes).toEqual([]);
+      }));
+
+    // Spec 0008 key invariant: rows with no Authentik pk are never shown,
+    // edited, or deactivated from the console.
+    it("treats a learner with no pk as not found when deactivating", () =>
+      as("admin", async (trx) => {
+        const pending = await makeUser(trx, {
+          email: `half-${unique()}@x.test`,
+        });
+        ctx.api = fakeAuthentik([]).api;
+        expect(await deactivateLearnerAction(pending.id)).toEqual({
+          ok: false,
+          error: "not_found",
+        });
+        const after = await trx
+          .selectFrom("users")
+          .select("status")
+          .where("id", "=", pending.id)
+          .executeTakeFirstOrThrow();
+        expect(after.status).toBe("active");
+      }));
+
+    it("calls a version that is not a whole number stale, changing nothing", () =>
+      as("admin", async (trx) => {
+        const { booking } = await learnerWithBooking(trx, 9324);
+        expect(await cancelBookingAdminAction(booking.id, 1.5)).toEqual({
+          ok: false,
+          error: "stale",
+        });
+        const after = await trx
+          .selectFrom("bookings")
+          .select("status")
+          .where("id", "=", booking.id)
+          .executeTakeFirstOrThrow();
+        expect(after.status).toBe("confirmed");
+      }));
+  },
+);
