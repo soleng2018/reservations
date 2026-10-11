@@ -38,7 +38,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 7 | Admin: Testbed Types | Slice 2 | done |
 | 8 | Admin: API Keys | Slice 2 | done |
 | 9 | Admin: Testbeds | Slice 2 | done |
-| 10 | Admin: Users & user detail | Slice 2 | in-progress |
+| 10 | Admin: Users & user detail | Slice 2 | done |
 | 11 | Public landing page | Slice 3 | planned |
 | 12 | Availability & booking rules | Slice 3 | planned |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | planned |
@@ -162,7 +162,7 @@ Saving a new testbed creates its Authentik group and protects its URLs with it; 
 - [x] Review it (fresh model): `/check review admin: testbeds`
 spec [0007](../specs/0007-admin-testbeds/index.md) · code in `app/admin/testbeds/`, `app/admin/actions.ts`, `server/catalog/testbeds.ts`, `server/worker/teardown.ts`, `server/db/delete-blockers.ts`, `components/admin/testbed-fields.tsx`, `components/admin/testbed-edit-dialog.tsx`, `lib/testbeds.ts`, `lib/catalog-input.ts`, `db/migrations/0006_testbed_admin.sql`
 
-### 10. Admin: Users & user detail · in-progress · Full
+### 10. Admin: Users & user detail · done · Full
 List and search learners (name, company, email, booking count, status); admin accounts live only in Authentik and are not managed here. Add and edit learners, deactivate and reactivate them, and open a detail page with their bookings and statuses. Add, edit, and deactivate are synced to Authentik. The mock's generated password is dropped because Authentik owns credentials. Admins can cancel a booking from the detail page.
 **Done when:** a user added here can sign in through Authentik; deactivating one blocks their sign in, frees their future bookings, and removes them from testbed groups, per the spec; the detail page shows Upcoming, Current, and Past bookings in the admin's timezone.
 - [x] Design it (spec): `/architect admin: users & user detail`
@@ -172,10 +172,10 @@ List and search learners (name, company, email, booking count, status); admin ac
   - [x] Edit strand: lock first edit with Authentik name and email sync, email lock, resend button (AC-6, 7, 13)
   - [x] Status and cancel strand: deactivate with booking cancels and confirm list, reactivate, reconciler status filter, admin cancel (AC-8, 9, 10, 11, 13)
   - [x] Guards and end to end: auth tests for every action, Playwright happy path (AC-1, 2, 4, 6, 8, 9, 14)
-- [ ] Verify it: `/check verify admin: users & user detail`
-- [ ] Test it: `/test admin: users & user detail`
-- [ ] Review it (fresh model): `/check review admin: users & user detail`
-- [ ] Document it: `/document admin: users & user detail`
+- [x] Verify it: `/check verify admin: users & user detail`
+- [x] Test it: `/test admin: users & user detail`
+- [x] Review it (fresh model): `/check review admin: users & user detail`
+- [x] Document it: `/document admin: users & user detail`
 spec [0008](../specs/0008-admin-users/index.md) · code in `app/admin/users/`, `server/users/`, `server/authentik/learners.ts`, `server/db/refusal.ts`, `server/worker/sweep.ts`, `server/worker/reconcile.ts`, `components/admin/learner-fields.tsx`, `components/admin/learner-status-actions.tsx`, `components/admin/booking-cancel-button.tsx`, `components/admin/admin-timezone-sync.tsx`, `lib/learners.ts`, `lib/learner-input.ts`, `db/migrations/0007_admin_users.sql`
 
 ## Slice 3: Learner portal (from the mock)
