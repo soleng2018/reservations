@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { Blocker } from "@/lib/delete-flow";
 import { fieldErrors } from "@/lib/form-errors";
 import { LearnerInput } from "@/lib/learner-input";
 import { LEARNER_MESSAGES } from "@/lib/learners";
@@ -9,10 +10,17 @@ import { err, ok, type Result } from "@/lib/result";
 import { Timezone } from "@/lib/timezones";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
+import {
+  deactivateLearner,
+  reactivateLearner,
+} from "@/server/authentik/learners";
 import { db } from "@/server/db";
 import { setAdminTimezone } from "@/server/users/admin-timezone";
 import {
+  cancelBookingByAdmin,
   createLearner,
+  deactivationPreview,
+  isConsoleLearner,
   resendSetPasswordByAdmin,
   updateLearner,
   type CreateLearnerError,
@@ -148,6 +156,89 @@ export async function resendSetPasswordAdminAction(
   revalidateUsers();
   if (!sent.ok) return sent;
   return ok(`Set password email queued for ${sent.value.email}.`);
+}
+
+// AC-8, the check before the confirm: the bookings a deactivation cancels,
+// labelled in the admin's zone.
+export async function checkDeactivate(
+  id: string,
+): Promise<Result<readonly Blocker[], "unavailable">> {
+  const { user } = await requireAdmin();
+  if (!isId(id)) return ok([]);
+  return ok(await deactivationPreview(db(), id, user.timezone));
+}
+
+export type DeactivateError =
+  "booking_pending" | "refused" | "unavailable" | "not_found";
+
+// AC-8: deactivate, cancelling Upcoming and Current bookings.
+export async function deactivateLearnerAction(
+  id: string,
+): Promise<Result<{ readonly cancelled: number }, DeactivateError>> {
+  const { user } = await requireAdmin();
+  if (!isId(id)) return err("not_found");
+  const done = await deactivateLearner(authentik(), db(), id, user.id);
+  revalidateUsers();
+  if (done.ok) return done;
+  switch (done.error) {
+    case "booking_pending":
+    case "unavailable":
+    case "not_found":
+      return err(done.error);
+    case "is_admin":
+    case "not_learner":
+      return err("refused");
+    default: {
+      const never: never = done.error;
+      return never;
+    }
+  }
+}
+
+export type ReactivateError =
+  "authentik_missing" | "refused" | "unavailable" | "not_found";
+
+// AC-9: reactivate, no confirm. Cancelled bookings stay cancelled.
+export async function reactivateLearnerAction(
+  id: string,
+): Promise<Result<void, ReactivateError>> {
+  const { user } = await requireAdmin();
+  if (!isId(id)) return err("not_found");
+  const conn = db();
+  const done = await reactivateLearner(authentik(), conn, id, user.id);
+  revalidateUsers();
+  if (done.ok) return done;
+  switch (done.error) {
+    case "unavailable":
+      return err("unavailable");
+    case "is_admin":
+    case "not_learner":
+      return err("refused");
+    case "not_found":
+      // The app row exists, so it is the Authentik account that is gone.
+      return err(
+        (await isConsoleLearner(conn, id)) ? "authentik_missing" : "not_found",
+      );
+    default: {
+      const never: never = done.error;
+      return never;
+    }
+  }
+}
+
+// AC-10: the page binds the booking's id and the version it showed.
+export async function cancelBookingAdminAction(
+  id: string,
+  version: number,
+): Promise<Result<void, "stale">> {
+  const { user } = await requireAdmin();
+  const parsed = z.number().int().safeParse(version);
+  const cancelled: Result<void, "stale"> =
+    isId(id) && parsed.success
+      ? await cancelBookingByAdmin(db(), id, parsed.data, user.id)
+      : err("stale");
+  revalidateUsers();
+  return cancelled;
 }
 
 // AC-3. A bad zone or a row already set changes nothing; the client shows

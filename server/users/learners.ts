@@ -2,6 +2,8 @@ import "server-only";
 import { sql, type Kysely } from "kysely";
 import { bookingPhase, type BookingPhase } from "@/lib/booking-phase";
 import { changedFields } from "@/lib/changed-fields";
+import type { Blocker } from "@/lib/delete-flow";
+import { formatDateTime } from "@/lib/format-time";
 import { BookingStatus, CancelSource, UserStatus } from "@/lib/db-enums";
 import type { LearnerInput } from "@/lib/learner-input";
 import { err, ok, type Result } from "@/lib/result";
@@ -14,9 +16,10 @@ import {
   updateLearnerIdentity,
   type FindOrCreateError,
 } from "@/server/authentik/learners";
-import { dbNow } from "@/server/db/bookings";
+import { cancelBooking, dbNow } from "@/server/db/bookings";
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import { HAS_NO_BOOKINGS } from "@/server/db/guest-saga";
+import { Refusal, refusable } from "@/server/db/refusal";
 import type { DB } from "@/server/db/types";
 import {
   enqueueWelcome,
@@ -359,22 +362,8 @@ export async function createLearner(
 
 // The lock first pattern (spec 0008 *State transitions*): one transaction
 // locks the learner row, checks every precondition against it, calls
-// Authentik while holding the lock, then writes the app side. A refusal is
-// thrown inside so the transaction rolls back, and returned outside.
-class Refusal<E> extends Error {
-  constructor(readonly code: E) {
-    super(String(code));
-  }
-}
-
-async function refusable<T, E>(run: () => Promise<T>): Promise<Result<T, E>> {
-  try {
-    return ok(await run());
-  } catch (e) {
-    if (e instanceof Refusal) return err(e.code as E);
-    throw e;
-  }
-}
+// Authentik while holding the lock, then writes the app side. A Refusal
+// rolls it all back.
 
 // The learner row, locked FOR UPDATE: a learner with an Authentik pk, or a
 // "not_found" refusal (an admin row is never changed here).
@@ -550,4 +539,105 @@ export async function resendSetPasswordByAdmin(
     });
     return ok({ email: learner.email });
   });
+}
+
+// AC-8: the bookings a deactivation would cancel (confirmed, not ended),
+// oldest start first, labelled for the confirm dialog in the admin's zone.
+export async function deactivationPreview(
+  conn: Kysely<DB>,
+  id: string,
+  timezone: string,
+): Promise<readonly Blocker[]> {
+  const [rows, now] = await Promise.all([
+    conn
+      .selectFrom("bookings as b")
+      .innerJoin("users as u", "u.id", "b.user_id")
+      .innerJoin("testbeds as t", "t.id", "b.testbed_id")
+      .select(["b.id", "b.starts_at", "b.ends_at", "t.name as testbedName"])
+      .where("b.user_id", "=", id)
+      .where("u.role", "=", "learner")
+      .where("b.status", "=", "confirmed")
+      .where("b.ends_at", ">", sql<Date>`now()`)
+      .orderBy("b.starts_at")
+      .orderBy("b.id")
+      .execute(),
+    dbNow(conn),
+  ]);
+  return rows.map((b) => {
+    const phase = bookingPhase(
+      { status: "confirmed", startsAt: b.starts_at, endsAt: b.ends_at },
+      now,
+    );
+    return {
+      id: b.id,
+      label: `${b.testbedName} — ${phase} reservation, ${formatDateTime(b.starts_at, timezone)}`,
+    };
+  });
+}
+
+// Whether the console can show this learner (AC-1, AC-2): it tells a missing
+// app row apart from a missing Authentik account after a refusal.
+export async function isConsoleLearner(
+  conn: Kysely<DB>,
+  id: string,
+): Promise<boolean> {
+  const row = await conn
+    .selectFrom("users")
+    .select("id")
+    .where("id", "=", id)
+    .where("role", "=", "learner")
+    .where("authentik_user_pk", "is not", null)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+// AC-10: an admin cancels one Upcoming or Current booking, whoever's it is,
+// at the version they saw. The phase it had is read under the same guard.
+export async function cancelBookingByAdmin(
+  conn: Kysely<DB>,
+  bookingId: string,
+  version: number,
+  actorId: string,
+): Promise<Result<void, "stale">> {
+  return refusable<void, "stale">(() =>
+    conn.transaction().execute(async (trx) => {
+      const booking = await trx
+        .selectFrom("bookings")
+        .select(["user_id", "testbed_id", "starts_at", "ends_at"])
+        .where("id", "=", bookingId)
+        .where("status", "=", "confirmed")
+        .where("ends_at", ">", sql<Date>`now()`)
+        .where("version", "=", version)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!booking) throw new Refusal("stale");
+      const cancelled = await cancelBooking(trx, {
+        id: bookingId,
+        expectedVersion: version,
+        source: "admin",
+        byUserId: actorId,
+      });
+      if (!cancelled.ok) throw new Refusal("stale");
+      await audit(trx, {
+        actorUserId: actorId,
+        action: "booking.cancelled",
+        targetType: "booking",
+        targetId: bookingId,
+        summary: "Reservation cancelled",
+        metadata: {
+          source: "admin",
+          userId: booking.user_id,
+          testbedId: booking.testbed_id,
+          phase: bookingPhase(
+            {
+              status: "confirmed",
+              startsAt: booking.starts_at,
+              endsAt: booking.ends_at,
+            },
+            await dbNow(trx),
+          ),
+        },
+      });
+    }),
+  );
 }

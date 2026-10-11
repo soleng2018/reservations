@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
+import { formatDateTime } from "@/lib/format-time";
 import type { LearnerInput } from "@/lib/learner-input";
 import {
   ADMINS,
@@ -18,7 +19,9 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import {
+  cancelBookingByAdmin,
   createLearner,
+  deactivationPreview,
   resendSetPasswordByAdmin,
   updateLearner,
 } from "./learners";
@@ -548,5 +551,123 @@ describe.skipIf(!hasDb)("resendSetPasswordByAdmin (spec 0008 AC-7)", () => {
           await resendSetPasswordByAdmin(asConn(trx), row.id, admin.id),
         ).toEqual({ ok: false, error: "not_eligible" });
       expect(await jobsOf(trx, done.row.id)).toEqual([]);
+    }));
+});
+
+async function bookingFor(
+  trx: Kysely<DB>,
+  userId: string,
+  from: number,
+  to: number,
+  status = "confirmed",
+) {
+  const type = await makeType(trx);
+  const testbed = await makeTestbed(trx, type.id);
+  const row = await trx
+    .insertInto("bookings")
+    .values({
+      user_id: userId,
+      testbed_id: testbed.id,
+      testbed_type_id: type.id,
+      starts_at: slot(from),
+      ends_at: slot(to),
+      status,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return { row, testbed };
+}
+
+// covers: AC-10, AC-13
+describe.skipIf(!hasDb)("cancelBookingByAdmin (spec 0008 AC-10)", () => {
+  it.each([
+    { phase: "Upcoming", from: 48, to: 50 },
+    { phase: "Current", from: -1, to: 2 },
+  ])(
+    "cancels an $phase booking as the admin and audits it",
+    ({ phase, from, to }) =>
+      inRollback(async (trx) => {
+        const admin = await makeUser(trx, { role: "admin" });
+        const { row: learner } = await linked(trx, 11);
+        const { row: b, testbed } = await bookingFor(trx, learner.id, from, to);
+        expect(
+          await cancelBookingByAdmin(asConn(trx), b.id, b.version, admin.id),
+        ).toEqual({ ok: true, value: undefined });
+        const after = await trx
+          .selectFrom("bookings")
+          .selectAll()
+          .where("id", "=", b.id)
+          .executeTakeFirstOrThrow();
+        expect(after).toMatchObject({
+          status: "cancelled",
+          cancel_source: "admin",
+          cancelled_by_user_id: admin.id,
+        });
+        expect(after.ends_at).toEqual(b.ends_at);
+        const [audit] = await auditsOf(trx, b.id);
+        expect(audit).toMatchObject({
+          action: "booking.cancelled",
+          actor_user_id: admin.id,
+          metadata: {
+            source: "admin",
+            userId: learner.id,
+            testbedId: testbed.id,
+            phase,
+          },
+        });
+      }),
+  );
+
+  it("returns stale for a wrong version, a Past booking, or a cancelled one", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const { row: learner } = await linked(trx, 11);
+      const { row: live } = await bookingFor(trx, learner.id, 48, 50);
+      expect(
+        await cancelBookingByAdmin(
+          asConn(trx),
+          live.id,
+          live.version + 1,
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "stale" });
+      await cancelBookingByAdmin(asConn(trx), live.id, live.version, admin.id);
+      expect(
+        await cancelBookingByAdmin(
+          asConn(trx),
+          live.id,
+          live.version,
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "stale" });
+      const { row: past } = await bookingFor(trx, learner.id, -10, -8);
+      expect(
+        await cancelBookingByAdmin(
+          asConn(trx),
+          past.id,
+          past.version,
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "stale" });
+      expect(await auditsOf(trx, past.id)).toEqual([]);
+    }));
+});
+
+// covers: AC-8
+describe.skipIf(!hasDb)("deactivationPreview (spec 0008 AC-8)", () => {
+  it("lists only bookings that have not ended, labelled in the admin's zone", () =>
+    inRollback(async (trx) => {
+      const { row: learner } = await linked(trx, 11);
+      const { row: live, testbed } = await bookingFor(trx, learner.id, -1, 2);
+      await bookingFor(trx, learner.id, -10, -8, "completed");
+      const preview = await deactivationPreview(trx, learner.id, "Asia/Tokyo");
+      expect(preview).toEqual([
+        {
+          id: live.id,
+          label: `${testbed.name} — Current reservation, ${formatDateTime(live.starts_at, "Asia/Tokyo")}`,
+        },
+      ]);
+      const admin = await makeUser(trx, { role: "admin" });
+      expect(await deactivationPreview(trx, admin.id, "UTC")).toEqual([]);
     }));
 });

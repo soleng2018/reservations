@@ -187,3 +187,29 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
       expect(ak.users.filter((u) => u.groups.includes(pk))).toEqual([]);
     }));
 });
+
+// covers: spec 0008 AC-11
+describe.skipIf(!hasDb)("reconcileAccess skips deactivated learners", () => {
+  it("removes a deactivated learner even with a confirmed Current booking", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      const { user } = await bookingOn(trx, testbed.id, type.id, PK + 7, -1, 2);
+      // Forced: a confirmed booking that slipped past the deactivation.
+      await trx
+        .updateTable("users")
+        .set({ status: "deactivated", deactivated_at: sql<Date>`now()` })
+        .where("id", "=", user.id)
+        .execute();
+      const ak = fakeAuthentik([fakeLearner(PK + 7, { groups: [pk] })], {
+        groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+      });
+
+      await reconcileAccess(ak.api, asConn(trx));
+      expect(ak.writes).toContain(`POST /core/groups/${pk}/remove_user/`);
+      expect(ak.users[0]?.groups).toEqual([]);
+    }));
+});

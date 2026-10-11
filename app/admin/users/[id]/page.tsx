@@ -5,7 +5,12 @@ import { ArrowLeftIcon } from "lucide-react";
 import { z } from "zod";
 import { FormDialog } from "@/components/admin/form-dialog";
 import { LearnerFields } from "@/components/admin/learner-fields";
-import { ResendSetPasswordButton } from "@/components/admin/learner-status-actions";
+import { BookingCancelButton } from "@/components/admin/booking-cancel-button";
+import {
+  DeactivateLearnerButton,
+  ReactivateLearnerButton,
+  ResendSetPasswordButton,
+} from "@/components/admin/learner-status-actions";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +34,14 @@ import {
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { getLearnerDetail, type LearnerDetail } from "@/server/users/learners";
-import { resendSetPasswordAdminAction, updateLearnerAction } from "../actions";
+import {
+  cancelBookingAdminAction,
+  checkDeactivate,
+  deactivateLearnerAction,
+  reactivateLearnerAction,
+  resendSetPasswordAdminAction,
+  updateLearnerAction,
+} from "../actions";
 
 export const metadata: Metadata = { title: "User" };
 
@@ -98,6 +110,18 @@ export default async function UserDetailPage(
             >
               <LearnerFields defaults={editDefaults(learner)} />
             </FormDialog>
+            {learner.status === "active" ? (
+              <DeactivateLearnerButton
+                name={learner.name}
+                check={checkDeactivate.bind(null, learner.id)}
+                action={deactivateLearnerAction.bind(null, learner.id)}
+              />
+            ) : (
+              <ReactivateLearnerButton
+                name={learner.name}
+                action={reactivateLearnerAction.bind(null, learner.id)}
+              />
+            )}
             {canResend ? (
               <ResendSetPasswordButton
                 action={resendSetPasswordAdminAction.bind(null, learner.id)}
@@ -153,7 +177,21 @@ export default async function UserDetailPage(
                     <TableCell className="text-sub text-fg2">
                       {formatDateTime(b.endsAt, admin.timezone)}
                     </TableCell>
-                    <TableCell className="text-right" />
+                    <TableCell className="text-right">
+                      {b.phase === "Upcoming" || b.phase === "Current" ? (
+                        <BookingCancelButton
+                          testbed={b.testbedName}
+                          start={formatDateTime(b.startsAt, admin.timezone)}
+                          end={formatDateTime(b.endsAt, admin.timezone)}
+                          current={b.phase === "Current"}
+                          action={cancelBookingAdminAction.bind(
+                            null,
+                            b.id,
+                            b.version,
+                          )}
+                        />
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

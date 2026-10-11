@@ -5,7 +5,10 @@ import {
   hasDb,
   inRollback,
   makeAuthUser,
+  makeTestbed,
+  makeType,
   makeUser,
+  slot,
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import { deactivateLearner, reactivateLearner } from "./learners";
@@ -67,7 +70,7 @@ describe.skipIf(!hasDb)("deactivate and reactivate a learner (AC-9)", () => {
 
       expect(
         await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
-      ).toEqual({ ok: true, value: undefined });
+      ).toEqual({ ok: true, value: { cancelled: 0 } });
       expect(ak.users[0]?.is_active).toBe(false);
       // Both of this user's Authentik sessions end; a stray row whose user
       // pk differs is left alone.
@@ -153,5 +156,159 @@ describe.skipIf(!hasDb)("deactivate and reactivate a learner (AC-9)", () => {
           actor.id,
         ),
       ).toEqual({ ok: false, error: "not_found" });
+    }));
+});
+
+// A booking of `userId`, `from` to `to` hours from now.
+async function booking(
+  trx: Kysely<DB>,
+  userId: string,
+  from: number,
+  to: number,
+  status = "confirmed",
+) {
+  const type = await makeType(trx);
+  const testbed = await makeTestbed(trx, type.id);
+  return trx
+    .insertInto("bookings")
+    .values({
+      user_id: userId,
+      testbed_id: testbed.id,
+      testbed_type_id: type.id,
+      starts_at: slot(from),
+      ends_at: slot(to),
+      status,
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+}
+
+const bookingOf = (trx: Kysely<DB>, id: string) =>
+  trx
+    .selectFrom("bookings")
+    .select(["status", "cancel_source", "cancelled_by_user_id"])
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
+
+// covers: spec 0008 AC-8, AC-9, AC-13
+describe.skipIf(!hasDb)("deactivation side effects (spec 0008)", () => {
+  // One live booking per learner (spec 0002), so one case per phase.
+  it.each([
+    { phase: "Upcoming", from: 48, to: 50 },
+    { phase: "Current", from: -1, to: 2 },
+  ])(
+    "cancels an $phase booking, leaves a Past one, and audits it",
+    ({ phase, from, to }) =>
+      inRollback(async (trx) => {
+        const { actor, learner } = await setup(trx);
+        const live = await booking(trx, learner.id, from, to);
+        const past = await booking(trx, learner.id, -10, -8, "completed");
+        const ak = fakeAuthentik([LEARNER]);
+
+        expect(
+          await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
+        ).toEqual({ ok: true, value: { cancelled: 1 } });
+        expect(await bookingOf(trx, live.id)).toEqual({
+          status: "cancelled",
+          cancel_source: "deactivation",
+          cancelled_by_user_id: actor.id,
+        });
+        expect((await bookingOf(trx, past.id)).status).toBe("completed");
+
+        const [cancel] = await trx
+          .selectFrom("audit_events")
+          .select("metadata")
+          .where("action", "=", "booking.cancelled")
+          .where("target_id", "=", live.id)
+          .execute();
+        expect(cancel?.metadata).toEqual({
+          source: "deactivation",
+          userId: learner.id,
+          testbedId: live.testbed_id,
+          phase,
+        });
+        const [deactivated] = await trx
+          .selectFrom("audit_events")
+          .select("metadata")
+          .where("action", "=", "user.deactivated")
+          .where("target_id", "=", learner.id)
+          .execute();
+        expect(deactivated?.metadata).toEqual({ cancelledBookings: 1 });
+      }),
+  );
+
+  it("refuses while a booking is being set up, with no Authentik write", () =>
+    inRollback(async (trx) => {
+      const { actor, learner, state } = await setup(trx);
+      await booking(trx, learner.id, 48, 50, "provisioning");
+      const ak = fakeAuthentik([LEARNER]);
+      expect(
+        await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
+      ).toEqual({ ok: false, error: "booking_pending" });
+      expect(ak.writes).toEqual([]);
+      expect((await state()).status).toBe("active");
+    }));
+
+  it("still deactivates when the Authentik account is gone", () =>
+    inRollback(async (trx) => {
+      const { actor, learner, state } = await setup(trx);
+      const ak = fakeAuthentik([]);
+      expect(
+        await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
+      ).toEqual({ ok: true, value: { cancelled: 0 } });
+      expect(await state()).toMatchObject({
+        status: "deactivated",
+        appSessions: 0,
+      });
+    }));
+
+  it("keeps bookings and the row when Authentik is down", () =>
+    inRollback(async (trx) => {
+      const { actor, learner } = await setup(trx);
+      const upcoming = await booking(trx, learner.id, 48, 50);
+      const ak = fakeAuthentik([LEARNER], { down: true });
+      expect(
+        await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
+      ).toEqual({ ok: false, error: "unavailable" });
+      expect((await bookingOf(trx, upcoming.id)).status).toBe("confirmed");
+    }));
+
+  it("is a no op with no audit row when repeated", () =>
+    inRollback(async (trx) => {
+      const { actor, learner, state } = await setup(trx);
+      const ak = fakeAuthentik([LEARNER]);
+      await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id);
+      const writes = ak.writes.length;
+      expect(
+        await deactivateLearner(ak.api, asConn(trx), learner.id, actor.id),
+      ).toEqual({ ok: true, value: { cancelled: 0 } });
+      expect(ak.writes).toHaveLength(writes);
+      expect((await state()).audits).toEqual(["user.deactivated"]);
+
+      await reactivateLearner(ak.api, asConn(trx), learner.id, actor.id);
+      await reactivateLearner(ak.api, asConn(trx), learner.id, actor.id);
+      expect(
+        (await state()).audits.filter((a) => a === "user.reactivated"),
+      ).toHaveLength(1);
+    }));
+
+  it("reactivate keeps the row deactivated when the Authentik account is gone", () =>
+    inRollback(async (trx) => {
+      const { actor, learner, state } = await setup(trx);
+      await deactivateLearner(
+        fakeAuthentik([LEARNER]).api,
+        asConn(trx),
+        learner.id,
+        actor.id,
+      );
+      expect(
+        await reactivateLearner(
+          fakeAuthentik([]).api,
+          asConn(trx),
+          learner.id,
+          actor.id,
+        ),
+      ).toEqual({ ok: false, error: "not_found" });
+      expect((await state()).status).toBe("deactivated");
     }));
 });

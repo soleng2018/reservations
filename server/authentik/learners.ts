@@ -1,8 +1,11 @@
 import "server-only";
 import { UserTypeEnum } from "@goauthentik/api/dist/esm/index.js";
 import { sql, type Kysely } from "kysely";
+import { bookingPhase } from "@/lib/booking-phase";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
+import { cancelBooking, dbNow } from "@/server/db/bookings";
+import { Refusal, refusable } from "@/server/db/refusal";
 import type { DB } from "@/server/db/types";
 import { LEARNER_PATH } from "@/scripts/authentik-setup-plan";
 import { call, type AuthentikFailure, type CoreApi, type User } from "./client";
@@ -199,25 +202,18 @@ export async function issueSetPasswordLink(
 
 export type StatusChangeError = UserRefusal | AuthentikFailure;
 
-type LearnerRow = {
-  readonly id: string;
-  readonly role: string;
-  readonly authentik_user_pk: number | null;
-  readonly auth_user_id: string | null;
-};
-
-async function learnerRow(
-  conn: Kysely<DB>,
-  usersId: string,
-): Promise<Result<LearnerRow, StatusChangeError>> {
-  const row = await conn
+// The user row, locked FOR UPDATE (spec 0008 lock first pattern): a guest
+// saga or a first sign in for this learner waits until the change commits.
+async function lockLearnerRow(trx: Kysely<DB>, usersId: string) {
+  const row = await trx
     .selectFrom("users")
-    .select(["id", "role", "authentik_user_pk", "auth_user_id"])
+    .select(["id", "role", "status", "authentik_user_pk", "auth_user_id"])
     .where("id", "=", usersId)
+    .forUpdate()
     .executeTakeFirst();
-  if (!row) return err("not_found");
-  if (row.role !== "learner") return err("is_admin");
-  return ok(row);
+  if (!row) throw new Refusal("not_found");
+  if (row.role !== "learner") throw new Refusal("is_admin");
+  return row;
 }
 
 async function setActive(
@@ -233,77 +229,146 @@ async function setActive(
   return patched.ok ? ok(guarded.value) : patched;
 }
 
-// AC-9: Authentik refuses their next sign in, their Authentik and app
-// sessions end, and the row is marked deactivated. The guard refuses admins.
-// Feature 10 adds the booking side effects and the access reconcile.
+// Spec 0003 AC-9, spec 0008 AC-8: Authentik refuses their next sign in,
+// their Authentik and app sessions end, every Upcoming and Current booking is
+// cancelled (`deactivation`, by the admin), and the row is marked
+// deactivated, all under the user row lock. The access reconciler then
+// removes them from testbed groups on its next tick. An Authentik account
+// that no longer exists cannot sign in, so its not_found only warns. An
+// already deactivated learner is a no op with no audit row.
 export async function deactivateLearner(
   api: CoreApi,
   conn: Kysely<DB>,
   usersId: string,
   actorId: string,
-): Promise<Result<void, StatusChangeError>> {
-  const row = await learnerRow(conn, usersId);
-  if (!row.ok) return row;
-  const pk = row.value.authentik_user_pk;
-  if (pk !== null) {
-    const user = await setActive(api, pk, false);
-    if (!user.ok) return user;
-    const ended = await endSessionsOf(api, user.value);
-    if (!ended.ok) return ended;
-  }
+): Promise<
+  Result<{ readonly cancelled: number }, StatusChangeError | "booking_pending">
+> {
+  return refusable(() =>
+    conn.transaction().execute(async (trx) => {
+      const row = await lockLearnerRow(trx, usersId);
+      if (row.status === "deactivated") return { cancelled: 0 };
 
-  await conn.transaction().execute(async (trx) => {
-    await trx
-      .updateTable("users")
-      .set({ status: "deactivated", deactivated_at: sql`now()` })
-      .where("id", "=", usersId)
-      .where("status", "=", "active")
-      .execute();
-    if (row.value.auth_user_id !== null)
+      const pending = await trx
+        .selectFrom("bookings")
+        .select("id")
+        .where("user_id", "=", usersId)
+        .where("status", "=", "provisioning")
+        .executeTakeFirst();
+      if (pending) throw new Refusal("booking_pending");
+
+      const pk = row.authentik_user_pk;
+      if (pk !== null) {
+        const user = await setActive(api, pk, false);
+        if (!user.ok && user.error !== "not_found")
+          throw new Refusal(user.error);
+        if (!user.ok) console.warn(`deactivate: Authentik user ${pk} is gone`);
+        else {
+          const ended = await endSessionsOf(api, user.value);
+          if (!ended.ok) throw new Refusal(ended.error);
+        }
+      }
+
       await trx
-        .deleteFrom("hol_auth.session")
-        .where("userId", "=", row.value.auth_user_id)
+        .updateTable("users")
+        .set({ status: "deactivated", deactivated_at: sql`now()` })
+        .where("id", "=", usersId)
         .execute();
-    await audit(trx, {
-      actorUserId: actorId,
-      action: "user.deactivated",
-      targetType: "user",
-      targetId: usersId,
-      summary: "Learner deactivated",
-    });
-  });
-  return ok(undefined);
+      const cancelled = await cancelLiveBookings(trx, usersId, actorId);
+      if (row.auth_user_id !== null)
+        await trx
+          .deleteFrom("hol_auth.session")
+          .where("userId", "=", row.auth_user_id)
+          .execute();
+      await audit(trx, {
+        actorUserId: actorId,
+        action: "user.deactivated",
+        targetType: "user",
+        targetId: usersId,
+        summary: "Learner deactivated",
+        metadata: { cancelledBookings: cancelled },
+      });
+      return { cancelled };
+    }),
+  );
 }
 
-// AC-9: the reverse. The learner signs in again with their own password.
+// Every confirmed booking that has not ended, each version read under its
+// row lock, cancelled by the deactivating admin with one audit row each.
+async function cancelLiveBookings(
+  trx: Kysely<DB>,
+  usersId: string,
+  actorId: string,
+): Promise<number> {
+  const live = await trx
+    .selectFrom("bookings")
+    .select(["id", "version", "testbed_id", "starts_at", "ends_at"])
+    .where("user_id", "=", usersId)
+    .where("status", "=", "confirmed")
+    .where("ends_at", ">", sql<Date>`now()`)
+    .orderBy("starts_at")
+    .forUpdate()
+    .execute();
+  const now = await dbNow(trx);
+  return live.reduce<Promise<number>>(async (count, b) => {
+    const n = await count;
+    const done = await cancelBooking(trx, {
+      id: b.id,
+      expectedVersion: b.version,
+      source: "deactivation",
+      byUserId: actorId,
+    });
+    if (!done.ok) return n;
+    await audit(trx, {
+      actorUserId: actorId,
+      action: "booking.cancelled",
+      targetType: "booking",
+      targetId: b.id,
+      summary: "Reservation cancelled",
+      metadata: {
+        source: "deactivation",
+        userId: usersId,
+        testbedId: b.testbed_id,
+        phase: bookingPhase(
+          { status: "confirmed", startsAt: b.starts_at, endsAt: b.ends_at },
+          now,
+        ),
+      },
+    });
+    return n + 1;
+  }, Promise.resolve(0));
+}
+
+// Spec 0003 AC-9, spec 0008 AC-9: the reverse, under the user row lock. The
+// learner signs in again with their own password; cancelled bookings stay
+// cancelled. An active learner is a no op with no audit row.
 export async function reactivateLearner(
   api: CoreApi,
   conn: Kysely<DB>,
   usersId: string,
   actorId: string,
 ): Promise<Result<void, StatusChangeError>> {
-  const row = await learnerRow(conn, usersId);
-  if (!row.ok) return row;
-  const pk = row.value.authentik_user_pk;
-  if (pk !== null) {
-    const user = await setActive(api, pk, true);
-    if (!user.ok) return user;
-  }
-
-  await conn.transaction().execute(async (trx) => {
-    await trx
-      .updateTable("users")
-      .set({ status: "active", deactivated_at: null })
-      .where("id", "=", usersId)
-      .where("status", "=", "deactivated")
-      .execute();
-    await audit(trx, {
-      actorUserId: actorId,
-      action: "user.reactivated",
-      targetType: "user",
-      targetId: usersId,
-      summary: "Learner reactivated",
-    });
-  });
-  return ok(undefined);
+  return refusable(() =>
+    conn.transaction().execute(async (trx) => {
+      const row = await lockLearnerRow(trx, usersId);
+      if (row.status === "active") return;
+      const pk = row.authentik_user_pk;
+      if (pk !== null) {
+        const user = await setActive(api, pk, true);
+        if (!user.ok) throw new Refusal(user.error);
+      }
+      await trx
+        .updateTable("users")
+        .set({ status: "active", deactivated_at: null })
+        .where("id", "=", usersId)
+        .execute();
+      await audit(trx, {
+        actorUserId: actorId,
+        action: "user.reactivated",
+        targetType: "user",
+        targetId: usersId,
+        summary: "Learner reactivated",
+      });
+    }),
+  );
 }

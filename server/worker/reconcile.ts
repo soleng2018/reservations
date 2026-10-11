@@ -54,6 +54,9 @@ export async function reconcileAccess(
     .where("b.starts_at", "<=", sql<Date>`now()`)
     .where("b.ends_at", ">", sql<Date>`now()`)
     .where("u.authentik_user_pk", "is not", null)
+    // Spec 0008 AC-11: a deactivated learner is never a desired member,
+    // even if a confirmed booking slipped past the deactivation.
+    .where("u.status", "=", "active")
     .execute();
   const live = current.flatMap((c) =>
     c.pk === null ? [] : [{ ...c, pk: c.pk }],
