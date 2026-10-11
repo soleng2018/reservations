@@ -37,7 +37,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 6 | Core booking loop | Slice 1 | done |
 | 7 | Admin: Testbed Types | Slice 2 | done |
 | 8 | Admin: API Keys | Slice 2 | done |
-| 9 | Admin: Testbeds | Slice 2 | planned |
+| 9 | Admin: Testbeds | Slice 2 | in-progress |
 | 10 | Admin: Users & user detail | Slice 2 | planned |
 | 11 | Public landing page | Slice 3 | planned |
 | 12 | Availability & booking rules | Slice 3 | planned |
@@ -146,11 +146,20 @@ List, search, add, edit, and delete IDP and AI credentials (name, type, base URL
 - [x] Document it: `/document admin: api keys`
 spec [0006](../specs/0006-admin-api-keys/index.md) · code in `app/admin/api-keys/`, `app/admin/actions.ts`, `server/catalog/api-keys.ts`, `server/crypto/`, `server/env.ts`, `components/admin/api-key-fields.tsx`, `lib/api-keys.ts`, `lib/changed-fields.ts`, `db/migrations/0005_api_keys.sql`, `scripts/secrets-keygen.ts`
 
-### 9. Admin: Testbeds · needs a decision
+### 9. Admin: Testbeds · in-progress
 List, search, add, edit, and delete testbeds: name, type, IDP (chosen from IDP API keys, stored only and not used for access yet), Nile Portal URL, LMS URL, and a list of wired or wireless clients, each with a name and URL.
 Saving a new testbed creates its Authentik group and protects its URLs with it; editing the URLs updates that protection; deleting the testbed removes the group.
 **Done when:** the screen and form match the mock, including adding and removing client rows; a new testbed has its own Authentik group and its URLs are reachable only by members of that group; a failed Authentik step leaves no half created testbed; deleting a testbed with Upcoming or Current bookings is blocked and the dialog lists them.
-- [ ] Design it (spec): `/architect admin: testbeds`
+- [x] Design it (spec): `/architect admin: testbeds`
+- [x] Build it: `/develop admin: testbeds`
+  - [x] Migration plus the add strand: IDP picker, client OS credentials, mock list columns with the not ready badge and search (AC-1, 2, 8)
+  - [x] Edit: load on open, update with locks and audit, not ready guard (AC-3, 4, 5, 9)
+  - [x] Delete with phase labelled reservation blockers (AC-6, 9)
+  - [x] Worker teardown of a deleted testbed's group, reconciler skip (AC-7)
+  - [x] Guards and end to end: `os_password` source scan, auth tests, Playwright happy path (AC-1, 2, 3, 6, 9, 10)
+- [ ] Verify it: `/check verify admin: testbeds`
+- [ ] Test it: `/test admin: testbeds`
+spec [0007](../specs/0007-admin-testbeds/index.md) · code in `app/admin/testbeds/`, `app/admin/actions.ts`, `server/catalog/testbeds.ts`, `server/worker/teardown.ts`, `server/db/delete-blockers.ts`, `components/admin/testbed-fields.tsx`, `components/admin/testbed-edit-dialog.tsx`, `lib/testbeds.ts`, `lib/catalog-input.ts`, `db/migrations/0006_testbed_admin.sql`
 
 ### 10. Admin: Users & user detail · needs a decision
 List and search learners (name, company, email, booking count, status); admin accounts live only in Authentik and are not managed here. Add and edit learners, deactivate and reactivate them, and open a detail page with their bookings and statuses. Add, edit, and deactivate are synced to Authentik. The mock's generated password is dropped because Authentik owns credentials. Admins can cancel a booking from the detail page.
