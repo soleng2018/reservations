@@ -159,6 +159,7 @@ Saving a new testbed creates its Authentik group and protects its URLs with it; 
   - [x] Guards and end to end: `os_password` source scan, auth tests, Playwright happy path (AC-1, 2, 3, 6, 9, 10)
 - [x] Verify it: `/check verify admin: testbeds`
 - [x] Test it: `/test admin: testbeds`
+- [x] Review it (fresh model): `/check review admin: testbeds`
 spec [0007](../specs/0007-admin-testbeds/index.md) · code in `app/admin/testbeds/`, `app/admin/actions.ts`, `server/catalog/testbeds.ts`, `server/worker/teardown.ts`, `server/db/delete-blockers.ts`, `components/admin/testbed-fields.tsx`, `components/admin/testbed-edit-dialog.tsx`, `lib/testbeds.ts`, `lib/catalog-input.ts`, `db/migrations/0006_testbed_admin.sql`
 
 ### 10. Admin: Users & user detail · needs a decision
