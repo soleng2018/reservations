@@ -13,7 +13,7 @@ import type { DB } from "./types";
 // soft deleted.
 export async function lockForDelete(
   trx: Kysely<DB>,
-  table: "testbeds" | "testbed_types",
+  table: "testbeds" | "testbed_types" | "api_keys",
   id: string,
 ): Promise<boolean> {
   const row = await trx
@@ -37,6 +37,21 @@ export async function testbedTypeBlockers(
     .where("testbed_type_id", "=", testbedTypeId)
     .where("deleted_at", "is", null)
     .orderBy("name")
+    .execute();
+}
+
+// Non deleted testbeds using this key as their IDP, by lower(name). Blocks
+// a delete and an IDP to AI type change (spec 0006 AC-5, AC-6).
+export async function apiKeyBlockers(
+  trx: Kysely<DB>,
+  apiKeyId: string,
+): Promise<readonly Blocker[]> {
+  return trx
+    .selectFrom("testbeds")
+    .select(["id", "name as label"])
+    .where("idp_api_key_id", "=", apiKeyId)
+    .where("deleted_at", "is", null)
+    .orderBy(sql`lower(name)`)
     .execute();
 }
 

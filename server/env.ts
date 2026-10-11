@@ -1,6 +1,8 @@
 import "server-only";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { err, ok, type Result } from "@/lib/result";
+import { KEY_BYTES, KEY_ID_PATTERN, type Keyring } from "./crypto/secrets";
 
 // Secrets arrive as `NAME_FILE` paths (compose secrets). A plain `NAME` is
 // accepted too, for local dev only.
@@ -114,6 +116,123 @@ export function trustProxyHeaders(): boolean {
     TRUST_PROXY_HEADERS: process.env.TRUST_PROXY_HEADERS || undefined,
   });
   return cachedRequest.TRUST_PROXY_HEADERS;
+}
+
+// Spec 0006 AC-9: the keyring that encrypts stored secrets, a JSON object
+// { "<keyId>": "<base64 32 bytes>" }, plus the id that encrypts new values.
+// Every message names the problem and never prints a key. Web only.
+const keyringSchema = z
+  .string({ error: "APP_ENCRYPTION_KEYS is missing" })
+  .min(1, "APP_ENCRYPTION_KEYS is missing")
+  .transform((text, ctx): unknown => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      ctx.addIssue({
+        code: "custom",
+        message: "APP_ENCRYPTION_KEYS is not a JSON object",
+      });
+      return z.NEVER;
+    }
+  })
+  .pipe(
+    z.record(
+      z.string(),
+      z.string({ error: "each keyring key must be a base64 string" }),
+      { error: "APP_ENCRYPTION_KEYS is not a JSON object" },
+    ),
+  )
+  .superRefine((keys, ctx) => {
+    for (const [id, key] of Object.entries(keys)) {
+      if (!KEY_ID_PATTERN.test(id))
+        ctx.addIssue({
+          code: "custom",
+          message: `keyring id "${id.slice(0, 40)}" must match ${KEY_ID_PATTERN.source}`,
+        });
+      // Canonical base64 only: Buffer.from() skips characters it does not know.
+      const bytes = Buffer.from(key, "base64");
+      if (bytes.length !== KEY_BYTES || bytes.toString("base64") !== key)
+        ctx.addIssue({
+          code: "custom",
+          message: `keyring key "${id.slice(0, 40)}" must be base64 of exactly ${KEY_BYTES} bytes`,
+        });
+    }
+    if (Object.keys(keys).length === 0)
+      ctx.addIssue({ code: "custom", message: "the keyring is empty" });
+  })
+  .transform(
+    (keys) =>
+      new Map(
+        Object.entries(keys).map(([id, key]) => [
+          id,
+          Buffer.from(key, "base64"),
+        ]),
+      ),
+  );
+
+const encryptionSchema = z
+  .object({
+    APP_ENCRYPTION_KEYS: keyringSchema,
+    APP_ENCRYPTION_ACTIVE_KEY_ID: z
+      .string({ error: "APP_ENCRYPTION_ACTIVE_KEY_ID is missing" })
+      .min(1, "APP_ENCRYPTION_ACTIVE_KEY_ID is missing"),
+  })
+  .superRefine((env, ctx) => {
+    // Zod still runs this after a keyring issue, before the keyring became
+    // a Map; that issue is already reported.
+    if (!(env.APP_ENCRYPTION_KEYS instanceof Map)) return;
+    if (!env.APP_ENCRYPTION_KEYS.has(env.APP_ENCRYPTION_ACTIVE_KEY_ID))
+      ctx.addIssue({
+        code: "custom",
+        message: "APP_ENCRYPTION_ACTIVE_KEY_ID is not in the keyring",
+      });
+  })
+  .transform((env): EncryptionEnv => ({
+    keyring: {
+      activeKeyId: env.APP_ENCRYPTION_ACTIVE_KEY_ID,
+      keys: env.APP_ENCRYPTION_KEYS,
+    },
+  }));
+
+export type EncryptionEnv = { readonly keyring: Keyring };
+
+let cachedEncryption: EncryptionEnv | undefined;
+
+// The file is read through secret(), so APP_ENCRYPTION_KEYS_FILE (or a plain
+// APP_ENCRYPTION_KEYS in dev) works like the other secrets.
+function readKeyring(): string | undefined {
+  try {
+    return secret("APP_ENCRYPTION_KEYS");
+  } catch {
+    throw new Error("Encryption env: APP_ENCRYPTION_KEYS_FILE can't be read");
+  }
+}
+
+// Parsed lazily on first use, like every getter here; only a valid keyring
+// is cached. Throws naming the problem.
+export function encryptionEnv(): EncryptionEnv {
+  if (cachedEncryption) return cachedEncryption;
+  const parsed = encryptionSchema.safeParse({
+    APP_ENCRYPTION_KEYS: readKeyring(),
+    APP_ENCRYPTION_ACTIVE_KEY_ID:
+      process.env.APP_ENCRYPTION_ACTIVE_KEY_ID || undefined,
+  });
+  if (!parsed.success)
+    throw new Error(
+      `Encryption env: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+    );
+  cachedEncryption = parsed.data;
+  return cachedEncryption;
+}
+
+// For the API Keys page and actions, which show "not configured" instead of
+// failing: ok with the env, or the problem (never a key).
+export function assertEncryptionEnv(): Result<EncryptionEnv, string> {
+  try {
+    return ok(encryptionEnv());
+  } catch (e) {
+    return err(e instanceof Error ? e.message : "Encryption env: invalid");
+  }
 }
 
 // Worker only (spec 0001, 0004): `npm run worker` exits unless this is true.

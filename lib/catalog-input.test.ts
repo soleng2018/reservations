@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { TestbedInput, TestbedTypeInput } from "./catalog-input";
+import {
+  ApiKeyCreateInput,
+  ApiKeyUpdateInput,
+  HttpsUrl,
+  TestbedInput,
+  TestbedTypeInput,
+} from "./catalog-input";
 import { fieldErrors } from "./form-errors";
 
 const TYPE_ID = "6f1c2f9e-0000-4000-8000-000000000001";
@@ -135,5 +141,88 @@ describe("TestbedInput (AC-2)", () => {
   it("refuses a type id that is not a uuid", () => {
     const e = errorsOf(TestbedInput.safeParse({ ...valid, testbedTypeId: "" }));
     expect(fieldErrors(e)).toEqual({ testbedTypeId: "Choose a type." });
+  });
+});
+
+// covers: spec 0006 AC-3 (the API key form)
+describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
+  const valid = {
+    name: " Okta Production ",
+    type: "IDP",
+    baseUrl: " https://acme.okta.com/oauth2 ",
+    secret: "  tok_123  ",
+  };
+
+  it("trims every field, the key included", () => {
+    expect(ApiKeyCreateInput.parse(valid)).toEqual({
+      name: "Okta Production",
+      type: "IDP",
+      baseUrl: "https://acme.okta.com/oauth2",
+      secret: "tok_123",
+    });
+  });
+
+  it("requires the key on add and allows it blank on edit", () => {
+    const blank = { ...valid, secret: "   " };
+    expect(fieldErrors(errorsOf(ApiKeyCreateInput.safeParse(blank)))).toEqual({
+      secret: "Enter the key.",
+    });
+    expect(
+      fieldErrors(
+        errorsOf(ApiKeyCreateInput.safeParse({ ...valid, secret: undefined })),
+      ),
+    ).toEqual({ secret: "Enter the key." });
+    expect(ApiKeyUpdateInput.parse(blank).secret).toBe("");
+  });
+
+  it("caps the key at 4096 characters on add and edit", () => {
+    const long = { ...valid, secret: "x".repeat(4097) };
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(fieldErrors(errorsOf(schema.safeParse(long)))).toEqual({
+        secret: "Use at most 4096 characters.",
+      });
+    expect(
+      ApiKeyCreateInput.parse({ ...valid, secret: "x".repeat(4096) }).secret,
+    ).toHaveLength(4096);
+  });
+
+  it("never puts the key's value in an issue", () => {
+    const long = "canary-".repeat(700);
+    const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, secret: long }));
+    expect(JSON.stringify(e.issues)).not.toContain("canary");
+  });
+
+  it("refuses an unknown type", () => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, type: "LLM" }));
+    expect(fieldErrors(e)).toEqual({ type: "Choose a type." });
+  });
+
+  it.each([
+    ["http://acme.okta.com", "Enter an https:// URL."],
+    ["acme.okta.com", "Enter an https:// URL."],
+    ["https://user:tok@acme.okta.com", "Remove credentials from the URL."],
+    ["https://user@acme.okta.com", "Remove credentials from the URL."],
+    ["https://acme.okta.com/?key=x", "Remove the query string from the URL."],
+    [`https://a.example/${"p".repeat(2040)}`, "Use at most 2048 characters."],
+  ])("refuses the base URL %s", (baseUrl, message) => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, baseUrl }));
+    expect(fieldErrors(e)).toEqual({ baseUrl: message });
+  });
+
+  it("refuses a duplicate name only in the database (not here)", () => {
+    expect(
+      ApiKeyCreateInput.safeParse({ ...valid, name: "OKTA" }).success,
+    ).toBe(true);
+  });
+});
+
+describe("HttpsUrl", () => {
+  it("caps every catalog URL at 2048 characters", () => {
+    expect(
+      HttpsUrl.safeParse(`https://a.example/${"p".repeat(2040)}`).success,
+    ).toBe(false);
+    expect(HttpsUrl.safeParse("https://lms.example/course?id=7").success).toBe(
+      true,
+    );
   });
 });

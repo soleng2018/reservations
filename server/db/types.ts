@@ -23,6 +23,18 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface ApiKeys {
+  base_url: string;
+  created_at: Generated<Timestamp>;
+  deleted_at: Timestamp | null;
+  id: Generated<string>;
+  name: string;
+  secret_ciphertext: string;
+  secret_updated_at: Generated<Timestamp>;
+  type: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AuditEvents {
   action: string;
   actor_user_id: string | null;
@@ -133,6 +145,7 @@ export interface Testbeds {
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   id: Generated<string>;
+  idp_api_key_id: string | null;
   lms_url: string;
   name: string;
   portal_url: string;
@@ -170,6 +183,7 @@ export interface Users {
 }
 
 export interface DB {
+  api_keys: ApiKeys;
   audit_events: AuditEvents;
   bookings: Bookings;
   "hol_auth.account": HolAuthAccount;

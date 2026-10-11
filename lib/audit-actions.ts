@@ -25,5 +25,13 @@ export const AuditAction = z.enum([
   // The reconciler added or removed a learner in a pod group.
   "access.granted",
   "access.revoked",
+  // Feature 7.
+  "testbed_type.updated",
+  "testbed_type.deleted",
+  // Feature 8 (spec 0006). Never with the secret or its ciphertext.
+  "api_key.created",
+  "api_key.updated",
+  "api_key.secret_replaced",
+  "api_key.deleted",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;
