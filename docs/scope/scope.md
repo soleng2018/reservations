@@ -184,14 +184,14 @@ spec [0008](../specs/0008-admin-users/index.md) · code in `app/admin/users/`, `
 The learner home from the mock: hero, "Reserve a lab" and "Manage an existing reservation" actions, and the three step explainer.
 **Done when:** the page matches the learner mock, renders without sign in, and has its title, description, and social card metadata; it shows no admin sign in or sign up link.
 - [x] Design it (spec): `/architect public landing page`
-- [ ] Build it: `/develop public landing page`
-  - [ ] Landing tracer: hero and social assets, `appUrl()`, frame without Sign out, the page with its metadata, Playwright landing spec (AC-1, 2, 3, 4, 6, 9)
-  - [ ] Indexing: root `noindex` default, `robots.txt` and sitemap, build and unreachable database checks (AC-1, 7, 8, 9)
-  - [ ] Nile footer on every learner page, with contrast pairs (AC-5)
-  - [ ] Axe and screenshots for `/`, `/book` captured again (AC-5, 10)
+- [x] Build it: `/develop public landing page`
+  - [x] Landing tracer: hero and social assets, `appUrl()`, frame without Sign out, the page with its metadata, Playwright landing spec (AC-1, 2, 3, 4, 6, 9)
+  - [x] Indexing: root `noindex` default, `robots.txt` and sitemap, build and unreachable database checks (AC-1, 7, 8, 9)
+  - [x] Nile footer on every learner page, with contrast pairs (AC-5)
+  - [x] Axe and screenshots for `/`, `/book` captured again (AC-5, 10)
 - [ ] Verify it: `/check verify public landing page`
 - [ ] Test it: `/test public landing page`
-spec [0009](../specs/0009-public-landing-page/index.md)
+spec [0009](../specs/0009-public-landing-page/index.md) · code in `app/page.tsx`, `app/robots.ts`, `app/sitemap.ts`, `app/layout.tsx`, `components/learner-frame.tsx`, `components/learner-footer.tsx`, `server/env.ts` (`appUrl()`), `public/brand/hol-hero.jpg`, `public/brand/hol-social.jpg`, `e2e/landing.spec.ts`
 
 ### 12. Availability & booking rules · needs a decision
 Thicken slice 1's booking into the mock's full 3 step flow: details form with timezone choice, month calendar with unavailable days greyed, 30 minute start slots for the chosen day with the full duration highlighted, the confirm step showing the assigned testbed, and the progress and failure screens.
