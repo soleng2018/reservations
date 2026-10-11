@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { fieldErrors } from "@/lib/form-errors";
 import { LearnerInput } from "@/lib/learner-input";
 import { LEARNER_MESSAGES } from "@/lib/learners";
+import { err, ok, type Result } from "@/lib/result";
 import { Timezone } from "@/lib/timezones";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
@@ -11,7 +13,10 @@ import { db } from "@/server/db";
 import { setAdminTimezone } from "@/server/users/admin-timezone";
 import {
   createLearner,
+  resendSetPasswordByAdmin,
+  updateLearner,
   type CreateLearnerError,
+  type UpdateLearnerError,
 } from "@/server/users/learners";
 import type { AdminFormState } from "../actions";
 
@@ -31,6 +36,8 @@ const parseLearner = (form: FormData) =>
     timezone: text(form, "timezone"),
   });
 
+const isId = (id: unknown): id is string => z.uuid().safeParse(id).success;
+
 const revalidateUsers = () => revalidatePath("/admin/users", "layout");
 
 const onEmail = (message: string): AdminFormState => ({
@@ -43,13 +50,16 @@ const formMessage = (message: string): AdminFormState => ({
   fields: {},
 });
 
+const duplicate = (id: string | null): AdminFormState => ({
+  kind: "error",
+  fields: { email: LEARNER_MESSAGES.duplicate },
+  ...(id === null
+    ? {}
+    : { link: { href: `/admin/users/${id}`, label: "View user" } }),
+});
+
 const addError = (e: CreateLearnerError): AdminFormState => {
-  if (typeof e === "object")
-    return {
-      kind: "error",
-      fields: { email: LEARNER_MESSAGES.duplicate },
-      link: { href: `/admin/users/${e.id}`, label: "View user" },
-    };
+  if (typeof e === "object") return duplicate(e.id);
   switch (e) {
     case "setting_up":
       return onEmail(LEARNER_MESSAGES.settingUp);
@@ -82,6 +92,62 @@ export async function createLearnerAction(
   if (!created.ok) return addError(created.error);
   revalidateUsers();
   return { kind: "saved", message: `Added ${parsed.data.name}.` };
+}
+
+const editError = (e: UpdateLearnerError): AdminFormState => {
+  if (typeof e === "object") return duplicate(e.id);
+  switch (e) {
+    case "authentik_conflict":
+      return onEmail(LEARNER_MESSAGES.authentikConflict);
+    case "email_locked":
+      return onEmail(LEARNER_MESSAGES.emailLocked);
+    case "not_found":
+      return formMessage(LEARNER_MESSAGES.gone);
+    case "refused":
+      return formMessage(LEARNER_MESSAGES.refused);
+    case "unavailable":
+      return formMessage(LEARNER_MESSAGES.unavailable);
+    default: {
+      const never: never = e;
+      return never;
+    }
+  }
+};
+
+// AC-6: the lock first edit. The page binds the row's id.
+export async function updateLearnerAction(
+  id: string,
+  _prev: AdminFormState,
+  form: FormData,
+): Promise<AdminFormState> {
+  const { user } = await requireAdmin();
+  const parsed = parseLearner(form);
+  if (!parsed.success)
+    return { kind: "error", fields: fieldErrors(parsed.error) };
+  if (!isId(id)) return formMessage(LEARNER_MESSAGES.gone);
+
+  const updated = await updateLearner(
+    authentik(),
+    db(),
+    id,
+    parsed.data,
+    user.id,
+  );
+  revalidateUsers();
+  if (!updated.ok) return editError(updated.error);
+  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+}
+
+// AC-7. The page binds the row's id; the value is the toast text.
+export async function resendSetPasswordAdminAction(
+  id: string,
+): Promise<Result<string, "not_eligible">> {
+  const { user } = await requireAdmin();
+  if (!isId(id)) return err("not_eligible");
+  const sent = await resendSetPasswordByAdmin(db(), id, user.id);
+  revalidateUsers();
+  if (!sent.ok) return sent;
+  return ok(`Set password email queued for ${sent.value.email}.`);
 }
 
 // AC-3. A bad zone or a row already set changes nothing; the client shows

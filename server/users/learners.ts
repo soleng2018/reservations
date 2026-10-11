@@ -1,21 +1,28 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
 import { bookingPhase, type BookingPhase } from "@/lib/booking-phase";
+import { changedFields } from "@/lib/changed-fields";
 import { BookingStatus, CancelSource, UserStatus } from "@/lib/db-enums";
 import type { LearnerInput } from "@/lib/learner-input";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
-import type { CoreApi } from "@/server/authentik/client";
+import type { AuthentikFailure, CoreApi } from "@/server/authentik/client";
+import type { UserRefusal } from "@/server/authentik/guard";
 import {
   deleteSagaLearner,
   findOrCreateLearner,
+  updateLearnerIdentity,
   type FindOrCreateError,
 } from "@/server/authentik/learners";
 import { dbNow } from "@/server/db/bookings";
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import { HAS_NO_BOOKINGS } from "@/server/db/guest-saga";
 import type { DB } from "@/server/db/types";
-import { enqueueWelcome, welcomeKey } from "@/server/jobs/send-welcome";
+import {
+  enqueueWelcome,
+  resendKey,
+  welcomeKey,
+} from "@/server/jobs/send-welcome";
 
 // Learner admin (spec 0008): the users list, the user detail page, and the
 // learner changes an admin makes from the console. Only learners with an
@@ -348,4 +355,199 @@ export async function createLearner(
     return err("unavailable");
   }
   return ok({ id });
+}
+
+// The lock first pattern (spec 0008 *State transitions*): one transaction
+// locks the learner row, checks every precondition against it, calls
+// Authentik while holding the lock, then writes the app side. A refusal is
+// thrown inside so the transaction rolls back, and returned outside.
+class Refusal<E> extends Error {
+  constructor(readonly code: E) {
+    super(String(code));
+  }
+}
+
+async function refusable<T, E>(run: () => Promise<T>): Promise<Result<T, E>> {
+  try {
+    return ok(await run());
+  } catch (e) {
+    if (e instanceof Refusal) return err(e.code as E);
+    throw e;
+  }
+}
+
+// The learner row, locked FOR UPDATE: a learner with an Authentik pk, or a
+// "not_found" refusal (an admin row is never changed here).
+async function lockLearner(trx: Kysely<DB>, id: string) {
+  const row = await trx
+    .selectFrom("users")
+    .select([
+      "id",
+      "role",
+      "status",
+      "name",
+      "company",
+      "email",
+      "timezone",
+      "set_password_pending",
+      "authentik_user_pk",
+      "auth_user_id",
+    ])
+    .where("id", "=", id)
+    .forUpdate()
+    .executeTakeFirst();
+  if (!row || row.role !== "learner" || row.authentik_user_pk === null)
+    throw new Refusal("not_found");
+  return { ...row, pk: row.authentik_user_pk };
+}
+
+export type UpdateLearnerError =
+  | { readonly kind: "duplicate"; readonly id: string | null }
+  | "authentik_conflict"
+  | "email_locked"
+  | "not_found"
+  | "refused"
+  | "unavailable";
+
+const EDITED_FIELDS = ["name", "company", "email", "timezone"] as const;
+
+// The duplicate error for an email another row holds; the link only for a
+// learner the console can show.
+async function duplicateOf(
+  conn: Kysely<DB>,
+  id: string,
+  email: string,
+): Promise<UpdateLearnerError | undefined> {
+  const other = await conn
+    .selectFrom("users")
+    .select(["id", "role", "authentik_user_pk"])
+    .where(sql<string>`lower(email)`, "=", email.toLowerCase())
+    .where("id", "<>", id)
+    .executeTakeFirst();
+  if (!other) return undefined;
+  const linkable = other.role === "learner" && other.authentik_user_pk !== null;
+  return { kind: "duplicate", id: linkable ? other.id : null };
+}
+
+const identityRefusal = (
+  e: UserRefusal | AuthentikFailure | "taken",
+): UpdateLearnerError => {
+  switch (e) {
+    case "taken":
+      return "authentik_conflict";
+    case "is_admin":
+    case "not_learner":
+    // The Authentik account is gone: the owner has to look at it.
+    case "not_found":
+      return "refused";
+    case "unavailable":
+      return "unavailable";
+    default: {
+      const never: never = e;
+      return never;
+    }
+  }
+};
+
+// AC-6. Name and email go to Authentik (a company or timezone only edit
+// makes no call); the email changes only while the learner has never set a
+// password. A save that changes nothing writes nothing.
+export async function updateLearner(
+  api: CoreApi,
+  conn: Kysely<DB>,
+  id: string,
+  input: LearnerInput,
+  actorId: string,
+): Promise<Result<void, UpdateLearnerError>> {
+  try {
+    return await refusable<void, UpdateLearnerError>(() =>
+      conn.transaction().execute(async (trx) => {
+        const row = await lockLearner(trx, id);
+        const emailChanged = input.email !== row.email;
+        const nameChanged = input.name !== row.name;
+        if (emailChanged) {
+          if (!row.set_password_pending) throw new Refusal("email_locked");
+          const duplicate = await duplicateOf(trx, id, input.email);
+          if (duplicate) throw new Refusal(duplicate);
+        }
+
+        const changed = changedFields(EDITED_FIELDS, row, input);
+        if (Object.keys(changed).length === 0) return;
+
+        const synced = nameChanged || emailChanged;
+        if (synced) {
+          const pushed = await updateLearnerIdentity(api, row.pk, {
+            name: input.name,
+            ...(emailChanged ? { email: input.email } : {}),
+          });
+          if (!pushed.ok) throw new Refusal(identityRefusal(pushed.error));
+        }
+
+        await trx
+          .updateTable("users")
+          .set({
+            name: input.name,
+            company: input.company,
+            email: input.email,
+            timezone: input.timezone,
+          })
+          .where("id", "=", id)
+          .execute();
+        if (emailChanged)
+          await enqueueWelcome(
+            trx,
+            id,
+            `welcome:${id}:email:${input.email.toLowerCase()}`,
+          );
+        await audit(trx, {
+          actorUserId: actorId,
+          action: "user.updated",
+          targetType: "user",
+          targetId: id,
+          summary: "Learner updated",
+          metadata: synced ? { ...changed, authentikSynced: true } : changed,
+        });
+      }),
+    );
+  } catch (e) {
+    // Two rows took the same email at once. Authentik may already hold it,
+    // which a later save of the same values converges.
+    const mapped = mapConstraintError(e);
+    if (mapped.ok || mapped.error !== "duplicate_email") throw e;
+    return err(
+      (await duplicateOf(conn, id, input.email)) ?? {
+        kind: "duplicate",
+        id: null,
+      },
+    );
+  }
+}
+
+// AC-7: the console's resend, one job per hour like the public one.
+export async function resendSetPasswordByAdmin(
+  conn: Kysely<DB>,
+  id: string,
+  actorId: string,
+): Promise<Result<{ readonly email: string }, "not_eligible">> {
+  return conn.transaction().execute(async (trx) => {
+    const learner = await trx
+      .selectFrom("users")
+      .select(["id", "email"])
+      .where("id", "=", id)
+      .where("role", "=", "learner")
+      .where("authentik_user_pk", "is not", null)
+      .where("status", "=", "active")
+      .where("set_password_pending", "=", true)
+      .executeTakeFirst();
+    if (!learner) return err("not_eligible");
+    await enqueueWelcome(trx, id, resendKey(id, new Date()));
+    await audit(trx, {
+      actorUserId: actorId,
+      action: "set_password.resent",
+      targetType: "user",
+      targetId: id,
+      summary: "Set password email resent by an admin",
+    });
+    return ok({ email: learner.email });
+  });
 }

@@ -3,10 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 import { z } from "zod";
+import { FormDialog } from "@/components/admin/form-dialog";
+import { LearnerFields } from "@/components/admin/learner-fields";
+import { ResendSetPasswordButton } from "@/components/admin/learner-status-actions";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -18,10 +21,15 @@ import {
 import { toneFor } from "@/lib/badge-tones";
 import { formatDateTime } from "@/lib/format-time";
 import { initials } from "@/lib/initials";
-import { cancelledByLabel, learnerStatusLabel } from "@/lib/learners";
+import {
+  cancelledByLabel,
+  editDefaults,
+  learnerStatusLabel,
+} from "@/lib/learners";
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { getLearnerDetail, type LearnerDetail } from "@/server/users/learners";
+import { resendSetPasswordAdminAction, updateLearnerAction } from "../actions";
 
 export const metadata: Metadata = { title: "User" };
 
@@ -41,6 +49,8 @@ export default async function UserDetailPage(
   const { id } = await props.params;
   const { learner, bookings } = await load(id);
   const status = learnerStatusLabel(learner.status);
+  // AC-7: only an active learner who has not set a password yet.
+  const canResend = learner.status === "active" && learner.setPasswordPending;
   const subtitle = [learner.company, learner.email]
     .filter((v) => v !== null)
     .join(" · ");
@@ -81,6 +91,18 @@ export default async function UserDetailPage(
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <Badge tone={toneFor(status)}>{status}</Badge>
+            <FormDialog
+              trigger={<Button variant="outline">Edit</Button>}
+              title="Edit User"
+              action={updateLearnerAction.bind(null, learner.id)}
+            >
+              <LearnerFields defaults={editDefaults(learner)} />
+            </FormDialog>
+            {canResend ? (
+              <ResendSetPasswordButton
+                action={resendSetPasswordAdminAction.bind(null, learner.id)}
+              />
+            ) : null}
           </div>
         </section>
 

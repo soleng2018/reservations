@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRightIcon, PlusIcon } from "lucide-react";
+import { ArrowRightIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
 import { FormDialog } from "@/components/admin/form-dialog";
 import { LearnerFields } from "@/components/admin/learner-fields";
@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { toneFor } from "@/lib/badge-tones";
 import {
+  editDefaults,
   learnerSearchText,
   learnerStatusLabel,
   reservationCountLabel,
@@ -17,7 +18,7 @@ import {
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
 import { listLearnersForAdmin } from "@/server/users/learners";
-import { createLearnerAction } from "./actions";
+import { createLearnerAction, updateLearnerAction } from "./actions";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -55,13 +56,30 @@ export default async function UsersPage() {
         status: <Badge tone={toneFor(status)}>{status}</Badge>,
       },
       actions: (
-        <Link
-          href={href}
-          aria-label={`View ${u.name}`}
-          className={buttonVariants({ variant: "outline", size: "icon" })}
-        >
-          <ArrowRightIcon aria-hidden="true" />
-        </Link>
+        <>
+          <Link
+            href={href}
+            aria-label={`View ${u.name}`}
+            className={buttonVariants({ variant: "outline", size: "icon" })}
+          >
+            <ArrowRightIcon aria-hidden="true" />
+          </Link>
+          <FormDialog
+            trigger={
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label={`Edit ${u.name}`}
+              >
+                <PencilIcon aria-hidden="true" />
+              </Button>
+            }
+            title="Edit User"
+            action={updateLearnerAction.bind(null, u.id)}
+          >
+            <LearnerFields defaults={editDefaults(u)} />
+          </FormDialog>
+        </>
       ),
     };
   });

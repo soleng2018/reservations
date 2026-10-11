@@ -33,6 +33,21 @@ export type LearnerEditDefaults = {
   readonly emailEditable: boolean;
 };
 
+// AC-6: a list or detail row's values, as the edit dialog's defaults.
+export const editDefaults = (row: {
+  readonly name: string;
+  readonly company: string | null;
+  readonly email: string;
+  readonly timezone: string;
+  readonly emailEditable: boolean;
+}): LearnerEditDefaults => ({
+  name: row.name,
+  company: row.company ?? "",
+  email: row.email,
+  timezone: row.timezone,
+  emailEditable: row.emailEditable,
+});
+
 export const reservationCountLabel = (n: number) =>
   `${n} reservation${n === 1 ? "" : "s"}`;
 

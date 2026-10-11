@@ -139,6 +139,35 @@ async function reuseLearner(
   return ok({ pk, created: false, tagged: true, neverLoggedIn });
 }
 
+// Spec 0008 AC-6: an admin's name or email fix. A new email also becomes the
+// username (lowercased, the AC-5 rule), so it must not be another user's
+// email or username first; this user's own pk never counts, so a case only
+// change, or a save repeated after a failed commit, goes through.
+export async function updateLearnerIdentity(
+  api: CoreApi,
+  pk: number,
+  change: { readonly name?: string; readonly email?: string },
+): Promise<Result<void, UserRefusal | AuthentikFailure | "taken">> {
+  if (change.email !== undefined) {
+    const found = await candidates(api, change.email.toLowerCase());
+    if (!found.ok) return found;
+    if (found.value.some((u) => u.pk !== pk)) return err("taken");
+  }
+  const guarded = await guardUserWrite(api, pk, "learner");
+  if (!guarded.ok) return guarded;
+  return call("users.update_identity", () =>
+    api.coreUsersPartialUpdate({
+      id: pk,
+      patchedUserRequest: {
+        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.email !== undefined
+          ? { email: change.email, username: change.email.toLowerCase() }
+          : {}),
+      },
+    }),
+  ).then((r) => (r.ok ? ok(undefined) : r));
+}
+
 // Compensation for a saga that created this user (spec 0002 AC-13).
 export async function deleteSagaLearner(
   api: CoreApi,
