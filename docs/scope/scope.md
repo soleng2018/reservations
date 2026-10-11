@@ -39,7 +39,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 8 | Admin: API Keys | Slice 2 | done |
 | 9 | Admin: Testbeds | Slice 2 | done |
 | 10 | Admin: Users & user detail | Slice 2 | done |
-| 11 | Public landing page | Slice 3 | planned |
+| 11 | Public landing page | Slice 3 | in-progress |
 | 12 | Availability & booking rules | Slice 3 | planned |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | planned |
 | 14 | Lab access & booking result screens | Slice 3 | planned |
@@ -180,10 +180,18 @@ spec [0008](../specs/0008-admin-users/index.md) · code in `app/admin/users/`, `
 
 ## Slice 3: Learner portal (from the mock)
 
-### 11. Public landing page
+### 11. Public landing page · in-progress
 The learner home from the mock: hero, "Reserve a lab" and "Manage an existing reservation" actions, and the three step explainer.
 **Done when:** the page matches the learner mock, renders without sign in, and has its title, description, and social card metadata; it shows no admin sign in or sign up link.
+- [x] Design it (spec): `/architect public landing page`
 - [ ] Build it: `/develop public landing page`
+  - [ ] Landing tracer: hero and social assets, `appUrl()`, frame without Sign out, the page with its metadata, Playwright landing spec (AC-1, 2, 3, 4, 6, 9)
+  - [ ] Indexing: root `noindex` default, `robots.txt` and sitemap, build and unreachable database checks (AC-1, 7, 8, 9)
+  - [ ] Nile footer on every learner page, with contrast pairs (AC-5)
+  - [ ] Axe and screenshots for `/`, `/book` captured again (AC-5, 10)
+- [ ] Verify it: `/check verify public landing page`
+- [ ] Test it: `/test public landing page`
+spec [0009](../specs/0009-public-landing-page/index.md)
 
 ### 12. Availability & booking rules · needs a decision
 Thicken slice 1's booking into the mock's full 3 step flow: details form with timezone choice, month calendar with unavailable days greyed, 30 minute start slots for the chosen day with the full duration highlighted, the confirm step showing the assigned testbed, and the progress and failure screens.
@@ -234,6 +242,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Booking controls**: admin approval of new learners, or booking limited to allowed email domains
 - **Admin table sorting and pagination**: revisit search, sort, and paging once an admin list passes about 200 rows (Users is the likely first) · from spec 0005
 - **Admin timezone setting**: let an admin change their own console timezone after it is set once from the browser · from spec 0008
+- **Social card with headline text**: draw the landing headline into the link preview image (`opengraph-image.tsx` with a committed Inter font) if marketing wants text in previews · from spec 0009
 - **Secret rotation script**: `secrets:rotate` encrypts every stored secret again under the active keyring key in one transaction; needed once something decrypts them · from spec 0006
 
 ## Legend
