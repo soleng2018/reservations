@@ -36,6 +36,7 @@ npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --
 npm run worker       # background worker; exits unless WORKER_ENABLED=true; shared DB, so it IS the prod worker (one at a time)
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
+npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
 ```
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
@@ -57,7 +58,8 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Time: the database is the clock. Booking, slot, and access decisions use SQL `now()` or `dbNow()` from `server/db/bookings.ts`, never `Date.now()`. Times are stored UTC and shown in the viewer's IANA zone through `lib/format-time.ts`.
 - Forms: Server Actions parse input with the Zod schemas in `lib/` (`booking-input.ts`, `catalog-input.ts`) and return field errors keyed by dotted path through `fieldErrors` in `lib/form-errors.ts`.
 - Admin row edit and delete (Testbed Types is the reference): the page binds the row id (`action.bind(null, id)`) and the action checks it with `z.uuid()`; edit fields read their defaults once on open (`useState`), because `revalidatePath` refreshes props while the dialog is still closing; delete is a check action plus a remove action typed by `lib/delete-flow.ts`, and the remove runs `lockForDelete`, the blocker query, then the soft delete in one transaction.
-- Audit: every audit action name is in the `AuditAction` enum in `lib/audit-actions.ts` (no DB CHECK, so a new action needs no migration); write rows with `audit()` from `server/audit.ts` inside the same transaction.
+- Audit: every audit action name is in the `AuditAction` enum in `lib/audit-actions.ts` (no DB CHECK, so a new action needs no migration); write rows with `audit()` from `server/audit.ts` inside the same transaction. Edit metadata comes from `changedFields` in `lib/changed-fields.ts`, which compares only the keys you list (never list a secret).
+- Secrets at rest: encrypt with `encryptSecret` from `server/crypto/secrets.ts` (AES-256-GCM, bound to table, column, and row id through `secretAad`), using the keyring from `encryptionEnv()` in `server/env.ts` (`APP_ENCRYPTION_KEYS_FILE`, `APP_ENCRYPTION_ACTIVE_KEY_ID`; dev and prod share one keyring). A stored secret never goes back to the client, a log, an error, or audit metadata: in app code `secret_ciphertext` may appear only in `server/catalog/api-keys.ts` (generated types aside), enforced by `tests/secret-column-scan.test.ts`.
 - Client IP for rate limits comes only from `clientIp()` in `server/request-ip.ts` (it trusts `CF-Connecting-IP` only when `TRUST_PROXY_HEADERS=true`).
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
 - Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`, `worker/` (the worker process entry). Import via `@/`.

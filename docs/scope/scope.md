@@ -36,7 +36,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 5 | Design system & UI foundation | Foundation | done |
 | 6 | Core booking loop | Slice 1 | done |
 | 7 | Admin: Testbed Types | Slice 2 | done |
-| 8 | Admin: API Keys | Slice 2 | in-progress |
+| 8 | Admin: API Keys | Slice 2 | done |
 | 9 | Admin: Testbeds | Slice 2 | planned |
 | 10 | Admin: Users & user detail | Slice 2 | planned |
 | 11 | Public landing page | Slice 3 | planned |
@@ -131,7 +131,7 @@ List, search, add, edit, and delete testbed types (name plus a duration in hours
 - [x] Build it: `/develop admin: testbed types`
 code in `app/admin/testbed-types/`, `app/admin/actions.ts`, `server/catalog/testbed-types.ts`, `components/admin/testbed-type-fields.tsx` (rules from specs [0002](../specs/0002-data-model/index.md) AC-4, AC-5, AC-14 and [0005](../specs/0005-design-system-ui-foundation/index.md) delete flow)
 
-### 8. Admin: API Keys · in-progress · Full
+### 8. Admin: API Keys · done · Full
 List, search, add, edit, and delete IDP and AI credentials (name, type, base URL, secret). Secrets are entered once and are write-only afterward: the list shows only a fixed mask, and there is no reveal or copy. Editing a key leaves the secret unchanged unless the admin types a replacement. Keys are stored only; no part of the app calls them yet (see Deferred).
 **Done when:** secrets are encrypted at rest and never sent back to the browser after they are saved; there are no reveal or copy controls (as in the mock); replacing a secret works from the edit dialog; deleting a key assigned to a testbed is blocked and the dialog lists those testbeds.
 - [x] Design it (spec): `/architect admin: api keys`
@@ -140,10 +140,10 @@ List, search, add, edit, and delete IDP and AI credentials (name, type, base URL
   - [x] Tracer: migration, add and list with the mask and changed date, not configured state (AC-1, 2, 3, 7, 9, 10, 11)
   - [x] Edit: keep or replace the secret, audit rows, type change block (AC-3, 4, 5)
   - [x] Delete with testbed blockers, plus the leak proof (canary Playwright, query and source scans) (AC-1, 4, 6, 8, 10)
-- [ ] Verify it: `/check verify admin: api keys`
-- [ ] Test it: `/test admin: api keys`
-- [ ] Review it (fresh model): `/check review admin: api keys`
-- [ ] Document it: `/document admin: api keys`
+- [x] Verify it: `/check verify admin: api keys`
+- [x] Test it: `/test admin: api keys`
+- [x] Review it (fresh model): `/check review admin: api keys`
+- [x] Document it: `/document admin: api keys`
 spec [0006](../specs/0006-admin-api-keys/index.md) · code in `app/admin/api-keys/`, `app/admin/actions.ts`, `server/catalog/api-keys.ts`, `server/crypto/`, `server/env.ts`, `components/admin/api-key-fields.tsx`, `lib/api-keys.ts`, `lib/changed-fields.ts`, `db/migrations/0005_api_keys.sql`, `scripts/secrets-keygen.ts`
 
 ### 9. Admin: Testbeds · needs a decision
