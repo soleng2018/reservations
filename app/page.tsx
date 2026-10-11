@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CalendarIcon, LayoutGridIcon, RouterIcon } from "lucide-react";
 import { LearnerFrame } from "@/components/learner-frame";
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { appUrl } from "@/server/env";
 
 // Rendered per request: the metadata needs APP_URL, which `next build` never
@@ -92,13 +93,15 @@ export default function Home() {
             <div className="flex flex-wrap gap-3.5">
               <Link
                 href="/book"
-                className={buttonVariants({ variant: "cta", size: "lg" })}
+                className={cn(buttonVariants({ variant: "cta", size: "lg" }))}
               >
                 Reserve a lab
               </Link>
               <Link
                 href="/reservations"
-                className={buttonVariants({ variant: "outline", size: "lg" })}
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "lg" }),
+                )}
               >
                 Manage an existing reservation
               </Link>
