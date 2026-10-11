@@ -30,6 +30,7 @@ import {
   deleteApiKey,
   listApiKeys,
   listApiKeysQuery,
+  listIdpKeyOptions,
   updateApiKey,
 } from "./api-keys";
 
@@ -594,5 +595,35 @@ describe.skipIf(!hasDb)("deleteApiKey (AC-6)", () => {
           blockers: [{ id: late.id, label: late.name }],
         },
       });
+    }));
+});
+
+// covers: spec 0007 AC-2 (the testbed form's IDP choices)
+describe.skipIf(!hasDb)("listIdpKeyOptions (spec 0007 AC-2)", () => {
+  it("lists live IDP keys only, by name ignoring case, with no secret", () =>
+    inRollback(async (trx) => {
+      const tag = unique();
+      const key = (name: string, type: "IDP" | "AI", deleted_at?: Date) =>
+        trx
+          .insertInto("api_keys")
+          .values({
+            name,
+            type,
+            base_url: "https://idp.example.test",
+            secret_ciphertext: "v1:test:placeholder",
+            deleted_at,
+          })
+          .returning(["id", "name"])
+          .executeTakeFirstOrThrow();
+      const b = await key(`b ${tag}`, "IDP");
+      const a = await key(`A ${tag}`, "IDP");
+      await key(`c ${tag}`, "AI");
+      await key(`d ${tag}`, "IDP", new Date());
+
+      const mine = (await listIdpKeyOptions(trx)).filter((k) =>
+        k.name.endsWith(tag),
+      );
+      expect(mine).toEqual([a, b]);
+      expect(JSON.stringify(mine)).not.toContain("v1:");
     }));
 });

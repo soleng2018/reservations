@@ -123,6 +123,13 @@ test("an admin adds a testbed with an IDP and clients, edits it, and deletes it"
   await expect(row).not.toContainText("Not ready");
   await page.getByLabel("Search testbeds").fill("");
 
+  // AC-1, AC-3: the list page's HTML (RSC payload included) carries counts
+  // only; the OS login reaches the browser through the edit load alone.
+  const html = await (await page.request.get("/admin/testbeds")).text();
+  expect(html).toContain(labName);
+  expect(html).not.toContain("first pass");
+  expect(html).not.toContain("labuser");
+
   // AC-3: edit loads the testbed, OS login included, masked until shown.
   await row.getByRole("button", { name: `Edit ${labName}` }).click();
   const edit = page.getByRole("dialog", { name: "Edit testbed" });
@@ -172,4 +179,50 @@ test("an admin adds a testbed with an IDP and clients, edits it, and deletes it"
   await expect(renamed).toHaveCount(0);
   await page.reload();
   await expect(rowOf(page, `${labName} v2`)).toHaveCount(0);
+});
+
+// covers: AC-2 (the add form's client rules; nothing is written)
+test("the add form marks a password without a username, and stops at 20 clients", async ({
+  adminPage: page,
+}) => {
+  await page.goto("/admin/testbeds");
+  await page.getByRole("button", { name: "Add testbed" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add testbed" });
+  const name = `dev e2e refused ${id()}`;
+  await dialog.getByLabel("Name", { exact: true }).fill(name);
+  await dialog
+    .getByLabel("Nile Portal URL")
+    .fill("https://portal.nile-test.invalid");
+  await dialog.getByLabel("LMS URL").fill("https://lms.nile-test.invalid");
+  const addClient = dialog.getByRole("button", { name: "Add client" });
+  await addClient.click();
+  const first = dialog.getByRole("group", { name: "Client 1" });
+  await first.getByLabel("Client name").fill("Air 1");
+  await first.getByLabel("Client URL").fill("https://air1.nile-test.invalid");
+  await first.getByLabel("OS password", { exact: true }).fill("orphan pass");
+  await dialog.getByRole("button", { name: "Save" }).click();
+
+  const username = first.getByLabel("OS username");
+  await expect(
+    first.getByText("Enter the OS username for this password."),
+  ).toBeVisible();
+  await expect(username).toHaveAttribute("aria-invalid", "true");
+  await expect(username).toHaveAccessibleDescription(
+    /Enter the OS username for this password\./,
+  );
+  // What was typed stays, so the admin only adds the username.
+  await expect(first.getByLabel("OS password", { exact: true })).toHaveValue(
+    "orphan pass",
+  );
+
+  for (let i = 1; i < 20; i++) await addClient.click();
+  await expect(dialog.getByRole("group", { name: "Client 20" })).toBeVisible();
+  await expect(addClient).toBeDisabled();
+  await expect(
+    dialog.getByText("A testbed can have at most 20 clients."),
+  ).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await page.reload();
+  await expect(rowOf(page, name)).toHaveCount(0);
 });

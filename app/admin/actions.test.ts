@@ -870,4 +870,101 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         value: [],
       });
     }));
+
+  const updatedAudits = (trx: Kysely<DB>, id: string) =>
+    trx
+      .selectFrom("audit_events")
+      .select("metadata")
+      .where("target_id", "=", id)
+      .where("action", "=", "testbed.updated")
+      .execute();
+
+  // covers: AC-2, AC-3 (the form's parallel lists keep each login on its row)
+  it("keeps each OS login with its own client when only a later row has one", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const f = testbedForm(testbed.name, type.id);
+      f.set("idpApiKeyId", "");
+      for (const [kind, name, user, pass] of [
+        ["wired", "Wired 1", "", ""],
+        ["wireless", "Air 2", "  ops ", " p w "],
+      ]) {
+        f.append("clientKind", kind);
+        f.append("clientName", name);
+        f.append("clientUrl", "https://c.example.test");
+        f.append("clientOsUsername", user);
+        f.append("clientOsPassword", pass);
+      }
+      expect(await updateTestbedAction(testbed.id, IDLE, f)).toMatchObject({
+        kind: "saved",
+      });
+      expect(await loadTestbedForEdit(testbed.id)).toMatchObject({
+        ok: true,
+        value: {
+          clients: [
+            { name: "Wired 1", osUsername: null, osPassword: null },
+            { name: "Air 2", osUsername: "ops", osPassword: " p w " },
+          ],
+        },
+      });
+    }));
+
+  // covers: AC-3 (a save that changes nothing)
+  it("says Updated for a save that changes nothing, and audits nothing more", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const name = `Same ${crypto.randomUUID().slice(0, 8)}`;
+      await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id));
+      expect(await updatedAudits(trx, testbed.id)).toHaveLength(1);
+
+      expect(
+        await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id)),
+      ).toEqual({ kind: "saved", message: `Updated ${name}.` });
+      expect(await updatedAudits(trx, testbed.id)).toHaveLength(1);
+    }));
+
+  // covers: AC-3 (gone testbed or type, by a well formed id)
+  it("says the testbed is gone, or the type is, after a delete elsewhere", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const goneType = await makeType(trx, { deleted_at: new Date() });
+      expect(
+        await updateTestbedAction(
+          testbed.id,
+          IDLE,
+          editForm(testbed.name, goneType.id),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: { testbedTypeId: "That type no longer exists." },
+      });
+
+      await trx
+        .updateTable("testbeds")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", testbed.id)
+        .execute();
+      expect(
+        await updateTestbedAction(testbed.id, IDLE, editForm("X", type.id)),
+      ).toEqual({ kind: "error", message: GONE, fields: {} });
+    }));
+
+  // covers: AC-2, AC-5 (an OS login never comes back in a refusal)
+  it("never echoes an OS username or password in its errors", () =>
+    as("admin", async (trx) => {
+      const { type, testbed } = await makeLab(trx);
+      const canary = `canary-${crypto.randomUUID()}`;
+      const f = editForm(testbed.name, type.id);
+      f.set("clientOsUsername", canary.repeat(10));
+      f.set("clientOsPassword", canary.repeat(10));
+      const refused = await updateTestbedAction(testbed.id, IDLE, f);
+      expect(refused).toEqual({
+        kind: "error",
+        fields: {
+          "clients.0.osUsername": "Use at most 200 characters.",
+          "clients.0.osPassword": "Use at most 200 characters.",
+        },
+      });
+      expect(JSON.stringify(refused)).not.toContain("canary");
+    }));
 });

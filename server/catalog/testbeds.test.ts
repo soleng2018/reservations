@@ -824,3 +824,150 @@ describe.skipIf(!hasDb)("deleteTestbed (AC-6)", () => {
       expect(audit.metadata).toEqual({ slug: tb.slug, groupPk: null });
     }));
 });
+
+// covers: spec 0007 AC-3 (edges of the edit save)
+describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
+  it("reorders and grows the clients, each login staying with its client", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const [wired, air] = input.clients;
+      if (!wired || !air) throw new Error("setup has two clients");
+      const extra = {
+        kind: "wired",
+        name: "Wired 2",
+        url: "https://w2.example.test",
+        osUsername: "second",
+        osPassword: "two",
+      } as const;
+      const clients = [air, wired, extra];
+
+      expect(
+        await updateTestbed(asConn(trx), id, { ...input, clients }, admin.id),
+      ).toEqual({ ok: true, value: undefined });
+      expect(
+        (await clientRows(trx, id)).map((c) => [
+          c.position,
+          c.name,
+          c.os_username,
+          c.os_password,
+        ]),
+      ).toEqual([
+        [0, "Air 1", null, null],
+        [1, "Wired 1", "labuser", PASSWORD],
+        [2, "Wired 2", "second", "two"],
+      ]);
+      expect(await getTestbedForEdit(trx, id)).toMatchObject({
+        ok: true,
+        value: { clients },
+      });
+      expect((await updates(trx, id)).map((a) => a.metadata)).toEqual([
+        { clients: { from: 2, to: 3 }, accessChanged: true },
+      ]);
+    }));
+
+  it("removes every client", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      await updateTestbed(asConn(trx), id, { ...input, clients: [] }, admin.id);
+      expect(await clientRows(trx, id)).toEqual([]);
+      const listed = (await listTestbedsForAdmin(trx)).find((t) => t.id === id);
+      expect(listed?.clientCount).toBe(0);
+    }));
+
+  it("lets a testbed take its own name in another case", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const name = input.name.toUpperCase();
+      expect(
+        await updateTestbed(asConn(trx), id, { ...input, name }, admin.id),
+      ).toEqual({ ok: true, value: undefined });
+      expect((await updates(trx, id)).map((a) => a.metadata)).toEqual([
+        { name: { from: input.name, to: name } },
+      ]);
+    }));
+
+  it("refuses a soft deleted IDP key and leaves the row as it was", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const gone = await makeKey(trx, { deleted_at: new Date() });
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          id,
+          { ...input, name: `Other ${unique()}`, idpApiKeyId: gone.id },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "idp_not_found" });
+      const row = await trx
+        .selectFrom("testbeds")
+        .select(["name", "idp_api_key_id"])
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ name: input.name, idp_api_key_id: null });
+      expect(await updates(trx, id)).toEqual([]);
+    }));
+
+  // The dialog shows a stale IDP as None, so saving sends none.
+  it("clears an IDP key deleted since it was chosen, auditing the id change", () =>
+    inRollback(async (trx) => {
+      const { admin, input } = await setup(trx);
+      const key = await makeKey(trx);
+      const ak = fakeAuthentik([]);
+      const r = await createTestbed(
+        ak.api,
+        asConn(trx),
+        { ...input, idpApiKeyId: key.id },
+        admin.id,
+      );
+      if (!r.ok) throw new Error(r.error);
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", key.id)
+        .execute();
+      expect(await getTestbedForEdit(trx, r.value.id)).toMatchObject({
+        ok: true,
+        value: { idpApiKeyId: key.id },
+      });
+
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          r.value.id,
+          { ...input, idpApiKeyId: null },
+          admin.id,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect((await updates(trx, r.value.id)).map((a) => a.metadata)).toEqual([
+        { idpApiKeyId: { from: key.id, to: null } },
+      ]);
+    }));
+
+  it("refuses an unknown id", () =>
+    inRollback(async (trx) => {
+      const { input, admin } = await setup(trx);
+      expect(
+        await updateTestbed(asConn(trx), crypto.randomUUID(), input, admin.id),
+      ).toEqual({ ok: false, error: "not_found" });
+    }));
+});
+
+// covers: spec 0007 AC-6 (edges of the delete)
+describe.skipIf(!hasDb)("deleteTestbed edges (AC-6)", () => {
+  it("finds no unknown testbed, and writes no audit row", () =>
+    inRollback(async (trx) => {
+      const { admin } = await setup(trx);
+      const id = crypto.randomUUID();
+      expect(await deleteTestbed(asConn(trx), id, admin.id)).toEqual({
+        ok: false,
+        error: { kind: "not_found" },
+      });
+      expect(
+        await trx
+          .selectFrom("audit_events")
+          .select("id")
+          .where("target_id", "=", id)
+          .execute(),
+      ).toEqual([]);
+    }));
+});

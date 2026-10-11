@@ -42,6 +42,12 @@ describe("list helpers (AC-1)", () => {
       testbedSearchText({ name: "Bench", typeName: "Wi-Fi", idpName: null }),
     ).toBe("Bench Wi-Fi");
   });
+
+  it("never matches the dash shown for a missing IDP", () => {
+    expect(
+      testbedSearchText({ name: "Bench", typeName: "Wi-Fi", idpName: null }),
+    ).not.toContain("—");
+  });
 });
 
 // covers: spec 0007 AC-3 (no change skip), AC-5 (audit metadata)
@@ -106,6 +112,26 @@ describe("testbedEditChange (AC-3, AC-5)", () => {
     expect(testbedEditChange(before, { ...before, idpApiKeyId })).toEqual({
       clientsChanged: false,
       metadata: { idpApiKeyId: { from: null, to: idpApiKeyId } },
+    });
+  });
+
+  it("puts a rename, an LMS change, and a client change in one metadata", () => {
+    const lmsUrl = "https://lms2.example.test";
+    expect(
+      testbedEditChange(before, {
+        ...before,
+        name: "Bench 2",
+        lmsUrl,
+        clients: [],
+      }),
+    ).toEqual({
+      clientsChanged: true,
+      metadata: {
+        name: { from: "Bench 1", to: "Bench 2" },
+        lmsUrl: { from: before.lmsUrl, to: lmsUrl },
+        clients: { from: 1, to: 0 },
+        accessChanged: true,
+      },
     });
   });
 });

@@ -180,3 +180,44 @@ describe.skipIf(!hasDb)("teardownDeletedTestbeds (AC-7)", () => {
       expect(await stampOf(trx, tb.id)).toBeNull();
     }));
 });
+
+// covers: spec 0007 AC-7 (what a tick reports, and what it never touches)
+describe.skipIf(!hasDb)("teardownDeletedTestbeds edges (AC-7)", () => {
+  it("returns how many testbeds it stamped this tick", () =>
+    inRollback(async (trx) => {
+      const one = await deletedTestbed(trx);
+      const two = await deletedTestbed(trx);
+      const ak = fakeAuthentik([], { groups: [one.own, two.own] });
+      // Other tests' rows in the shared DB may also be stamped, never fewer.
+      expect(
+        await teardownDeletedTestbeds(ak.api, asConn(trx)),
+      ).toBeGreaterThanOrEqual(2);
+      expect(await stampOf(trx, one.tb.id)).not.toBeNull();
+      expect(await stampOf(trx, two.tb.id)).not.toBeNull();
+      expect(await teardownDeletedTestbeds(ak.api, asConn(trx))).toBe(0);
+    }));
+
+  it("leaves a deleted testbed that never got a group to the create sweeper", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tb = await makeTestbed(trx, type.id, {
+        authentik_group_pk: null,
+        deleted_at: new Date(),
+      });
+      const ak = fakeAuthentik([]);
+      await teardownDeletedTestbeds(ak.api, asConn(trx));
+      expect(ak.writes).toEqual([]);
+      expect(await stampOf(trx, tb.id)).toBeNull();
+    }));
+
+  it("stamps nothing and does not throw while Authentik is down", () =>
+    inRollback(async (trx) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const { tb } = await deletedTestbed(trx);
+      const ak = fakeAuthentik([], { down: true });
+      await expect(teardownDeletedTestbeds(ak.api, asConn(trx))).resolves.toBe(
+        0,
+      );
+      expect(await stampOf(trx, tb.id)).toBeNull();
+    }));
+});
