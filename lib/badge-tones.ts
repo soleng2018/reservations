@@ -12,6 +12,7 @@ const TONE_OF: Readonly<Record<string, BadgeTone>> = {
   ai: "accent",
   past: "neutral",
   inactive: "neutral",
+  deactivated: "neutral",
   cancelled: "neutral",
   "not ready": "neutral",
 };

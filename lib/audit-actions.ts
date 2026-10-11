@@ -37,5 +37,12 @@ export const AuditAction = z.enum([
   // Feature 9 (spec 0007). Never with a client's OS username or password.
   "testbed.updated",
   "testbed.deleted",
+  // Feature 10 (spec 0008 AC-13).
+  "user.created",
+  "user.updated",
+  // One row per booking, for an admin cancel and for deactivation.
+  "booking.cancelled",
+  // The admin's own row, the first time the console learns their zone.
+  "admin.timezone_set",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

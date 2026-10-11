@@ -1,7 +1,7 @@
 # 0008. Admin Users and User Detail
 
 **Date**: 2026-10-10
-**Status**: Proposed
+**Status**: In Progress
 
 ## Summary
 

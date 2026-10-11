@@ -167,7 +167,7 @@ List and search learners (name, company, email, booking count, status); admin ac
 **Done when:** a user added here can sign in through Authentik; deactivating one blocks their sign in, frees their future bookings, and removes them from testbed groups, per the spec; the detail page shows Upcoming, Current, and Past bookings in the admin's timezone.
 - [x] Design it (spec): `/architect admin: users & user detail`
 - [ ] Build it: `/develop admin: users & user detail`
-  - [ ] Read thread: index migration, admin timezone from the browser, Users list and read only detail page (AC-1, 2, 3, 15)
+  - [x] Read thread: index migration, admin timezone from the browser, Users list and read only detail page (AC-1, 2, 3, 15)
   - [ ] Add strand: learner input, add saga with never logged in reuse, add dialog with timezone, unlinked learner sweeper (AC-4, 5, 12, 13)
   - [ ] Edit strand: lock first edit with Authentik name and email sync, email lock, resend button (AC-6, 7, 13)
   - [ ] Status and cancel strand: deactivate with booking cancels and confirm list, reactivate, reconciler status filter, admin cancel (AC-8, 9, 10, 11, 13)
