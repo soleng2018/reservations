@@ -39,8 +39,13 @@ vi.mock("@/server/db", async (importOriginal) => {
   return { ...real, db: () => ctx.conn ?? real.db() };
 });
 
-const { bookAction, loadStartsAction } = await import("./actions");
-const { asConn, hasDb, inRollback, makeTestbed, makeType, slot } =
+const {
+  bookAction,
+  checkDetailsAction,
+  loadStartsAction,
+  previewTestbedAction,
+} = await import("./actions");
+const { asConn, hasDb, inRollback, makeTestbed, makeType, makeUser, slot } =
   await import("@/server/db/testing");
 const { fakeAuthentik } = await import("@/server/authentik/testing");
 
@@ -200,9 +205,9 @@ describe.skipIf(!hasDb)("bookAction (AC-4, AC-6)", () => {
     }));
 });
 
-// covers: AC-3
+// covers: spec 0004 AC-3, spec 0010 AC-4
 describe.skipIf(!hasDb)("loadStartsAction (AC-3)", () => {
-  it("lists ISO starts, and limits 60 calls per IP per 10 minutes", () =>
+  it("lists ISO starts with the duration and the DB clock, and limits 60 calls per IP per 10 minutes", () =>
     run(async (trx) => {
       const { type } = await setup(trx);
       const first = await loadStartsAction(type.id);
@@ -210,6 +215,13 @@ describe.skipIf(!hasDb)("loadStartsAction (AC-3)", () => {
       expect(first.starts.length).toBeGreaterThan(0);
       expect(first.starts[0]).toMatch(
         /^\d{4}-\d\d-\d\dT\d\d:(00|30):00\.000Z$/,
+      );
+      expect(first.durationMs).toBe(2 * 3_600_000);
+      expect(new Date(first.now).getTime()).not.toBeNaN();
+      // spec 0010: the window is 90 days, so the list reaches past 14.
+      const last = new Date(first.starts.at(-1) ?? first.now).getTime();
+      expect(last - new Date(first.now).getTime()).toBeGreaterThan(
+        80 * 24 * 3_600_000,
       );
       await trx
         .updateTable("rate_limits")
@@ -221,9 +233,183 @@ describe.skipIf(!hasDb)("loadStartsAction (AC-3)", () => {
 
   it("gives an empty list for a bad or unknown type", () =>
     run(async () => {
-      expect(await loadStartsAction("not-a-uuid")).toEqual({ starts: [] });
-      expect(await loadStartsAction(crypto.randomUUID())).toEqual({
-        starts: [],
+      for (const id of ["not-a-uuid", crypto.randomUUID()]) {
+        const result = await loadStartsAction(id);
+        expect(result).toMatchObject({ starts: [], durationMs: 0 });
+        expect("now" in result && typeof result.now).toBe("string");
+      }
+    }));
+});
+
+const details = (values: Record<string, string>) => ({
+  name: values.name ?? "",
+  company: values.company ?? "",
+  email: values.email ?? "",
+  timezone: values.timezone ?? "",
+  testbedTypeId: values.testbedTypeId ?? "",
+});
+
+const bucket = (trx: Kysely<DB>, key: string) =>
+  trx
+    .selectFrom("rate_limits")
+    .select("count")
+    .where("bucket_key", "=", key)
+    .execute();
+
+// covers: spec 0010 AC-2, AC-3, AC-13
+describe.skipIf(!hasDb)("checkDetailsAction (spec 0010 AC-2)", () => {
+  it("answers ok for a new guest and a bookable type", () =>
+    run(async (trx) => {
+      const { values } = await setup(trx);
+      expect(await checkDetailsAction(details(values))).toEqual({
+        kind: "ok",
+      });
+    }));
+
+  it("names the refusal, with no learner data", () =>
+    run(async (trx) => {
+      const { values, type } = await setup(trx);
+      const user = await makeUser(trx, { email: values.email });
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: (await makeTestbed(trx, type.id)).id,
+          testbed_type_id: type.id,
+          starts_at: slot(30),
+          ends_at: slot(32),
+          status: "confirmed",
+        })
+        .execute();
+      const result = await checkDetailsAction(details(values));
+      expect(result).toEqual({
+        kind: "error",
+        code: "has_live_booking",
+        fields: {},
+      });
+      const text = JSON.stringify(result);
+      expect(text).not.toContain(user.id);
+      expect(text).not.toContain("Test Learner");
+    }));
+
+  it("returns field errors before the email bucket counts", () =>
+    run(async (trx) => {
+      const { values } = await setup(trx);
+      const result = await checkDetailsAction(
+        details({ ...values, name: " ", timezone: "Mars/Olympus" }),
+      );
+      expect(result).toEqual({
+        kind: "error",
+        code: "invalid",
+        fields: {
+          name: "Enter your name.",
+          timezone: "Choose a timezone from the list.",
+        },
+      });
+      expect(
+        await bucket(trx, `details:email:${values.email.toLowerCase()}`),
+      ).toEqual([]);
+    }));
+
+  it("limits 20 checks per IP per 10 minutes", () =>
+    run(async (trx) => {
+      const { values } = await setup(trx);
+      for (let i = 0; i < 20; i++)
+        expect(
+          (await checkDetailsAction(details({ ...values, name: "" }))).kind,
+        ).toBe("error");
+      expect(await checkDetailsAction(details(values))).toEqual({
+        kind: "error",
+        code: "limited",
+        fields: {},
+      });
+    }));
+
+  it("fails open over 10 checks per email per hour, reading nothing", () =>
+    run(async (trx) => {
+      const { values, type } = await setup(trx);
+      const user = await makeUser(trx, { email: values.email });
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: (await makeTestbed(trx, type.id)).id,
+          testbed_type_id: type.id,
+          starts_at: slot(30),
+          ends_at: slot(32),
+          status: "confirmed",
+        })
+        .execute();
+      for (let i = 0; i < 10; i++) {
+        ctx.ip = uniqueIp();
+        expect(
+          await checkDetailsAction(
+            details({ ...values, email: values.email.toUpperCase() }),
+          ),
+        ).toMatchObject({ code: "has_live_booking" });
+      }
+      ctx.ip = uniqueIp();
+      expect(await checkDetailsAction(details(values))).toEqual({
+        kind: "ok",
+      });
+    }));
+
+  it("writes only rate limit rows", () =>
+    run(async (trx) => {
+      const { values, bookings } = await setup(trx);
+      const users = () =>
+        trx
+          .selectFrom("users")
+          .select("id")
+          .where("email", "=", values.email)
+          .execute();
+      await checkDetailsAction(details(values));
+      expect(await users()).toEqual([]);
+      expect(await bookings()).toEqual([]);
+      expect(await bucket(trx, `details:ip:${ctx.ip}`)).toEqual([{ count: 1 }]);
+    }));
+});
+
+// covers: spec 0010 AC-7, AC-13
+describe.skipIf(!hasDb)("previewTestbedAction (spec 0010 AC-7)", () => {
+  it("names the testbed and the end, and nothing else", () =>
+    run(async (trx) => {
+      const { type, values } = await setup(trx);
+      const result = await previewTestbedAction(type.id, values.startsAt);
+      expect(result).toEqual({
+        kind: "ok",
+        testbedName: "aa bench",
+        endsAt: new Date(
+          new Date(values.startsAt).getTime() + 2 * 3_600_000,
+        ).toISOString(),
+      });
+    }));
+
+  it("reads bad input or a start inside the lead time as taken", () =>
+    run(async (trx) => {
+      const { type } = await setup(trx);
+      expect(
+        await previewTestbedAction("nope", slot(24).toISOString()),
+      ).toEqual({ kind: "taken" });
+      expect(await previewTestbedAction(type.id, "tomorrow")).toEqual({
+        kind: "taken",
+      });
+      expect(
+        await previewTestbedAction(type.id, slot(0.5).toISOString()),
+      ).toEqual({ kind: "taken" });
+    }));
+
+  it("limits 60 previews per IP per 10 minutes", () =>
+    run(async (trx) => {
+      const { type, values } = await setup(trx);
+      await previewTestbedAction(type.id, values.startsAt);
+      await trx
+        .updateTable("rate_limits")
+        .set({ count: 60 })
+        .where("bucket_key", "=", `preview:ip:${ctx.ip}`)
+        .execute();
+      expect(await previewTestbedAction(type.id, values.startsAt)).toEqual({
+        kind: "limited",
       });
     }));
 });

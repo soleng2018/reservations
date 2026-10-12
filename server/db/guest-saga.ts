@@ -49,8 +49,9 @@ export type StepOneError =
   | "slot_taken"; // every testbed is taken, or the start is no longer offered
 
 // A retry this long after the user's own earlier attempt replaces it, instead
-// of waiting for the 10 minute sweeper.
-const STALE_OWN_ATTEMPT = sql<Date>`now() - interval '1 minute'`;
+// of waiting for the 10 minute sweeper. The /book Step 1 check shares it, so
+// both agree on when an attempt is still pending (spec 0010 AC-2).
+export const STALE_OWN_ATTEMPT = sql<Date>`now() - interval '1 minute'`;
 const SWEEP_AFTER = sql<Date>`now() - interval '10 minutes'`;
 // Rechecked in the delete itself, so a booking made meanwhile keeps the row.
 // The statement must name the table `users` (no alias).

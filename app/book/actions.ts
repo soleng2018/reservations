@@ -2,32 +2,98 @@
 
 import { headers } from "next/headers";
 import { z } from "zod";
-import { BookInput, type BookErrorCode } from "@/lib/booking-input";
+import {
+  BookInput,
+  DetailsInput,
+  type BookErrorCode,
+  type DetailsErrorCode,
+} from "@/lib/booking-input";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { authentik } from "@/server/authentik/client";
-import { startsFor } from "@/server/booking/availability";
+import { firstFreeTestbed, startsFor } from "@/server/booking/availability";
+import { checkGuestDetails } from "@/server/booking/details-check";
 import {
   bookAsGuest,
   type GuestBookingError,
 } from "@/server/booking/guest-booking";
+import { dbNow } from "@/server/db/bookings";
 import { db } from "@/server/db";
 import { countAttempt } from "@/server/rate-limit";
 import { clientIp } from "@/server/request-ip";
 import { verifyTurnstile } from "@/server/turnstile";
 
-// The public guest booking actions (spec 0004 AC-3 to AC-10). Public by
-// design, so they call no require* (allow list in
+// The public guest booking actions (spec 0004 AC-3 to AC-10, spec 0010 AC-2,
+// AC-4, AC-7). Public by design, so they call no require* (allow list in
 // tests/server-actions-require.test.ts); Turnstile and rate limits guard them.
+// None of them returns another learner's data.
 
+const DETAILS_PER_IP = { limit: 20, windowSeconds: 600 } as const;
+const DETAILS_PER_EMAIL = { limit: 10, windowSeconds: 3600 } as const;
 const STARTS_PER_IP = { limit: 60, windowSeconds: 600 } as const;
+const PREVIEW_PER_IP = { limit: 60, windowSeconds: 600 } as const;
 const BOOK_PER_IP = { limit: 5, windowSeconds: 600 } as const;
 const BOOK_PER_EMAIL = { limit: 3, windowSeconds: 3600 } as const;
 
+export type DetailsResult =
+  | { readonly kind: "ok" }
+  | {
+      readonly kind: "error";
+      readonly code: DetailsErrorCode;
+      readonly fields: FieldErrors; // empty except for "invalid"
+    };
+
+export type DetailsFields = Readonly<Record<keyof DetailsInput, string>>;
+
+// spec 0010 AC-2: the Step 1 check. Writes nothing but rate limit rows and
+// no audit row.
+export async function checkDetailsAction(
+  input: DetailsFields,
+): Promise<DetailsResult> {
+  const conn = db();
+  const ip = clientIp(await headers());
+  const refuse = (code: DetailsErrorCode, fields: FieldErrors = {}) =>
+    ({ kind: "error", code, fields }) as const;
+
+  // (1) the IP bucket.
+  const ipAllowed = await countAttempt(
+    conn,
+    `details:ip:${ip}`,
+    DETAILS_PER_IP.limit,
+    DETAILS_PER_IP.windowSeconds,
+  );
+  if (!ipAllowed) return refuse("limited");
+
+  // (2) the fields. A non object input parses as all fields missing.
+  const parsed = DetailsInput.safeParse(
+    typeof input === "object" && input !== null ? input : {},
+  );
+  if (!parsed.success) return refuse("invalid", fieldErrors(parsed.error));
+
+  // (3) the email bucket fails open: over it, answer ok and read nothing, so
+  // nobody can lock a guest out of Step 1 (confirm still checks).
+  const emailAllowed = await countAttempt(
+    conn,
+    `details:email:${parsed.data.email.toLowerCase()}`,
+    DETAILS_PER_EMAIL.limit,
+    DETAILS_PER_EMAIL.windowSeconds,
+  );
+  if (!emailAllowed) return { kind: "ok" };
+
+  // (4) the reads.
+  const checked = await checkGuestDetails(conn, parsed.data);
+  return checked.ok ? { kind: "ok" } : refuse(checked.error);
+}
+
 export type StartsResult =
-  | { readonly starts: readonly string[] } // ISO UTC instants
+  | {
+      readonly starts: readonly string[]; // ISO UTC instants
+      readonly durationMs: number; // 0 for an unknown or unbookable type
+      readonly now: string; // DB now(), ISO
+    }
   | { readonly limited: true };
 
-// AC-3: only ISO times, never testbed names or other bookings.
+// spec 0004 AC-3, spec 0010 AC-4: only ISO times and the type's length,
+// never testbed names or other bookings.
 export async function loadStartsAction(
   testbedTypeId: string,
 ): Promise<StartsResult> {
@@ -41,9 +107,63 @@ export async function loadStartsAction(
   );
   if (!allowed) return { limited: true };
   const id = z.uuid().safeParse(testbedTypeId);
-  if (!id.success) return { starts: [] };
-  const starts = await startsFor(conn, id.data);
-  return { starts: starts.map((d) => d.toISOString()) };
+  if (!id.success)
+    return {
+      starts: [],
+      durationMs: 0,
+      now: (await dbNow(conn)).toISOString(),
+    };
+  const { starts, durationMs, now } = await startsFor(conn, id.data);
+  return {
+    starts: starts.map((d) => d.toISOString()),
+    durationMs,
+    now: now.toISOString(),
+  };
+}
+
+export type PreviewResult =
+  | {
+      readonly kind: "ok";
+      readonly testbedName: string;
+      readonly endsAt: string; // ISO
+    }
+  | { readonly kind: "taken" }
+  | { readonly kind: "limited" };
+
+const PreviewInput = z.object({
+  testbedTypeId: z.uuid(),
+  startsAt: z.iso.datetime().transform((s) => new Date(s)),
+});
+
+// spec 0010 AC-7: the testbed the guest would likely get. Advice only; it
+// holds nothing, and the saga decides at confirm. Bad input reads as taken.
+export async function previewTestbedAction(
+  testbedTypeId: string,
+  startsAt: string,
+): Promise<PreviewResult> {
+  const conn = db();
+  const ip = clientIp(await headers());
+  const allowed = await countAttempt(
+    conn,
+    `preview:ip:${ip}`,
+    PREVIEW_PER_IP.limit,
+    PREVIEW_PER_IP.windowSeconds,
+  );
+  if (!allowed) return { kind: "limited" };
+  const input = PreviewInput.safeParse({ testbedTypeId, startsAt });
+  if (!input.success) return { kind: "taken" };
+  const free = await firstFreeTestbed(
+    conn,
+    input.data.testbedTypeId,
+    input.data.startsAt,
+  );
+  return free
+    ? {
+        kind: "ok",
+        testbedName: free.testbedName,
+        endsAt: free.endsAt.toISOString(),
+      }
+    : { kind: "taken" };
 }
 
 export type BookState =
