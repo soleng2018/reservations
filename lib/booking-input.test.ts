@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BookInput } from "./booking-input";
+import { BOOK_ERRORS, BookInput, DetailsInput } from "./booking-input";
 import { fieldErrors } from "./form-errors";
 
 const TYPE_ID = "6f1c2f9e-0000-4000-8000-000000000001";
@@ -97,5 +97,44 @@ describe("BookInput (AC-3, AC-4)", () => {
       expect(errorsFor({ ...valid, startsAt })).toEqual({
         startsAt: "Choose a start time.",
       });
+  });
+});
+
+// covers: spec 0010 AC-2, AC-6
+describe("DetailsInput (spec 0010 AC-2)", () => {
+  const details = {
+    name: valid.name,
+    company: valid.company,
+    email: valid.email,
+    timezone: valid.timezone,
+    testbedTypeId: valid.testbedTypeId,
+  };
+
+  it("is the Step 1 fields of BookInput, without a start", () => {
+    expect(DetailsInput.parse({ ...details, name: " Ada " })).toEqual({
+      ...details,
+      name: "Ada",
+    });
+  });
+
+  it("uses the same field rules and messages", () => {
+    const r = DetailsInput.safeParse({});
+    expect(r.success).toBe(false);
+    expect(r.error && fieldErrors(r.error)).toEqual({
+      name: "Enter your name.",
+      company: "Enter your company.",
+      email: "Enter your email.",
+      timezone: "Choose a timezone.",
+      testbedTypeId: "Choose a lab type.",
+    });
+  });
+
+  it("has the new copy for a taken time and a gone type", () => {
+    expect(BOOK_ERRORS.slot_taken).toBe(
+      "That time is no longer available. Please pick another.",
+    );
+    expect(BOOK_ERRORS.type_unavailable).toBe(
+      "That lab type is no longer available. Please pick another.",
+    );
   });
 });

@@ -11,6 +11,10 @@ const PUBLIC_ACTIONS = new Set([
   // Spec 0004 AC-13: guest booking, guarded by Turnstile and rate limits.
   "app/book/actions.ts#loadStartsAction",
   "app/book/actions.ts#bookAction",
+  // Spec 0010 AC-13: the read only Step 1 check and Step 3 preview, guarded
+  // by rate limits.
+  "app/book/actions.ts#checkDetailsAction",
+  "app/book/actions.ts#previewTestbedAction",
 ]);
 
 const root = path.resolve(__dirname, "..");

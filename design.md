@@ -174,6 +174,10 @@ on the container.
 | LearnerFrame | `components/learner-frame.tsx` | wraps every learner page: the top bar, the one `<main>`, and LearnerFooter. `showSignOut={false}` (the landing) reads no session. |
 | LearnerFooter | `components/learner-footer.tsx` | the Nile sign off from the emails, rendered by LearnerFrame only. Its `nilesecure.com` link stays underlined (color alone fails AA against the text). |
 | SkipLink | `components/skip-link.tsx` | first in the admin layout and the learner frame. |
+| Calendar | `components/ui/calendar.tsx` | react-day-picker v9 month grid: outline square arrows, uppercase weekday heads, day squares white when free, `bg-inset` when not, Nile Blue when picked. Pass "floating" dates (local noon of a day key, `lib/calendar-days.ts`), never a `timeZone`. |
+| TimezoneCombobox | `components/timezone-combobox.tsx` | type to search IANA zones labelled with their offset ("America/New York (GMT-4)"); submits under `name`, works inside Field. Built on `components/ui/combobox.tsx`, whose input keeps the Input look. |
+| Turnstile | `components/turnstile.tsx` | Cloudflare Turnstile, explicit render, one widget id per instance. `onToken` gets each token (null on expiry); change `resetSignal` after each reply. Axe excludes `[data-slot=turnstile]`. |
+| Booking screens | `components/book/` | the `/book` flow: StepHeading (eyebrow plus the focusable `<h1>`), DetailsStep, TimeStep and ConfirmStep (plain props, reused by reschedule), ProgressScreen, FailureScreen, BookingSuccess. |
 | Toasts | `components/notify.ts` | `notifySuccess(message)` (4s, polite) and `notifyError(message)` (8s, assertive, with Close). One region, mounted in the root layout. |
 | shadcn | `components/ui/` | Card, Input, Label, Select, Alert, Empty, Separator, Skeleton, Spinner, Table, Dialog, AlertDialog, Sheet, Toast, all restyled to these tokens. Use them before writing custom markup. |
 

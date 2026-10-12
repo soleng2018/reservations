@@ -4,7 +4,7 @@
 
 export const SLOT_MS = 30 * 60 * 1000;
 export const LEAD_MS = 60 * 60 * 1000; // 1 hour
-export const HORIZON_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+export const HORIZON_MS = 90 * 24 * 60 * 60 * 1000; // 90 days (spec 0010)
 
 export type BusyRange = {
   readonly testbedId: string;

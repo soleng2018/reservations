@@ -2,22 +2,27 @@ import "server-only";
 import { sql, type Kysely } from "kysely";
 import { DurationUnit, LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
 import { durationMs } from "@/lib/duration";
-import { freeStarts, HORIZON_MS, LEAD_MS } from "@/lib/slots";
+import { freeStarts, HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
 import { bookableTestbedsOfType, dbNow } from "@/server/db/bookings";
 import type { DB } from "@/server/db/types";
 
-// What /book offers (spec 0004 AC-3). Reads only; the saga rechecks at
-// confirm under locks.
+// What /book offers (spec 0004 AC-3, spec 0010 AC-1, AC-4, AC-7). Reads only;
+// the saga rechecks at confirm under locks.
 
-export type BookableType = { readonly id: string; readonly name: string };
+export type BookableType = {
+  readonly id: string;
+  readonly name: string;
+  readonly durationValue: number;
+  readonly durationUnit: DurationUnit;
+};
 
 // Live types with at least one bookable testbed, by name.
 export async function bookableTypes(
   conn: Kysely<DB>,
 ): Promise<readonly BookableType[]> {
-  return conn
+  const rows = await conn
     .selectFrom("testbed_types as ty")
-    .select(["ty.id", "ty.name"])
+    .select(["ty.id", "ty.name", "ty.duration_value", "ty.duration_unit"])
     .where("ty.deleted_at", "is", null)
     .where(({ exists, selectFrom }) =>
       exists(
@@ -30,44 +35,77 @@ export async function bookableTypes(
     )
     .orderBy(sql`lower(ty.name)`)
     .execute();
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    durationValue: r.duration_value,
+    durationUnit: DurationUnit.parse(r.duration_unit),
+  }));
 }
 
-// Free starts for the type from DB now(): an unknown or deleted type, or one
-// with no bookable testbed, has none.
-export async function startsFor(
+// A live type's length, or null when the type is unknown or deleted.
+async function typeDuration(
   conn: Kysely<DB>,
   testbedTypeId: string,
-): Promise<readonly Date[]> {
+): Promise<number | null> {
   const type = await conn
     .selectFrom("testbed_types")
     .select(["duration_value", "duration_unit"])
     .where("id", "=", testbedTypeId)
     .where("deleted_at", "is", null)
     .executeTakeFirst();
-  if (!type) return [];
-  const testbeds = await bookableTestbedsOfType(conn, testbedTypeId);
-  if (testbeds.length === 0) return [];
+  return type
+    ? durationMs(type.duration_value, DurationUnit.parse(type.duration_unit))
+    : null;
+}
 
-  const now = await dbNow(conn);
-  const length = durationMs(
-    type.duration_value,
-    DurationUnit.parse(type.duration_unit),
-  );
-  const ids = testbeds.map((t) => t.id);
-  const busy = await conn
+// Live bookings of these testbeds that overlap [from, to).
+const busyRanges = (
+  conn: Kysely<DB>,
+  testbedIds: readonly string[],
+  from: Date,
+  to: Date,
+) =>
+  conn
     .selectFrom("bookings")
     .select([
       "testbed_id as testbedId",
       "starts_at as startsAt",
       "ends_at as endsAt",
     ])
-    .where("testbed_id", "in", ids)
+    .where("testbed_id", "in", testbedIds)
     .where("status", "in", LIVE_BOOKING_STATUSES)
-    .where("starts_at", "<", new Date(now.getTime() + HORIZON_MS + length))
-    .where("ends_at", ">", now)
+    .where("starts_at", "<", to)
+    .where("ends_at", ">", from)
     .execute();
 
-  return freeStarts({
+export type Starts = {
+  readonly starts: readonly Date[];
+  readonly durationMs: number; // 0 for an unknown or unbookable type
+  readonly now: Date; // DB now(), the clock the starts were computed from
+};
+
+// Free starts for the type from one DB now() read: an unknown or deleted
+// type, or one with no bookable testbed, has none.
+export async function startsFor(
+  conn: Kysely<DB>,
+  testbedTypeId: string,
+): Promise<Starts> {
+  const now = await dbNow(conn);
+  const none = { starts: [], durationMs: 0, now };
+  const length = await typeDuration(conn, testbedTypeId);
+  if (length === null) return none;
+  const testbeds = await bookableTestbedsOfType(conn, testbedTypeId);
+  if (testbeds.length === 0) return none;
+
+  const ids = testbeds.map((t) => t.id);
+  const busy = await busyRanges(
+    conn,
+    ids,
+    now,
+    new Date(now.getTime() + HORIZON_MS + length),
+  );
+  const starts = freeStarts({
     now,
     leadMs: LEAD_MS,
     horizonMs: HORIZON_MS,
@@ -75,4 +113,37 @@ export async function startsFor(
     testbedIds: ids,
     busy,
   });
+  return { starts, durationMs: length, now };
+}
+
+// The testbed the saga would most likely assign (spec 0010 AC-7): the first
+// bookable testbed of the type, in the saga's lower(name) order, with no live
+// booking overlapping [start, start + duration). Advice only; it takes no
+// lock and holds nothing. Null when none is free or the start is no longer
+// offered.
+export async function firstFreeTestbed(
+  conn: Kysely<DB>,
+  testbedTypeId: string,
+  startsAt: Date,
+): Promise<{ readonly testbedName: string; readonly endsAt: Date } | null> {
+  const length = await typeDuration(conn, testbedTypeId);
+  if (length === null) return null;
+  if (!isOfferableStart(startsAt, await dbNow(conn), LEAD_MS, HORIZON_MS))
+    return null;
+  const testbeds = await bookableTestbedsOfType(conn, testbedTypeId);
+  if (testbeds.length === 0) return null;
+
+  const endsAt = new Date(startsAt.getTime() + length);
+  const busy = new Set(
+    (
+      await busyRanges(
+        conn,
+        testbeds.map((t) => t.id),
+        startsAt,
+        endsAt,
+      )
+    ).map((b) => b.testbedId),
+  );
+  const free = testbeds.find((t) => !busy.has(t.id));
+  return free ? { testbedName: free.name, endsAt } : null;
 }

@@ -2,6 +2,16 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
 import { ADMIN_ENTRY, haveSecrets } from "./authentik";
+import {
+  answerBook,
+  booked,
+  continueButton,
+  fillDetails,
+  guest,
+  pickStart,
+  waitForToken,
+  walkScreens,
+} from "./book-flow";
 
 // Spec 0005 AC-14: no serious or critical axe violation on the shell, the
 // sign in card, /book, and the gallery's dialogs.
@@ -55,13 +65,161 @@ test("the admin sign in card", async ({ page }) => {
   await expectNoSeriousViolations(page);
 });
 
-// covers: AC-11, AC-14 (Turnstile is third party content)
-test("/book in the learner frame", async ({ page }) => {
+// Spec 0010 AC-14: every /book screen at both widths (Turnstile is third
+// party content), and a booking made with the keyboard alone.
+for (const viewport of [
+  { width: 1280, height: 800 },
+  { width: 390, height: 844 },
+]) {
+  // covers: AC-11, AC-14, spec 0010 AC-14
+  test(`each /book screen at ${viewport.width}px`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize(viewport);
+    await walkScreens(page, () =>
+      expectNoSeriousViolations(page, ['[data-slot="turnstile"]']),
+    );
+  });
+}
+
+// covers: spec 0010 AC-14 (bookAction answered by the test)
+test("a keyboard alone completes a booking", async ({ page }) => {
+  test.setTimeout(120_000);
+  const start = { iso: "" };
+  await answerBook(page, [
+    {
+      kind: "reply",
+      body: () => booked(start.iso, start.iso),
+    },
+  ]);
+  const who = guest("keyboard");
+  const focused = () =>
+    page.evaluate(() => {
+      const el = document.activeElement;
+      return el
+        ? `${el.tagName} ${el.getAttribute("aria-label") ?? ""} ${el.textContent?.trim().slice(0, 40) ?? ""}`
+        : "";
+    });
+  // Tabs until `done` holds for the focused element.
+  const tabTo = async (done: () => Promise<boolean>) => {
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      if (await done()) return;
+    }
+    throw new Error(`never reached the target; at ${await focused()}`);
+  };
+
   await page.goto("/book");
+  await expect(page.getByLabel("Your timezone")).not.toHaveValue("");
+  await tabTo(async () =>
+    page
+      .getByLabel("Full name")
+      .evaluate((el) => el === document.activeElement),
+  );
+  await page.keyboard.type(who.name);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(who.company);
+  await page.keyboard.press("Tab");
+  await page.keyboard.type(who.email);
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter"); // opens the Lab type list
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
   await expect(
-    page.getByRole("heading", { name: "Reserve a remote lab" }),
+    page.getByRole("combobox", { name: "Lab type" }),
+  ).not.toContainText("Select a lab type");
+  await tabTo(() =>
+    page
+      .getByRole("button", { name: "Continue" })
+      .evaluate((el) => el === document.activeElement),
+  );
+  await page.keyboard.press("Enter"); // submits Step 1
+
+  await expect(
+    page.getByRole("heading", { name: "Choose a time" }),
   ).toBeVisible();
-  await expectNoSeriousViolations(page, [".cf-turnstile"]);
+  await expect(
+    page
+      .locator('[data-slot="calendar"] button[data-day]:not([disabled])')
+      .first(),
+  ).toBeVisible({ timeout: 20_000 });
+  await tabTo(() =>
+    page.evaluate(
+      () =>
+        document.activeElement?.matches(
+          '[data-slot="calendar"] button[data-day]:not([disabled])',
+        ) ?? false,
+    ),
+  );
+  await page.keyboard.press("Enter"); // picks the focused day
+  await expect(page.locator("h2[tabindex='-1']")).toBeFocused();
+  await page.keyboard.press("Tab"); // the first free start
+  await page.keyboard.press("Space");
+  const checked = page.locator('input[name="startsAt"]:checked');
+  await expect(checked).toHaveCount(1);
+  start.iso = await checked.inputValue();
+  await tabTo(() =>
+    page
+      .getByRole("button", { name: "Continue" })
+      .evaluate((el) => el === document.activeElement),
+  );
+  await page.keyboard.press("Enter");
+
+  await expect(
+    page.getByRole("heading", { name: "Confirm your reservation" }),
+  ).toBeVisible();
+  await waitForToken(page);
+  await tabTo(() =>
+    page
+      .getByRole("button", { name: "Confirm reservation" })
+      .evaluate((el) => el === document.activeElement),
+  );
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: /^You're all set/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /^You're all set/ }),
+  ).toBeFocused();
+});
+
+// Dev runs React in StrictMode, which runs each effect twice on mount; the
+// title must still leave focus alone on load, so Tab starts at the skip link.
+// covers: spec 0010 AC-14
+test("/book leaves focus alone on load", async ({ page }) => {
+  await page.goto("/book");
+  // The detected zone fills in after hydration, so the mount effects have run.
+  await expect(page.getByLabel("Your timezone")).not.toHaveValue("");
+  await expect(
+    page.getByRole("heading", { name: "Tell us about you" }),
+  ).not.toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("link", { name: "Skip to content" }),
+  ).toBeFocused();
+});
+
+// covers: spec 0010 AC-14
+test("each new /book screen moves focus to its title", async ({ page }) => {
+  test.setTimeout(120_000);
+  const title = (name: string) => page.getByRole("heading", { name });
+
+  await page.goto("/book");
+  await fillDetails(page, guest("focus"));
+  await continueButton(page).click();
+  await expect(title("Choose a time")).toBeFocused();
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(title("Tell us about you")).toBeFocused();
+
+  await continueButton(page).click();
+  await expect(title("Choose a time")).toBeFocused();
+  await pickStart(page);
+  await continueButton(page).click();
+  await expect(title("Confirm your reservation")).toBeFocused();
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(title("Choose a time")).toBeFocused();
 });
 
 // covers: AC-7, AC-8, AC-14

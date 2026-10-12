@@ -26,11 +26,23 @@ export const BookInput = z.object({
 });
 export type BookInput = z.infer<typeof BookInput>;
 
+// The Step 1 fields, checked before the guest picks a time (spec 0010 AC-2).
+export const DetailsInput = BookInput.pick({
+  name: true,
+  company: true,
+  email: true,
+  timezone: true,
+  testbedTypeId: true,
+});
+export type DetailsInput = z.infer<typeof DetailsInput>;
+
 // Every outcome /book can show, as a code the client turns into a message.
 export const BOOK_ERRORS = {
   invalid: "Please fix the fields marked below.",
   limited: "Please try again in a little while.",
-  slot_taken: "That time was just taken. Please pick another.",
+  slot_taken: "That time is no longer available. Please pick another.",
+  type_unavailable:
+    "That lab type is no longer available. Please pick another.",
   has_live_booking: "You already have an active booking. Sign in to manage it.",
   booking_pending:
     "Your booking is still being set up. Please try again in a minute.",
@@ -40,3 +52,15 @@ export const BOOK_ERRORS = {
   gone: "Your booking took too long to finish. Please try again.",
 } as const;
 export type BookErrorCode = keyof typeof BOOK_ERRORS;
+
+// What the Step 1 check can answer besides ok (spec 0010 AC-2).
+export type DetailsErrorCode = Extract<
+  BookErrorCode,
+  | "invalid"
+  | "limited"
+  | "admin_email"
+  | "refused"
+  | "has_live_booking"
+  | "booking_pending"
+  | "type_unavailable"
+>;

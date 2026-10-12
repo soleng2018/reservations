@@ -38,6 +38,12 @@ describe("freeStarts (AC-3)", () => {
     expect(starts).toHaveLength((HORIZON_MS - LEAD_MS) / SLOT_MS + 1);
   });
 
+  // spec 0010: the window is 90 days.
+  it("lists a start exactly 90 days out and none after", () => {
+    expect(HORIZON_MS).toBe(90 * 24 * HOUR);
+    expect(iso(freeStarts(base)).at(-1)).toBe("2027-01-11T08:00:00.000Z");
+  });
+
   it("allows back to back bookings, never an overlap", () => {
     const busy = [
       {
@@ -95,12 +101,12 @@ describe("isOfferableStart (AC-7 recheck)", () => {
 
   it("accepts a grid start between the lead time and the horizon", () => {
     expect(check("2026-10-13T09:30:00Z")).toBe(true);
-    expect(check("2026-10-27T08:00:00Z")).toBe(true);
+    expect(check("2027-01-11T08:00:00Z")).toBe(true); // 90 days out
   });
 
   it("refuses a start inside the lead time, past the horizon, or off grid", () => {
     expect(check("2026-10-13T09:00:00Z")).toBe(false);
-    expect(check("2026-10-27T08:30:00Z")).toBe(false);
+    expect(check("2027-01-11T08:30:00Z")).toBe(false); // 90 days plus 30 min
     expect(check("2026-10-13T10:15:00Z")).toBe(false);
   });
 });

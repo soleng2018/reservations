@@ -13,6 +13,12 @@
       "skillPath": "skills/audit/SKILL.md",
       "computedHash": "a8d524118ce6d60911840ef31509f1f5551ce1099cb8fd8a241ed0859e5c62ed"
     },
+    "base-ui": {
+      "source": "itechmeat/llm-code",
+      "sourceType": "github",
+      "skillPath": "skills/base-ui/SKILL.md",
+      "computedHash": "5390197db4f25800021b2e6ede9a5163864c1c6998555b5fed7a22efc26a7c24"
+    },
     "better-auth-best-practices": {
       "source": "better-auth/skills",
       "sourceType": "github",
@@ -78,6 +84,24 @@
       "sourceType": "github",
       "skillPath": "skills/shadcn/SKILL.md",
       "computedHash": "f615de216e085a84e31593ad0fa9062232adc40cd87b7c7ab2b8e49abf6500be"
+    },
+    "shadcn-baseui": {
+      "source": "thunderboltdev/shadcn-baseui",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "380e7185d6bf13195fbedd8b1c59a0e11805357a62737ee35857887217055444"
+    },
+    "shadcn-errors-react-day-picker-v9": {
+      "source": "impertio-studio/shadcn-ui-claude-skill-package",
+      "sourceType": "github",
+      "skillPath": "skills/source/shadcn-errors/shadcn-errors-react-day-picker-v9/SKILL.md",
+      "computedHash": "db7b5d36ddc98d6ef8e19020c999c3ad8bcb5f8ccec69592a7ce8f1423ff1f38"
+    },
+    "shadcn-syntax-calendar-datepicker": {
+      "source": "impertio-studio/shadcn-ui-claude-skill-package",
+      "sourceType": "github",
+      "skillPath": "skills/source/shadcn-syntax/shadcn-syntax-calendar-datepicker/SKILL.md",
+      "computedHash": "dbb2412135e89062756a677d13b5142f6ed4a5acd8dc99f21d0ed3ccefeca38e"
     },
     "supabase-postgres-best-practices": {
       "source": "supabase/agent-skills",

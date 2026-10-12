@@ -213,7 +213,7 @@ test("the booking page makes no request to Google's font hosts", async ({
   page.on("request", (r) => hosts.push(new URL(r.url()).host));
   await page.goto("/book");
   await expect(
-    page.getByRole("heading", { name: "Reserve a remote lab" }),
+    page.getByRole("heading", { name: "Tell us about you" }),
   ).toBeVisible();
   expect(
     hosts.filter((h) => /fonts\.(googleapis|gstatic)\.com$/.test(h)),
