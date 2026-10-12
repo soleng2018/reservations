@@ -311,6 +311,50 @@ describe.skipIf(!hasDb)("checkDetailsAction (spec 0010 AC-2)", () => {
       ).toEqual([]);
     }));
 
+  // A public action takes whatever a caller posts.
+  it("reads a non object input as every field missing", () =>
+    run(async () => {
+      const result = await checkDetailsAction(
+        null as unknown as Parameters<typeof checkDetailsAction>[0],
+      );
+      expect(result).toMatchObject({ kind: "error", code: "invalid" });
+      expect(
+        Object.keys("fields" in result ? result.fields : {}).sort(),
+      ).toEqual(["company", "email", "name", "testbedTypeId", "timezone"]);
+    }));
+
+  it("answers limited over the IP bucket before parsing or reading", () =>
+    run(async (trx) => {
+      const { values, type } = await setup(trx);
+      const user = await makeUser(trx, { email: values.email });
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: (await makeTestbed(trx, type.id)).id,
+          testbed_type_id: type.id,
+          starts_at: slot(30),
+          ends_at: slot(32),
+          status: "confirmed",
+        })
+        .execute();
+      await checkDetailsAction(details({ ...values, name: "" }));
+      await trx
+        .updateTable("rate_limits")
+        .set({ count: 20 })
+        .where("bucket_key", "=", `details:ip:${ctx.ip}`)
+        .execute();
+
+      expect(await checkDetailsAction(details(values))).toEqual({
+        kind: "error",
+        code: "limited",
+        fields: {},
+      });
+      expect(
+        await bucket(trx, `details:email:${values.email.toLowerCase()}`),
+      ).toEqual([]);
+    }));
+
   it("limits 20 checks per IP per 10 minutes", () =>
     run(async (trx) => {
       const { values } = await setup(trx);
@@ -397,6 +441,55 @@ describe.skipIf(!hasDb)("previewTestbedAction (spec 0010 AC-7)", () => {
       expect(
         await previewTestbedAction(type.id, slot(0.5).toISOString()),
       ).toEqual({ kind: "taken" });
+    }));
+
+  it("reads a busy testbed or a start past the horizon as taken", () =>
+    run(async (trx) => {
+      const { type, values } = await setup(trx);
+      const testbed = await trx
+        .selectFrom("testbeds")
+        .select("id")
+        .where("testbed_type_id", "=", type.id)
+        .executeTakeFirstOrThrow();
+      const user = await makeUser(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: new Date(values.startsAt),
+          ends_at: new Date(new Date(values.startsAt).getTime() + 3_600_000),
+          status: "confirmed",
+        })
+        .execute();
+      expect(await previewTestbedAction(type.id, values.startsAt)).toEqual({
+        kind: "taken",
+      });
+      expect(
+        await previewTestbedAction(type.id, slot(24 * 91).toISOString()),
+      ).toEqual({ kind: "taken" });
+    }));
+
+  // The preview is advice: it holds nothing (spec 0010 key invariants).
+  it("writes only its rate limit row", () =>
+    run(async (trx) => {
+      const { type, values, bookings } = await setup(trx);
+      const usersBefore = await trx
+        .selectFrom("users")
+        .select(({ fn }) => fn.countAll<string>().as("n"))
+        .executeTakeFirstOrThrow();
+      expect((await previewTestbedAction(type.id, values.startsAt)).kind).toBe(
+        "ok",
+      );
+      expect(await bookings()).toEqual([]);
+      expect(
+        await trx
+          .selectFrom("users")
+          .select(({ fn }) => fn.countAll<string>().as("n"))
+          .executeTakeFirstOrThrow(),
+      ).toEqual(usersBefore);
+      expect(await bucket(trx, `preview:ip:${ctx.ip}`)).toEqual([{ count: 1 }]);
     }));
 
   it("limits 60 previews per IP per 10 minutes", () =>

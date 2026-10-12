@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Kysely } from "kysely";
-import { LEAD_MS, SLOT_MS } from "@/lib/slots";
+import { HORIZON_MS, LEAD_MS, SLOT_MS } from "@/lib/slots";
 import { dbNow } from "@/server/db/bookings";
 import {
   hasDb,
@@ -106,6 +106,26 @@ describe.skipIf(!hasDb)("availability (AC-3)", () => {
       expect(result.durationMs).toBe(0);
       expect(result.now).toBeInstanceOf(Date);
     }));
+
+  // spec 0010 AC-4: "unknown or unbookable type gives starts: [], durationMs: 0"
+  it("has nothing for a deleted type or one with no bookable testbed", () =>
+    inRollback(async (trx) => {
+      const deleted = await makeType(trx);
+      await makeTestbed(trx, deleted.id);
+      await trx
+        .updateTable("testbed_types")
+        .set({ deleted_at: await dbNow(trx) })
+        .where("id", "=", deleted.id)
+        .execute();
+      const noGroup = await makeType(trx);
+      await makeTestbed(trx, noGroup.id, { authentik_group_pk: null });
+
+      for (const id of [deleted.id, noGroup.id])
+        expect(await startsFor(trx, id)).toMatchObject({
+          starts: [],
+          durationMs: 0,
+        });
+    }));
 });
 
 // covers: spec 0010 AC-7
@@ -149,6 +169,79 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
       expect(
         await firstFreeTestbed(trx, type.id, new Date(first + 60_000)),
       ).toBeNull();
+    }));
+
+  it("is null for a start past the 90 day horizon", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      await makeTestbed(trx, type.id);
+      const now = (await dbNow(trx)).getTime();
+      const pastHorizon =
+        Math.ceil((now + HORIZON_MS) / SLOT_MS) * SLOT_MS + SLOT_MS;
+      expect(
+        await firstFreeTestbed(trx, type.id, new Date(pastHorizon)),
+      ).toBeNull();
+    }));
+
+  // Bookings are [start, end): one ending at the start, or starting at the
+  // end, leaves the testbed free, and so does a cancelled one.
+  it("is not blocked by back to back or cancelled bookings", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx, { duration_value: 2 });
+      const testbed = await makeTestbed(trx, type.id, { name: "only bench" });
+      const start = (await firstStart(trx)) + 4 * HOUR;
+      await book(trx, testbed, start - 2 * HOUR, start);
+      await book(trx, testbed, start + 2 * HOUR, start + 4 * HOUR);
+      const canceller = await makeUser(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: canceller.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: new Date(start),
+          ends_at: new Date(start + 2 * HOUR),
+          status: "cancelled",
+          cancelled_at: await dbNow(trx),
+          cancel_source: "learner",
+        })
+        .execute();
+
+      expect(
+        (await firstFreeTestbed(trx, type.id, new Date(start)))?.testbedName,
+      ).toBe("only bench");
+    }));
+
+  // The preview must never name a testbed the saga would not assign.
+  it("skips a deleted testbed and one without an Authentik group", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      await makeTestbed(trx, type.id, {
+        name: "aa gone",
+        deleted_at: await dbNow(trx),
+      });
+      await makeTestbed(trx, type.id, {
+        name: "bb no group",
+        authentik_group_pk: null,
+      });
+      await makeTestbed(trx, type.id, { name: "cc bench" });
+      const start = (await firstStart(trx)) + HOUR;
+      expect(
+        (await firstFreeTestbed(trx, type.id, new Date(start)))?.testbedName,
+      ).toBe("cc bench");
+    }));
+
+  it("is null for a deleted type", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      await makeTestbed(trx, type.id);
+      await trx
+        .updateTable("testbed_types")
+        .set({ deleted_at: await dbNow(trx) })
+        .where("id", "=", type.id)
+        .execute();
+      const start = (await firstStart(trx)) + HOUR;
+      expect(await firstFreeTestbed(trx, type.id, new Date(start))).toBeNull();
     }));
 
   it("is null for an unknown type", () =>

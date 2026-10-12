@@ -40,7 +40,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 9 | Admin: Testbeds | Slice 2 | done |
 | 10 | Admin: Users & user detail | Slice 2 | done |
 | 11 | Public landing page | Slice 3 | done |
-| 12 | Availability & booking rules | Slice 3 | in-progress |
+| 12 | Availability & booking rules | Slice 3 | done |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | planned |
 | 14 | Lab access & booking result screens | Slice 3 | planned |
 | 15 | Email delivery & booking confirmations | Slice 4 | planned |
@@ -194,7 +194,7 @@ The learner home from the mock: hero, "Reserve a lab" and "Manage an existing re
 - [x] Review it (fresh model): `/check review public landing page`
 spec [0009](../specs/0009-public-landing-page/index.md) · code in `app/page.tsx`, `app/robots.ts`, `app/sitemap.ts`, `app/layout.tsx`, `components/learner-frame.tsx`, `components/learner-footer.tsx`, `server/env.ts` (`appUrl()`), `public/brand/hol-hero.jpg`, `public/brand/hol-social.jpg`, `e2e/landing.spec.ts`
 
-### 12. Availability & booking rules · in-progress
+### 12. Availability & booking rules · done
 Thicken slice 1's booking into the mock's full 3 step flow: details form with timezone choice, month calendar with unavailable days greyed, 30 minute start slots for the chosen day with the full duration highlighted, the confirm step showing the assigned testbed, and the progress and failure screens.
 **Done when:** a learner sees only bookable days and times in their timezone; two learners booking the last free slot at once cannot both get it; an email that already has an active booking is stopped at Step 1 with a link to manage it.
 - [x] Design it (spec): `/architect availability & booking rules`
@@ -204,8 +204,8 @@ Thicken slice 1's booking into the mock's full 3 step flow: details form with ti
   - [x] Step 3 preview with explicit Turnstile, then progress, failure, and result routing (AC-7, 8, 9, 11, 12, 13)
   - [x] Success card and calendar freshness (AC-6, 10)
   - [x] Guards and end to end: Playwright flows, axe, keyboard, screenshots (AC-3, 9, 11, 12, 13, 14)
-- [ ] Verify it: `/check verify availability & booking rules`
-- [ ] Test it: `/test availability & booking rules`
+- [x] Verify it: `/check verify availability & booking rules`
+- [x] Test it: `/test availability & booking rules`
 spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/book/`, `components/book/`, `lib/booking-flow.ts`, `lib/calendar-days.ts`, `lib/timezones.ts`, `server/booking/availability.ts`, `server/booking/details-check.ts`, `components/turnstile.tsx`, `components/timezone-combobox.tsx`, `components/ui/calendar.tsx`, `e2e/booking.spec.ts`, `e2e/book-flow.ts`
 
 ### 13. Manage reservations: sign in, cancel & reschedule

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   dayKey,
+  dayLabel,
   freeDayKeys,
   halfHoursOfDay,
   hourRows,
@@ -132,6 +133,19 @@ describe("hourRows (AC-5)", () => {
     expect(labels).not.toContain("2 AM");
   });
 
+  // Lord Howe falls back 30 minutes, so only 1:30 repeats: the 1 AM hour
+  // splits into a row of two and a row of one, never three starts in a row.
+  it("splits a repeated half hour by its offset", () => {
+    const tz = "Australia/Lord_Howe";
+    const rows = hourRows(halfHoursOfDay("2026-04-05", tz), tz);
+    expect(rows.slice(1, 3).map((r) => [r.label, times(r.starts, tz)])).toEqual(
+      [
+        ["1 AM GMT+11", ["1:00 AM", "1:30 AM"]],
+        ["1 AM GMT+10:30", ["1:30 AM"]],
+      ],
+    );
+  });
+
   it("has unique keys", () => {
     const tz = "America/New_York";
     const rows = hourRows(halfHoursOfDay("2026-11-01", tz), tz);
@@ -175,5 +189,16 @@ describe("floating dates (AC-4)", () => {
 
   it("round trips a key", () => {
     expect(localDateToKey(keyToLocalDate("2027-01-31"))).toBe("2027-01-31");
+  });
+});
+
+describe("dayLabel (AC-5)", () => {
+  it("names the key's weekday, month, and day", () => {
+    expect(dayLabel("2026-10-13")).toBe("Tuesday, October 13");
+  });
+
+  it("keeps the key's own day across a year and a DST change", () => {
+    expect(dayLabel("2027-01-01")).toBe("Friday, January 1");
+    expect(dayLabel("2026-11-01")).toBe("Sunday, November 1");
   });
 });

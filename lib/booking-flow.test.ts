@@ -182,6 +182,25 @@ describe("Step 1 (AC-2, AC-3)", () => {
     });
   });
 
+  it("clears the last answer's field errors and notice when Continue runs again", () => {
+    const refused = run(
+      atDetails(),
+      { type: "check_started", form: FORM },
+      {
+        type: "check_done",
+        form: FORM,
+        result: { kind: "error", code: "invalid", fields: { name: "Enter" } },
+      },
+      { type: "edit", field: "email", value: "x@example.test" },
+    );
+    const again = run(refused, {
+      type: "check_started",
+      form: { ...FORM, email: "x@example.test" },
+    });
+    expect(again.fields).toEqual({});
+    expect(again.notice).toEqual({ kind: "none" });
+  });
+
   it("drops a reply when the form changed while the check ran", () => {
     const s = run(
       atDetails(),
@@ -331,6 +350,20 @@ describe("Step 3 (AC-7)", () => {
     },
   );
 
+  it.each([
+    { kind: "taken" } as const,
+    { kind: "ok", testbedName: "aa bench", endsAt: LATER } as const,
+  ])(
+    "ignores a preview that lands after the guest went back to Step 2 (%o)",
+    (result) => {
+      const back = run(atConfirm(), { type: "go", step: "time" });
+      const s = run(back, { type: "preview_done", result });
+      expect(s).toBe(back);
+      expect(s.pick).toBe(START);
+      expect(s.dropped).toBe(false);
+    },
+  );
+
   it("forgets an expired token", () => {
     expect(run(atConfirm(), { type: "token", token: null }).token).toBeNull();
   });
@@ -460,6 +493,91 @@ describe("submitting (AC-8, AC-9)", () => {
     expect(s.failure).toBe("unknown");
   });
 
+  it("treats an idle reply as a lost one", () => {
+    const s = run(inProgress(), {
+      type: "book_done",
+      id: 1,
+      result: { kind: "idle" },
+    });
+    expect(screenOf(s)).toBe("failure");
+    expect(s.failure).toBe("unknown");
+  });
+
+  it("sends type_unavailable back to Step 1 with the type deselected", () => {
+    const s = run(inProgress(), {
+      type: "book_done",
+      id: 1,
+      result: error("type_unavailable"),
+    });
+    expect(screenOf(s)).toBe("details");
+    expect(s.notice).toEqual({ kind: "type_unavailable" });
+    expect(s.form).toEqual({ ...FORM, testbedTypeId: "" });
+    expect(s.details).toBeNull();
+    expect(s.pick).toBeNull();
+    expect(s.starts).toBeNull();
+  });
+
+  it("clears the limited message when the guest confirms again", () => {
+    const limited = run(inProgress(), {
+      type: "book_done",
+      id: 1,
+      result: error("limited"),
+    });
+    const again = run(
+      limited,
+      { type: "token", token: "fresh" },
+      { type: "submit", id: 2 },
+    );
+    expect(again.confirmLimited).toBe(false);
+    expect(screenOf(again)).toBe("progress");
+  });
+
+  it("shows success only for the latest booked submit", () => {
+    const booked = run(inProgress(2), {
+      type: "book_done",
+      id: 2,
+      result: BOOKED,
+    });
+    expect(run(booked, { type: "show_success", id: 1 })).toBe(booked);
+    const unbooked = inProgress();
+    expect(run(unbooked, { type: "show_success", id: 1 })).toBe(unbooked);
+  });
+
+  it("ignores ticks once the reply has landed", () => {
+    const failed = run(inProgress(), {
+      type: "book_done",
+      id: 1,
+      result: "thrown",
+    });
+    expect(run(failed, { type: "tick", id: 1, ticks: 2 })).toBe(failed);
+  });
+
+  it("greets a one word or oddly spaced name by its first word", () => {
+    const withName = (name: string) => {
+      const form = { ...FORM, name };
+      const done = run(
+        atDetails(),
+        { type: "check_started", form },
+        { type: "check_done", form, result: { kind: "ok" } },
+        { type: "starts_done", result: LIST, at: 1_000 },
+        { type: "pick_start", iso: START },
+        { type: "go", step: "confirm" },
+        { type: "token", token: "tok" },
+        { type: "submit", id: 1 },
+        { type: "book_done", id: 1, result: BOOKED },
+        { type: "show_success", id: 1 },
+      );
+      return done.success?.firstName;
+    };
+    expect(withName("Madonna")).toBe("Madonna");
+    expect(withName("\tAna  María López")).toBe("Ana");
+  });
+
+  it("only leaves failure through Back", () => {
+    const s = atConfirm();
+    expect(run(s, { type: "failure_back" })).toBe(s);
+  });
+
   it("resets the widget and forgets the token after every reply", () => {
     const before = inProgress();
     const s = run(before, { type: "book_done", id: 1, result: "thrown" });
@@ -489,6 +607,23 @@ describe("browser Back and Forward (AC-11)", () => {
   it("are ignored outside editing", () => {
     const s = inProgress();
     expect(run(s, { type: "go", step: "time" })).toBe(s);
+  });
+
+  it("are ignored on the failure and success screens too", () => {
+    const failed = run(inProgress(), {
+      type: "book_done",
+      id: 1,
+      result: "thrown",
+    });
+    const succeeded = run(
+      inProgress(),
+      { type: "book_done", id: 1, result: BOOKED },
+      { type: "show_success", id: 1 },
+    );
+    expect(run(failed, { type: "go", step: "time" })).toBe(failed);
+    expect(run(succeeded, { type: "go", step: "details" })).toBe(succeeded);
+    expect(historyPos(failed)).toBe(2);
+    expect(historyPos(succeeded)).toBe(2);
   });
 
   it("cannot open Step 2 or 3 without checked details", () => {

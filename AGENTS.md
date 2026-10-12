@@ -63,6 +63,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Secrets at rest: encrypt with `encryptSecret` from `server/crypto/secrets.ts` (AES-256-GCM, bound to table, column, and row id through `secretAad`), using the keyring from `encryptionEnv()` in `server/env.ts` (`APP_ENCRYPTION_KEYS_FILE`, `APP_ENCRYPTION_ACTIVE_KEY_ID`; dev and prod share one keyring). A stored secret never goes back to the client, a log, an error, or audit metadata: in app code `secret_ciphertext` may appear only in `server/catalog/api-keys.ts` (generated types aside), enforced by `tests/secret-column-scan.test.ts`.
 - Client OS logins (`testbed_clients.os_username`, `os_password`) are plain text by design: in app code `os_password` may appear only in `server/catalog/testbeds.ts` (generated types aside), enforced by `tests/os-password-scan.test.ts`. They reach the browser only through `loadTestbedForEdit`, when the edit dialog opens (`FormDialog` `onOpen`, `canSave`, `onClosed`; `components/admin/testbed-edit-dialog.tsx` is the reference), never in a list, log, error, or audit metadata (edits audit client counts only).
 - Client IP for rate limits comes only from `clientIp()` in `server/request-ip.ts` (it trusts `CF-Connecting-IP` only when `TRUST_PROXY_HEADERS=true`).
+- Turnstile renders explicitly app wide (one script mode) through `Turnstile` in `components/turnstile.tsx`: take the token from `onToken`, reset with `resetSignal` after every reply (a token is never reused), and the widget removes itself on unmount; there is no global reset.
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
 - Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`, `worker/` (the worker process entry). Import via `@/`.
 - Design system: build all UI to `design.md` (art direction and the maximalist product bar); token values live in CSS.
@@ -97,6 +98,11 @@ Installed:
 - [playwright-best-practices](.claude/skills/playwright-best-practices/): `currents-dev/playwright-best-practices-skill`, Playwright end to end tests
 - [playwright-cli](.claude/skills/playwright-cli/): `microsoft/playwright-cli`, driving the browser
 - [setup-pre-commit](.claude/skills/setup-pre-commit/): `mattpocock/skills`, Husky, lint-staged, Prettier setup
+- [shadcn-syntax-calendar-datepicker](.claude/skills/shadcn-syntax-calendar-datepicker/): `impertio-studio/shadcn-ui-claude-skill-package`, shadcn Calendar on react-day-picker v9 (modes, matchers, styling)
+- [shadcn-errors-react-day-picker-v9](.claude/skills/shadcn-errors-react-day-picker-v9/): `impertio-studio/shadcn-ui-claude-skill-package`, react-day-picker v9 errors and v8 props that no longer exist
+- [base-ui](.claude/skills/base-ui/): `itechmeat/llm-code`, Base UI (`@base-ui/react`) components, render props, forms, overlays
+- [shadcn-baseui](.claude/skills/shadcn-baseui/): `thunderboltdev/shadcn-baseui`, Base UI patterns in shadcn (no Radix `asChild`)
+- Declined: `morksen123/base-ui-mcp-server` (third party Base UI MCP server), 2026-10-11
 
 MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setup help (connected; `npx auth@latest mcp --claude-code`), next-devtools-mcp (recommended), github-mcp-server (recommended), pg-mcp-server in read only mode (recommended; dev and prod share one database)
 

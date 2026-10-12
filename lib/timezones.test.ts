@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatDateTime } from "./format-time";
 import {
+  browserTimeZone,
   currentZoneName,
   isTimeZone,
   Timezone,
@@ -67,6 +68,54 @@ describe("zoneLabel", () => {
   it("shows UTC and a zero offset as GMT", () => {
     expect(zoneLabel("UTC", summer)).toBe("UTC (GMT)");
     expect(zoneLabel("Europe/London", winter)).toBe("Europe/London (GMT)");
+  });
+});
+
+// covers: spec 0010 AC-1 (the preselected zone)
+describe("browserTimeZone (AC-1)", () => {
+  const browserZone = (timeZone: string | undefined) => {
+    const real = Intl.DateTimeFormat.prototype.resolvedOptions;
+    vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      "resolvedOptions",
+    ).mockImplementation(function (this: Intl.DateTimeFormat) {
+      return {
+        ...real.call(this),
+        timeZone,
+      } as Intl.ResolvedDateTimeFormatOptions;
+    });
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("presets the browser's zone", () => {
+    browserZone("America/New_York");
+    expect(browserTimeZone()).toBe("America/New_York");
+  });
+
+  it("names an old alias by its current name", () => {
+    browserZone("Asia/Calcutta");
+    expect(browserTimeZone()).toBe("Asia/Kolkata");
+  });
+
+  it.each([undefined, "", "Mars/Olympus"])(
+    "falls back to UTC when the zone is %o",
+    (zone) => {
+      browserZone(zone);
+      expect(browserTimeZone()).toBe("UTC");
+    },
+  );
+
+  it("falls back to UTC when Intl throws", () => {
+    vi.spyOn(
+      Intl.DateTimeFormat.prototype,
+      "resolvedOptions",
+    ).mockImplementation(() => {
+      throw new RangeError("no zone");
+    });
+    expect(browserTimeZone()).toBe("UTC");
   });
 });
 

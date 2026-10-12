@@ -5,7 +5,10 @@ import { ADMIN_ENTRY, haveSecrets } from "./authentik";
 import {
   answerBook,
   booked,
+  continueButton,
+  fillDetails,
   guest,
+  pickStart,
   waitForToken,
   walkScreens,
 } from "./book-flow";
@@ -178,6 +181,45 @@ test("a keyboard alone completes a booking", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: /^You're all set/ }),
   ).toBeFocused();
+});
+
+// Dev runs React in StrictMode, which runs each effect twice on mount; the
+// title must still leave focus alone on load, so Tab starts at the skip link.
+// covers: spec 0010 AC-14
+test("/book leaves focus alone on load", async ({ page }) => {
+  await page.goto("/book");
+  // The detected zone fills in after hydration, so the mount effects have run.
+  await expect(page.getByLabel("Your timezone")).not.toHaveValue("");
+  await expect(
+    page.getByRole("heading", { name: "Tell us about you" }),
+  ).not.toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(
+    page.getByRole("link", { name: "Skip to content" }),
+  ).toBeFocused();
+});
+
+// covers: spec 0010 AC-14
+test("each new /book screen moves focus to its title", async ({ page }) => {
+  test.setTimeout(120_000);
+  const title = (name: string) => page.getByRole("heading", { name });
+
+  await page.goto("/book");
+  await fillDetails(page, guest("focus"));
+  await continueButton(page).click();
+  await expect(title("Choose a time")).toBeFocused();
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(title("Tell us about you")).toBeFocused();
+
+  await continueButton(page).click();
+  await expect(title("Choose a time")).toBeFocused();
+  await pickStart(page);
+  await continueButton(page).click();
+  await expect(title("Confirm your reservation")).toBeFocused();
+
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(title("Choose a time")).toBeFocused();
 });
 
 // covers: AC-7, AC-8, AC-14

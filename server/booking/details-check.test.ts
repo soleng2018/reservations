@@ -99,6 +99,32 @@ describe.skipIf(!hasDb)("checkGuestDetails (AC-2)", () => {
       expect((await check()).ok).toBe(true);
     }));
 
+  it("refuses a learner whose booking is running right now", () =>
+    inRollback(async (trx) => {
+      const { check, book } = await setup(trx);
+      await book({ status: "confirmed", starts: slot(-1), ends: slot(1) });
+      expect(await check()).toEqual({ ok: false, error: "has_live_booking" });
+    }));
+
+  it("passes a learner whose future booking was cancelled", () =>
+    inRollback(async (trx) => {
+      const { check, user, testbed, type } = await setup(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(24),
+          ends_at: slot(26),
+          status: "cancelled",
+          cancelled_at: sql<Date>`now()`,
+          cancel_source: "learner",
+        })
+        .execute();
+      expect((await check()).ok).toBe(true);
+    }));
+
   it("refuses a provisioning attempt under a minute old", () =>
     inRollback(async (trx) => {
       const { check, book } = await setup(trx);
@@ -157,6 +183,43 @@ describe.skipIf(!hasDb)("checkGuestDetails (AC-2)", () => {
       expect(await check(admin.email, crypto.randomUUID())).toEqual({
         ok: false,
         error: "admin_email",
+      });
+    }));
+
+  // AC-2 step (4): first match wins, in the order admin, deactivated, live.
+  it("names an admin before a deactivated account", () =>
+    inRollback(async (trx) => {
+      const { check } = await setup(trx);
+      const admin = await makeUser(trx, {
+        role: "admin",
+        status: "deactivated",
+        deactivated_at: new Date(Date.now() - HOUR),
+      });
+      expect(await check(admin.email)).toEqual({
+        ok: false,
+        error: "admin_email",
+      });
+    }));
+
+  it("names a deactivated account before its live booking", () =>
+    inRollback(async (trx) => {
+      const { check, book, user } = await setup(trx);
+      await book({ status: "confirmed", starts: slot(24), ends: slot(26) });
+      await trx
+        .updateTable("users")
+        .set({ status: "deactivated", deactivated_at: sql<Date>`now()` })
+        .where("id", "=", user.id)
+        .execute();
+      expect(await check()).toEqual({ ok: false, error: "refused" });
+    }));
+
+  it("names a live booking before a gone type", () =>
+    inRollback(async (trx) => {
+      const { check, book, user } = await setup(trx);
+      await book({ status: "confirmed", starts: slot(24), ends: slot(26) });
+      expect(await check(user.email, crypto.randomUUID())).toEqual({
+        ok: false,
+        error: "has_live_booking",
       });
     }));
 

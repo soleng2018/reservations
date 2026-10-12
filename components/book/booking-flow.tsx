@@ -199,13 +199,13 @@ export function BookingFlow({
     };
   }, [previewing, typeId, pick, send]);
 
-  // A new screen's title takes focus (not on the first render).
-  const firstScreen = useRef(true);
+  // A new screen's title takes focus (not on the first render). Compares
+  // against the screen last shown, so the effect running twice on one mount
+  // (StrictMode in dev) never steals focus on load.
+  const shownScreen = useRef(screen);
   useEffect(() => {
-    if (firstScreen.current) {
-      firstScreen.current = false;
-      return;
-    }
+    if (screen === shownScreen.current) return;
+    shownScreen.current = screen;
     document.getElementById(BOOK_HEADING_ID)?.focus();
   }, [screen]);
 

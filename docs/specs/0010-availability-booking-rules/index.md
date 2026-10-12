@@ -1,7 +1,7 @@
 # 0010. Availability and booking rules
 
 **Date**: 2026-10-11
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -241,6 +241,6 @@ Tracer Bullet: first a thin thread through all three steps on today's actions (r
 - [ ] Feature 13: add an optional `excludeBookingId` to `startsFor` and `firstFreeTestbed`, reuse `time-step.tsx`, `confirm-step.tsx`, and the progress screen with the mock's reschedule labels ("Updating your reservation", "Reassigning your testbed").
 - [ ] Feature 14: add the lab access card to `booking-success.tsx`, gated on `email_verified_at` (spec 0003 AC-7).
 - [ ] Feature 15: add "Sending calendar invite & email" to the progress checklist, change the success line to the mock's "A confirmation email and calendar invite were sent to <email>.", and add Add to calendar and View email.
-- [ ] `/sync`: add `shadcn-syntax-calendar-datepicker`, `shadcn-errors-react-day-picker-v9`, `base-ui`, and `shadcn-baseui` to root `AGENTS.md` `## Agent skills`; record `morksen123/base-ui-mcp-server` under `Declined:`; note that Turnstile renders explicitly app wide.
+- [x] `/sync`: add `shadcn-syntax-calendar-datepicker`, `shadcn-errors-react-day-picker-v9`, `base-ui`, and `shadcn-baseui` to root `AGENTS.md` `## Agent skills`; record `morksen123/base-ui-mcp-server` under `Declined:`; note that Turnstile renders explicitly app wide.
 - [ ] `/sync`: spec 0004's `loadStartsAction` row, its "Show more days" list, its AC-3 "within 14 days" rule (now 90), and its AC-7 copy ("That time was just taken") are replaced by this spec.
 - [ ] `/develop`: confirm the react-day-picker v9 prop names on the installed version (`mode="single"`, `startMonth`, `endMonth`, `today`, `disabled`, `weekStartsOn`) against the `shadcn-errors-react-day-picker-v9` skill before styling.
