@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isProduction } from "./env";
+import { appUrl, isProduction } from "./env";
 
 describe("isProduction", () => {
   afterEach(() => {
@@ -107,5 +107,55 @@ describe("encryptionEnv", () => {
     const entry = newKeyringEntry(new Date());
     setEnv(keys({ [entry.keyId]: entry.key }), entry.keyId);
     expect((await load()).assertEncryptionEnv().ok).toBe(true);
+  });
+});
+
+// The public origin for the landing metadata, robots.txt, and the sitemap
+// (spec 0009).
+describe("appUrl", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // covers: AC-6, AC-8, origin only, so joined paths never double a slash
+  it.each([
+    ["a bare origin", "https://hol.example.com", "https://hol.example.com"],
+    ["a trailing slash", "https://hol.example.com/", "https://hol.example.com"],
+    [
+      "a path and query",
+      "https://hol.example.com/some/path?x=1",
+      "https://hol.example.com",
+    ],
+    ["a LAN dev URL", "http://10.1.255.18:3000", "http://10.1.255.18:3000"],
+  ])("returns only the origin for %s", (_, value, origin) => {
+    vi.stubEnv("APP_URL", value);
+    expect(appUrl()).toBe(origin);
+  });
+
+  // covers: AC-9, public routes work without the auth secrets
+  it("needs no auth secrets", () => {
+    vi.stubEnv("APP_URL", "https://hol.example.com");
+    vi.stubEnv("AUTH_SECRET", undefined);
+    vi.stubEnv("AUTHENTIK_CLIENT_SECRET", undefined);
+    vi.stubEnv("AUTHENTIK_CLIENT_ID", undefined);
+    vi.stubEnv("AUTHENTIK_URL", undefined);
+    expect(appUrl()).toBe("https://hol.example.com");
+  });
+
+  it("reads APP_URL on every call, not a cached first value", () => {
+    vi.stubEnv("APP_URL", "https://one.example.com");
+    expect(appUrl()).toBe("https://one.example.com");
+    vi.stubEnv("APP_URL", "https://two.example.com");
+    expect(appUrl()).toBe("https://two.example.com");
+  });
+
+  // covers: AC-9, a missing or bad APP_URL is the one failure the API allows
+  it.each([
+    ["missing", undefined],
+    ["empty", ""],
+    ["not a URL", "hol.example.com"],
+  ])("throws when APP_URL is %s", (_, value) => {
+    vi.stubEnv("APP_URL", value);
+    expect(() => appUrl()).toThrow();
   });
 });

@@ -1,7 +1,7 @@
 # 0009. Public landing page
 
 **Date**: 2026-10-11
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

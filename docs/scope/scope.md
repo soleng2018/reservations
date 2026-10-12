@@ -39,7 +39,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 8 | Admin: API Keys | Slice 2 | done |
 | 9 | Admin: Testbeds | Slice 2 | done |
 | 10 | Admin: Users & user detail | Slice 2 | done |
-| 11 | Public landing page | Slice 3 | in-progress |
+| 11 | Public landing page | Slice 3 | done |
 | 12 | Availability & booking rules | Slice 3 | planned |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | planned |
 | 14 | Lab access & booking result screens | Slice 3 | planned |
@@ -180,7 +180,7 @@ spec [0008](../specs/0008-admin-users/index.md) · code in `app/admin/users/`, `
 
 ## Slice 3: Learner portal (from the mock)
 
-### 11. Public landing page · in-progress
+### 11. Public landing page · done
 The learner home from the mock: hero, "Reserve a lab" and "Manage an existing reservation" actions, and the three step explainer.
 **Done when:** the page matches the learner mock, renders without sign in, and has its title, description, and social card metadata; it shows no admin sign in or sign up link.
 - [x] Design it (spec): `/architect public landing page`
@@ -190,7 +190,7 @@ The learner home from the mock: hero, "Reserve a lab" and "Manage an existing re
   - [x] Nile footer on every learner page, with contrast pairs (AC-5)
   - [x] Axe and screenshots for `/`, `/book` captured again (AC-5, 10)
 - [x] Verify it: `/check verify public landing page`
-- [ ] Test it: `/test public landing page`
+- [x] Test it: `/test public landing page`
 - [x] Review it (fresh model): `/check review public landing page`
 spec [0009](../specs/0009-public-landing-page/index.md) · code in `app/page.tsx`, `app/robots.ts`, `app/sitemap.ts`, `app/layout.tsx`, `components/learner-frame.tsx`, `components/learner-footer.tsx`, `server/env.ts` (`appUrl()`), `public/brand/hol-hero.jpg`, `public/brand/hol-social.jpg`, `e2e/landing.spec.ts`
 
