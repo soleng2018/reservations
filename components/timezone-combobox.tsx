@@ -71,6 +71,7 @@ export function TimezoneCombobox({
       <ComboboxInput
         className="w-full"
         placeholder="Search your timezone"
+        triggerLabel="Show timezones"
         autoComplete="off"
         {...control}
       />

@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
 import { ADMIN_ENTRY, haveSecrets } from "./authentik";
+import { walkScreens } from "./book-flow";
 
 // Spec 0005 AC-15: the shots /check verify compares with the mock. Dialogs
 // and the toast come from the gallery, so they need no shared data. Written
@@ -13,11 +14,13 @@ const WIDTHS = [
   { name: "390", width: 390, height: 844 },
 ] as const;
 
-const shot = (page: Page, width: string, name: string) =>
-  page.screenshot({
+const shot = async (page: Page, width: string, name: string) => {
+  await page.screenshot({
     path: path.join(__dirname, "screenshots", `${width}-${name}.png`),
     animations: "disabled",
+    fullPage: name.startsWith("book-"),
   });
+};
 
 for (const w of WIDTHS) {
   // covers: AC-15
@@ -80,11 +83,12 @@ for (const w of WIDTHS) {
     await page.goto(ADMIN_ENTRY);
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
     await shot(page, w.name, "sign-in-card");
+  });
 
-    await page.goto("/book");
-    await expect(
-      page.getByRole("heading", { name: "Reserve a remote lab" }),
-    ).toBeVisible();
-    await shot(page, w.name, "book");
+  // covers: spec 0010 AC-14 (bookAction answered by the test)
+  test(`/book shots at ${w.name}`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: w.width, height: w.height });
+    await walkScreens(page, (screen) => shot(page, w.name, `book-${screen}`));
   });
 }

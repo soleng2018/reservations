@@ -211,7 +211,7 @@ Tracer Bullet: first a thin thread through all three steps on today's actions (r
 6. [x] Progress, failure, and routing: the phase model (URL step plus phase, `popstate` ignored outside editing, submit ids), the progress screen and timers, every `bookAction` code routed per the table, both failure copies, Try again on a fresh token, and the reducer unit tests. Satisfies **AC-8**, **AC-9**, **AC-11**
 7. [x] Success card: `booking-success.tsx` to the mock (heading, line, rows, new or reused user box, Done). Satisfies **AC-10**
 8. [x] Freshness: the refocus reload when over 5 minutes old, the dropped pick message, the empty day message, and the limited Retry. Satisfies **AC-6**
-9. [ ] Guards and end to end: update `e2e/booking.spec.ts` for the three steps, add the active booking, two context slot taken, history, and failure specs, extend `e2e/a11y.spec.ts` and `e2e/screenshots.spec.ts` for each screen at both widths, and add the new pieces to `design.md`'s component table. Satisfies **AC-3**, **AC-9**, **AC-11**, **AC-12**, **AC-13**, **AC-14**
+9. [x] Guards and end to end: update `e2e/booking.spec.ts` for the three steps, add the active booking, two context slot taken, history, and failure specs, extend `e2e/a11y.spec.ts` and `e2e/screenshots.spec.ts` for each screen at both widths, and add the new pieces to `design.md`'s component table. Satisfies **AC-3**, **AC-9**, **AC-11**, **AC-12**, **AC-13**, **AC-14**
 
 ## Consequences
 

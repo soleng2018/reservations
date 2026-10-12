@@ -86,7 +86,7 @@ export function Turnstile({
         strategy="afterInteractive"
         onReady={() => setReady(true)}
       />
-      <div ref={host} className="min-h-16.25" />
+      <div ref={host} data-slot="turnstile" className="min-h-16.25" />
     </>
   );
 }

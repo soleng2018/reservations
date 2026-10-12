@@ -198,15 +198,15 @@ spec [0009](../specs/0009-public-landing-page/index.md) · code in `app/page.tsx
 Thicken slice 1's booking into the mock's full 3 step flow: details form with timezone choice, month calendar with unavailable days greyed, 30 minute start slots for the chosen day with the full duration highlighted, the confirm step showing the assigned testbed, and the progress and failure screens.
 **Done when:** a learner sees only bookable days and times in their timezone; two learners booking the last free slot at once cannot both get it; an email that already has an active booking is stopped at Step 1 with a link to manage it.
 - [x] Design it (spec): `/architect availability & booking rules`
-- [ ] Build it: `/develop availability & booking rules`
+- [x] Build it: `/develop availability & booking rules`
   - [x] Tracer: calendar and timezone helpers, the 90 day horizon, then the three step shell with the real calendar and submit on today's actions (AC-1, 4, 5, 11)
   - [x] Step 1 check with its fail open buckets, and the timezone combobox (AC-1, 2, 3, 13)
   - [x] Step 3 preview with explicit Turnstile, then progress, failure, and result routing (AC-7, 8, 9, 11, 12, 13)
   - [x] Success card and calendar freshness (AC-6, 10)
-  - [ ] Guards and end to end: Playwright flows, axe, keyboard, screenshots (AC-3, 9, 11, 12, 13, 14)
+  - [x] Guards and end to end: Playwright flows, axe, keyboard, screenshots (AC-3, 9, 11, 12, 13, 14)
 - [ ] Verify it: `/check verify availability & booking rules`
 - [ ] Test it: `/test availability & booking rules`
-spec [0010](../specs/0010-availability-booking-rules/index.md)
+spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/book/`, `components/book/`, `lib/booking-flow.ts`, `lib/calendar-days.ts`, `lib/timezones.ts`, `server/booking/availability.ts`, `server/booking/details-check.ts`, `components/turnstile.tsx`, `components/timezone-combobox.tsx`, `components/ui/calendar.tsx`, `e2e/booking.spec.ts`, `e2e/book-flow.ts`
 
 ### 13. Manage reservations: sign in, cancel & reschedule
 "Manage an existing reservation" from the mock: sign in through Authentik, see all bookings with status, reserve another when none is active, and cancel or reschedule Upcoming and Current bookings through the same calendar.
