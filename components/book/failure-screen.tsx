@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { TriangleAlertIcon } from "lucide-react";
+import { RESCHEDULE_MESSAGES } from "@/lib/booking-input";
 import { BOOK_HEADING_ID } from "./step-heading";
 
-// The failure screen (spec 0010 AC-9). "nothing_booked": the saga rolled
-// back. "unknown": the reply was lost, so the booking may have committed.
-// Its Back and Try again sit in the flow, under the Turnstile widget.
+// The failure screen (spec 0010 AC-9, spec 0011 AC-10). "nothing_booked":
+// the saga or the reschedule rolled back. "unknown": the reply was lost, so
+// the change may have committed. Its Back and Try again sit in the flow.
 export function FailureScreen({
   failure,
+  flow = "book",
 }: {
   readonly failure: "nothing_booked" | "unknown";
+  readonly flow?: "book" | "reschedule";
 }) {
   return (
     <div className="text-center">
@@ -26,7 +29,22 @@ export function FailureScreen({
         Something went wrong
       </h1>
       <p role="alert" className="text-cell leading-normal text-fg2">
-        {failure === "nothing_booked" ? (
+        {flow === "reschedule" ? (
+          failure === "nothing_booked" ? (
+            RESCHEDULE_MESSAGES.unchanged
+          ) : (
+            <>
+              We couldn&apos;t confirm the change. Check{" "}
+              <Link
+                href="/reservations"
+                className="font-semibold text-primary underline underline-offset-4"
+              >
+                your reservations
+              </Link>{" "}
+              to see your current time.
+            </>
+          )
+        ) : failure === "nothing_booked" ? (
           "We couldn't complete your reservation. Nothing was booked. Please try again."
         ) : (
           <>

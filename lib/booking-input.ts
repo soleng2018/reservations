@@ -79,8 +79,5 @@ export const RESCHEDULE_MESSAGES = {
   // `invalid` and `unavailable`: nothing changed.
   unchanged:
     "We couldn't change your reservation. Your original time is unchanged.",
-  // A thrown action or a lost reply: it may have committed.
-  unknown:
-    "We couldn't confirm the change. Check your reservations to see your current time.",
   generic: "Something went wrong. Try again.",
 } as const;
