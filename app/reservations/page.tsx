@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ResendSetPassword } from "@/components/auth/resend-set-password";
 import { LearnerFrame } from "@/components/learner-frame";
+import { CancelReservationButton } from "@/components/reservations/cancel-reservation-button";
 import { ReservationCard } from "@/components/reservations/reservation-card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format-time";
@@ -18,6 +19,7 @@ import { db } from "@/server/db";
 import { dbNow } from "@/server/db/bookings";
 import { turnstileEnv } from "@/server/env";
 import { signInWithSso } from "../auth/actions";
+import { cancelReservationAction } from "./actions";
 
 export const metadata: Metadata = { title: "Manage your reservation" };
 
@@ -126,13 +128,16 @@ async function ReservationList() {
                         </Link>
                       ) : null}
                       {actions.cancel ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-danger-strong hover:bg-crimson-100 hover:text-danger-strong"
-                        >
-                          Cancel reservation
-                        </Button>
+                        <CancelReservationButton
+                          testbed={card.testbedName}
+                          start={at(card.startsAt)}
+                          current={card.phase === "Current"}
+                          action={cancelReservationAction.bind(
+                            null,
+                            card.id,
+                            card.version,
+                          )}
+                        />
                       ) : null}
                     </>
                   ) : undefined

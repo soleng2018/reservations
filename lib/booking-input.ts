@@ -64,3 +64,23 @@ export type DetailsErrorCode = Extract<
   | "booking_pending"
   | "type_unavailable"
 >;
+
+// What a reschedule can answer besides `rescheduled` (spec 0011 AC-9).
+export type RescheduleErrorCode =
+  "limited" | "invalid" | "stale" | "slot_taken" | "same_time" | "unavailable";
+
+// The manage pages' copy (spec 0011 AC-4, AC-5, AC-7, AC-8, AC-10), one place.
+export const RESCHEDULE_MESSAGES = {
+  // A cancel or reschedule that found the booking changed (AC-5).
+  stale: "This reservation already changed. The list has been refreshed.",
+  slot_taken: BOOK_ERRORS.slot_taken,
+  same_time: "That's already your reservation time. Please pick another.",
+  limited: BOOK_ERRORS.limited,
+  // `invalid` and `unavailable`: nothing changed.
+  unchanged:
+    "We couldn't change your reservation. Your original time is unchanged.",
+  // A thrown action or a lost reply: it may have committed.
+  unknown:
+    "We couldn't confirm the change. Check your reservations to see your current time.",
+  generic: "Something went wrong. Try again.",
+} as const;
