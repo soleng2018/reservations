@@ -8,15 +8,18 @@ import { BOOK_HEADING_ID } from "./step-heading";
 
 // The success card (spec 0010 AC-10), from the bookAction state and the
 // Step 1 name and email in memory, never from a URL. No lab links, Add to
-// calendar, or View email yet (features 14 and 15).
+// calendar, or View email yet (features 14 and 15). A signed in learner
+// (spec 0011 AC-13) gets "View my reservations", and Done goes there.
 export function BookingSuccess({
   booking,
   firstName,
   email,
+  signedIn = false,
 }: {
   readonly booking: Booked;
   readonly firstName: string;
   readonly email: string;
+  readonly signedIn?: boolean;
 }) {
   const rows = [
     ["Testbed", booking.testbedName],
@@ -65,6 +68,15 @@ export function BookingSuccess({
             with your email to manage this reservation later.
           </p>
         </div>
+      ) : signedIn ? (
+        <p className="mb-2.5 rounded-lg bg-bg-inset px-4 py-2.75 text-pill text-fg2">
+          <Link
+            href="/reservations"
+            className="font-semibold text-primary underline underline-offset-4"
+          >
+            View my reservations
+          </Link>
+        </p>
       ) : (
         <p className="mb-2.5 rounded-lg bg-bg-inset px-4 py-2.75 text-pill text-fg2">
           Sign in with your existing credentials anytime to manage this
@@ -79,7 +91,7 @@ export function BookingSuccess({
       )}
 
       <Link
-        href="/"
+        href={signedIn ? "/reservations" : "/"}
         className={cn(buttonVariants({ size: "lg" }), "mt-1 w-full")}
       >
         Done

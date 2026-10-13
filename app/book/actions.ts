@@ -3,13 +3,16 @@
 import { headers } from "next/headers";
 import { z } from "zod";
 import {
+  AS_ACCOUNT,
   BookInput,
   DetailsInput,
   type BookErrorCode,
   type DetailsErrorCode,
 } from "@/lib/booking-input";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
+import { err, ok, type Result } from "@/lib/result";
 import { authentik } from "@/server/authentik/client";
+import { sessionAccount, type LearnerAccount } from "@/server/booking/account";
 import { firstFreeTestbed, startsFor } from "@/server/booking/availability";
 import { checkGuestDetails } from "@/server/booking/details-check";
 import {
@@ -18,6 +21,7 @@ import {
 } from "@/server/booking/guest-booking";
 import { dbNow } from "@/server/db/bookings";
 import { db } from "@/server/db";
+import type { GuestBookingInput } from "@/server/db/guest-saga";
 import { countAttempt } from "@/server/rate-limit";
 import { clientIp } from "@/server/request-ip";
 import { verifyTurnstile } from "@/server/turnstile";
@@ -25,7 +29,10 @@ import { verifyTurnstile } from "@/server/turnstile";
 // The public guest booking actions (spec 0004 AC-3 to AC-10, spec 0010 AC-2,
 // AC-4, AC-7). Public by design, so they call no require* (allow list in
 // tests/server-actions-require.test.ts); Turnstile and rate limits guard them.
-// None of them returns another learner's data.
+// None of them returns another learner's data. An active learner signed in
+// books as themselves (spec 0011 AC-13): Step 1 and confirm take the name,
+// company, email, and zone from their users row as stored, never the form,
+// so a crafted post cannot book under another email.
 
 const DETAILS_PER_IP = { limit: 20, windowSeconds: 600 } as const;
 const DETAILS_PER_EMAIL = { limit: 10, windowSeconds: 3600 } as const;
@@ -44,10 +51,40 @@ export type DetailsResult =
 
 export type DetailsFields = Readonly<Record<keyof DetailsInput, string>>;
 
+// The only fields a signed in learner sends (spec 0011 AC-13).
+const AccountDetailsInput = DetailsInput.pick({ testbedTypeId: true });
+const AccountBookInput = BookInput.pick({
+  testbedTypeId: true,
+  startsAt: true,
+});
+
+const asObject = (input: unknown) =>
+  typeof input === "object" && input !== null ? input : {};
+
+// What a Step 1 check runs on: a signed in learner's own email and the type
+// they picked, else the guest's fields.
+function detailsFor(
+  account: LearnerAccount | undefined,
+  input: unknown,
+): Result<
+  { readonly email: string; readonly testbedTypeId: string },
+  FieldErrors
+> {
+  if (account) {
+    const picked = AccountDetailsInput.safeParse(asObject(input));
+    return picked.success
+      ? ok({ email: account.email, testbedTypeId: picked.data.testbedTypeId })
+      : err(fieldErrors(picked.error));
+  }
+  const parsed = DetailsInput.safeParse(asObject(input));
+  return parsed.success ? ok(parsed.data) : err(fieldErrors(parsed.error));
+}
+
 // spec 0010 AC-2: the Step 1 check. Writes nothing but rate limit rows and
-// no audit row.
+// no audit row. `asAccount` is "1" when the flow showed the account summary.
 export async function checkDetailsAction(
   input: DetailsFields,
+  asAccount?: string,
 ): Promise<DetailsResult> {
   const conn = db();
   const ip = clientIp(await headers());
@@ -63,24 +100,27 @@ export async function checkDetailsAction(
   );
   if (!ipAllowed) return refuse("limited");
 
+  // A post made as the account with no active learner behind it never
+  // checks as a guest.
+  const account = await sessionAccount(conn);
+  if (asAccount === AS_ACCOUNT && !account) return refuse("signed_out");
+
   // (2) the fields. A non object input parses as all fields missing.
-  const parsed = DetailsInput.safeParse(
-    typeof input === "object" && input !== null ? input : {},
-  );
-  if (!parsed.success) return refuse("invalid", fieldErrors(parsed.error));
+  const parsed = detailsFor(account, input);
+  if (!parsed.ok) return refuse("invalid", parsed.error);
 
   // (3) the email bucket fails open: over it, answer ok and read nothing, so
   // nobody can lock a guest out of Step 1 (confirm still checks).
   const emailAllowed = await countAttempt(
     conn,
-    `details:email:${parsed.data.email.toLowerCase()}`,
+    `details:email:${parsed.value.email.toLowerCase()}`,
     DETAILS_PER_EMAIL.limit,
     DETAILS_PER_EMAIL.windowSeconds,
   );
   if (!emailAllowed) return { kind: "ok" };
 
   // (4) the reads.
-  const checked = await checkGuestDetails(conn, parsed.data);
+  const checked = await checkGuestDetails(conn, parsed.value);
   return checked.ok ? { kind: "ok" } : refuse(checked.error);
 }
 
@@ -194,6 +234,38 @@ const text = (form: FormData, key: string) => {
   return typeof v === "string" ? v : undefined;
 };
 
+// What a confirm books: a signed in learner's stored account with the type
+// and start they picked, else the guest's form.
+function bookingFor(
+  account: LearnerAccount | undefined,
+  form: FormData,
+): Result<GuestBookingInput, FieldErrors> {
+  const picked = {
+    testbedTypeId: text(form, "testbedTypeId"),
+    startsAt: text(form, "startsAt"),
+  };
+  if (account) {
+    const parsed = AccountBookInput.safeParse(picked);
+    return parsed.success
+      ? ok({
+          name: account.name,
+          company: account.company ?? "",
+          email: account.email,
+          timezone: account.timezone,
+          ...parsed.data,
+        })
+      : err(fieldErrors(parsed.error));
+  }
+  const parsed = BookInput.safeParse({
+    name: text(form, "name"),
+    company: text(form, "company"),
+    email: text(form, "email"),
+    timezone: text(form, "timezone"),
+    ...picked,
+  });
+  return parsed.success ? ok(parsed.data) : err(fieldErrors(parsed.error));
+}
+
 // A type that lost its last bookable testbed reads as a taken time: the
 // start list then reloads (empty) for the guest.
 const toCode = (error: GuestBookingError): BookErrorCode =>
@@ -217,6 +289,12 @@ export async function bookAction(
   );
   if (!ipAllowed) return failed("limited");
 
+  // A post made as the account with no active learner behind it never
+  // books as a guest (spec 0011 AC-13).
+  const account = await sessionAccount(conn);
+  if (text(form, "asAccount") === AS_ACCOUNT && !account)
+    return failed("signed_out");
+
   // (2) Turnstile, failing closed when Cloudflare is unreachable.
   const human = await verifyTurnstile(
     text(form, "cf-turnstile-response") ?? "",
@@ -224,17 +302,10 @@ export async function bookAction(
   );
   if (!human.ok) return failed("limited");
 
-  // (3) the form.
-  const parsed = BookInput.safeParse({
-    name: text(form, "name"),
-    company: text(form, "company"),
-    email: text(form, "email"),
-    timezone: text(form, "timezone"),
-    testbedTypeId: text(form, "testbedTypeId"),
-    startsAt: text(form, "startsAt"),
-  });
-  if (!parsed.success) return failed("invalid", fieldErrors(parsed.error));
-  const input = parsed.data;
+  // (3) the form, or the account and the form's type and start.
+  const parsed = bookingFor(account, form);
+  if (!parsed.ok) return failed("invalid", parsed.error);
+  const input = parsed.value;
 
   // (4) the email bucket, keyed only once the email parses.
   const emailAllowed = await countAttempt(

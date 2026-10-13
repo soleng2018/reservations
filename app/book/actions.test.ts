@@ -9,6 +9,16 @@ const ctx = vi.hoisted(() => ({
   ip: "203.0.113.7",
   human: true,
   verified: 0,
+  // What currentSession() returns (spec 0011 AC-13); undefined is signed out.
+  session: undefined as
+    | {
+        readonly user: {
+          readonly id: string;
+          readonly role: string;
+          readonly status: string;
+        };
+      }
+    | undefined,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -33,6 +43,9 @@ vi.mock("@/server/authentik/client", async (importOriginal) => ({
     if (!ctx.api) throw new Error("no fake Authentik set");
     return ctx.api;
   },
+}));
+vi.mock("@/server/auth/require", () => ({
+  currentSession: async () => ctx.session,
 }));
 vi.mock("@/server/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/db")>();
@@ -89,6 +102,7 @@ const run = (body: (trx: Kysely<DB>) => Promise<void>) =>
     ctx.ip = uniqueIp();
     ctx.human = true;
     ctx.verified = 0;
+    ctx.session = undefined;
     try {
       await body(trx);
     } finally {
@@ -504,5 +518,156 @@ describe.skipIf(!hasDb)("previewTestbedAction (spec 0010 AC-7)", () => {
       expect(await previewTestbedAction(type.id, values.startsAt)).toEqual({
         kind: "limited",
       });
+    }));
+});
+
+// Signs `user` in as currentSession() would see them.
+const signIn = (user: { id: string; role: string; status: string }) => {
+  ctx.session = {
+    user: { id: user.id, role: user.role, status: user.status },
+  };
+};
+
+const bookingsOf = (trx: Kysely<DB>, userId: string) =>
+  trx
+    .selectFrom("bookings")
+    .select(["status", "starts_at"])
+    .where("user_id", "=", userId)
+    .execute();
+
+// covers: spec 0011 AC-13
+describe.skipIf(!hasDb)("signed in /book (spec 0011 AC-13)", () => {
+  it("books as the session's account, whatever the form says", () =>
+    run(async (trx) => {
+      const { type, values } = await setup(trx);
+      const learner = await makeUser(trx, {
+        company: null,
+        timezone: "Europe/Paris",
+      });
+      signIn(learner);
+      const state = await bookAction(
+        IDLE,
+        form({
+          ...values,
+          name: "",
+          company: "",
+          email: "someone-else@nile-test.invalid",
+          timezone: "Mars/Olympus",
+          asAccount: "1",
+        }),
+      );
+      expect(state).toMatchObject({
+        kind: "booked",
+        typeName: type.name,
+        timezone: "Europe/Paris",
+      });
+      expect(await bookingsOf(trx, learner.id)).toHaveLength(1);
+      const other = await trx
+        .selectFrom("users")
+        .select("id")
+        .where("email", "=", "someone-else@nile-test.invalid")
+        .execute();
+      expect(other).toEqual([]);
+      // The stored null company is kept.
+      const row = await trx
+        .selectFrom("users")
+        .select("company")
+        .where("id", "=", learner.id)
+        .executeTakeFirstOrThrow();
+      expect(row.company).toBeNull();
+    }));
+
+  it("checks Step 1 against the session's email and asks only for the type", () =>
+    run(async (trx) => {
+      const { values } = await setup(trx);
+      const learner = await makeUser(trx);
+      signIn(learner);
+      expect(
+        await checkDetailsAction(
+          details({ ...values, name: "", email: "x" }),
+          "1",
+        ),
+      ).toEqual({ kind: "ok" });
+      expect(
+        await checkDetailsAction(
+          details({ ...values, testbedTypeId: "" }),
+          "1",
+        ),
+      ).toEqual({
+        kind: "error",
+        code: "invalid",
+        fields: { testbedTypeId: "Choose a lab type." },
+      });
+      expect(
+        await bucket(trx, `details:email:${learner.email.toLowerCase()}`),
+      ).toEqual([{ count: 1 }]);
+    }));
+
+  it("refuses a second booking of the signed in learner", () =>
+    run(async (trx) => {
+      const { type, values } = await setup(trx);
+      const learner = await makeUser(trx);
+      const testbed = await makeTestbed(trx, type.id);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: learner.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(72),
+          ends_at: slot(74),
+          status: "confirmed",
+        })
+        .execute();
+      signIn(learner);
+      expect(await checkDetailsAction(details(values), "1")).toEqual({
+        kind: "error",
+        code: "has_live_booking",
+        fields: {},
+      });
+    }));
+
+  it("answers signed_out to an account post with no active learner, and books nothing", () =>
+    run(async (trx) => {
+      const { values, bookings } = await setup(trx);
+      const admin = await makeUser(trx, { role: "admin" });
+      const gone = await makeUser(trx, {
+        status: "deactivated",
+        deactivated_at: new Date(),
+      });
+      const signedOut = { kind: "error", code: "signed_out", fields: {} };
+      for (const who of [undefined, admin, gone]) {
+        ctx.session = undefined;
+        if (who) signIn(who);
+        ctx.ip = uniqueIp();
+        expect(
+          await bookAction(IDLE, form({ ...values, asAccount: "1" })),
+        ).toEqual(signedOut);
+        expect(await checkDetailsAction(details(values), "1")).toEqual(
+          signedOut,
+        );
+      }
+      expect(ctx.verified).toBe(0);
+      expect(await bookings()).toEqual([]);
+    }));
+
+  it("books from the form as today for an admin or deactivated session without asAccount", () =>
+    run(async (trx) => {
+      const { values, email } = await setup(trx);
+      const admin = await makeUser(trx, { role: "admin" });
+      signIn(admin);
+      expect(await checkDetailsAction(details(values))).toEqual({
+        kind: "ok",
+      });
+      expect(await bookAction(IDLE, form(values))).toMatchObject({
+        kind: "booked",
+        timezone: "America/New_York",
+      });
+      const guest = await trx
+        .selectFrom("users")
+        .select("id")
+        .where("email", "=", email)
+        .executeTakeFirstOrThrow();
+      expect(await bookingsOf(trx, guest.id)).toHaveLength(1);
     }));
 });

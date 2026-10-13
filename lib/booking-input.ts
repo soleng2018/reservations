@@ -36,6 +36,10 @@ export const DetailsInput = BookInput.pick({
 });
 export type DetailsInput = z.infer<typeof DetailsInput>;
 
+// What the /book flow rendered for a signed in learner posts as
+// `asAccount` (spec 0011 AC-13).
+export const AS_ACCOUNT = "1";
+
 // Every outcome /book can show, as a code the client turns into a message.
 export const BOOK_ERRORS = {
   invalid: "Please fix the fields marked below.",
@@ -50,6 +54,9 @@ export const BOOK_ERRORS = {
   refused: "We couldn't complete this booking.",
   unavailable: "Sign in is temporarily unavailable, try again shortly",
   gone: "Your booking took too long to finish. Please try again.",
+  // A post made as the signed in learner whose session is gone (spec 0011
+  // AC-13); the Step 1 Alert links to /reservations.
+  signed_out: "You were signed out. Sign in again to book.",
 } as const;
 export type BookErrorCode = keyof typeof BOOK_ERRORS;
 
@@ -63,6 +70,7 @@ export type DetailsErrorCode = Extract<
   | "has_live_booking"
   | "booking_pending"
   | "type_unavailable"
+  | "signed_out"
 >;
 
 // What a reschedule can answer besides `rescheduled` (spec 0011 AC-9).

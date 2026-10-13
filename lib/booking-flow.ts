@@ -54,12 +54,23 @@ export const historyPos = (s: FlowState): number =>
 
 export type Booked = Extract<BookState, { kind: "booked" }>;
 
-// The Step 1 notice inside the card (AC-3).
+// The Step 1 notice inside the card (AC-3). `signed_out`: a signed in
+// learner's session ended (spec 0011 AC-13); it links to sign in again.
 export type DetailsNotice =
   | { readonly kind: "none" }
   | { readonly kind: "has_live_booking" }
   | { readonly kind: "type_unavailable" }
+  | { readonly kind: "signed_out" }
   | { readonly kind: "alert"; readonly message: string };
+
+// The signed in learner booking for themselves (spec 0011 AC-13): their
+// stored details, shown read only, with only the lab type to pick.
+export type Account = {
+  readonly name: string;
+  readonly company: string | null;
+  readonly email: string;
+  readonly timezone: string;
+};
 
 export type Preview =
   | { readonly kind: "loading" }
@@ -104,10 +115,22 @@ const EMPTY_FORM: DetailsFields = {
   testbedTypeId: "",
 };
 
-export const initialFlow = (timezone: string): FlowState => ({
+// An account seeds the details, so Step 3 shows them as stored.
+export const initialFlow = (
+  timezone: string,
+  account?: Account,
+): FlowState => ({
   step: "details",
   phase: "editing",
-  form: { ...EMPTY_FORM, timezone },
+  form: account
+    ? {
+        ...EMPTY_FORM,
+        name: account.name,
+        company: account.company ?? "",
+        email: account.email,
+        timezone: account.timezone,
+      }
+    : { ...EMPTY_FORM, timezone },
   details: null,
   checking: false,
   fields: {},
@@ -201,6 +224,8 @@ function checkDone(
       return { ...done, fields: result.fields };
     case "has_live_booking":
       return { ...done, notice: { kind: "has_live_booking" } };
+    case "signed_out":
+      return { ...done, notice: { kind: "signed_out" } };
     case "type_unavailable":
       return {
         ...done,
@@ -240,6 +265,8 @@ function bookDone(s: FlowState, result: BookState | "thrown"): FlowState {
       return { ...editing, step: "time", pick: null, dropped: true };
     case "has_live_booking":
       return { ...toDetails, notice: { kind: "has_live_booking" } };
+    case "signed_out":
+      return { ...toDetails, notice: { kind: "signed_out" } };
     case "booking_pending":
     case "admin_email":
       return { ...toDetails, notice: alert(BOOK_ERRORS[result.code]) };

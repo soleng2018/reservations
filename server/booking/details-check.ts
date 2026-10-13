@@ -10,7 +10,10 @@ import type { DB } from "@/server/db/types";
 // wins. It tells a guest early what the saga would refuse at confirm; the
 // saga still decides under its locks.
 
-export type DetailsRefusal = Exclude<DetailsErrorCode, "invalid" | "limited">;
+export type DetailsRefusal = Exclude<
+  DetailsErrorCode,
+  "invalid" | "limited" | "signed_out"
+>;
 
 export async function checkGuestDetails(
   conn: Kysely<DB>,

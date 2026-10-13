@@ -14,12 +14,13 @@ const BOOKED: Booked = {
   newUser: true,
 };
 
-const render = (booking: Booked) =>
+const render = (booking: Booked, signedIn?: boolean) =>
   renderToStaticMarkup(
     createElement(BookingSuccess, {
       booking,
       firstName: "Priya",
       email: "priya@example.test",
+      signedIn,
     }),
   );
 
@@ -59,5 +60,16 @@ describe("BookingSuccess (AC-10)", () => {
     expect(html).not.toContain("Add to calendar");
     expect(html).not.toContain("View email");
     expect(html).not.toContain("portal.example");
+  });
+});
+
+// covers: spec 0011 AC-13
+describe("BookingSuccess for a signed in learner (spec 0011 AC-13)", () => {
+  it("links to the reservations instead of the sign in line, and Done goes there", () => {
+    const html = render({ ...BOOKED, newUser: false }, true);
+    expect(html).toContain("View my reservations");
+    expect(html).not.toContain("existing credentials");
+    expect(html).not.toContain('href="/"');
+    expect(html.match(/href="\/reservations"/g)).toHaveLength(2);
   });
 });

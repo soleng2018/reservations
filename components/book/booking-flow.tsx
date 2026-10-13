@@ -30,10 +30,11 @@ import {
   STEP_INDEX,
   stepFromParam,
   stepUrl,
+  type Account,
   type FlowEvent,
   type FlowState,
 } from "@/lib/booking-flow";
-import { BOOK_ERRORS } from "@/lib/booking-input";
+import { AS_ACCOUNT, BOOK_ERRORS } from "@/lib/booking-input";
 import { formatDateTime } from "@/lib/format-time";
 import { browserTimeZone, timezoneOptions, zoneLabel } from "@/lib/timezones";
 import { cn } from "@/lib/utils";
@@ -64,13 +65,17 @@ const urlStep = () =>
 
 // The /book flow (spec 0010): details, time, confirm, then progress and a
 // success or failure screen. The flow's state lives in memory only, never
-// in the URL, storage, or a cookie; the URL carries just the step.
+// in the URL, storage, or a cookie; the URL carries just the step. With an
+// `account` (spec 0011 AC-13) the details come from it and every post says
+// so (`asAccount`), so a lost session is told apart from a guest.
 export function BookingFlow({
   types,
   siteKey,
+  account,
 }: {
   readonly types: readonly BookType[];
   readonly siteKey: string;
+  readonly account?: Account;
 }) {
   const router = useRouter();
   const detected = useSyncExternalStore(
@@ -83,7 +88,7 @@ export function BookingFlow({
     [detected],
   );
 
-  const [state, setState] = useState<FlowState>(() => initialFlow(""));
+  const [state, setState] = useState<FlowState>(() => initialFlow("", account));
   // The latest state for event handlers, kept in step with every send.
   const latest = useRef(state);
   // Popstates caused by our own history.go(), which the flow already shows.
@@ -222,9 +227,10 @@ export function BookingFlow({
     if (s.checking) return;
     const form: DetailsFields = { ...s.form, timezone };
     send({ type: "check_started", form });
-    const result = await checkDetailsAction(form).catch(
-      () => "thrown" as const,
-    );
+    const result = await checkDetailsAction(
+      form,
+      account ? AS_ACCOUNT : undefined,
+    ).catch(() => "thrown" as const);
     // AC-3: a type gone meanwhile refreshes the list from the server.
     if (
       result !== "thrown" &&
@@ -249,6 +255,7 @@ export function BookingFlow({
     Object.entries(s.details).forEach(([k, v]) => form.set(k, v));
     form.set("startsAt", s.pick);
     form.set("cf-turnstile-response", s.token);
+    if (account) form.set("asAccount", AS_ACCOUNT);
     send({ type: "submit", id });
     const timers = TICKS_AT_MS.map((ms, i) =>
       setTimeout(() => send({ type: "tick", id, ticks: i + 1 }), ms),
@@ -270,6 +277,7 @@ export function BookingFlow({
           label: `${t.name} · ${t.duration}`,
         }))}
         zones={zones}
+        account={account}
         form={{ ...state.form, timezone }}
         fields={state.fields}
         notice={state.notice}
@@ -285,6 +293,7 @@ export function BookingFlow({
         booking={state.booked}
         firstName={state.success.firstName}
         email={state.success.email}
+        signedIn={account !== undefined}
       />
     );
 
@@ -316,7 +325,10 @@ export function BookingFlow({
     title: "Confirm your reservation",
     who: [
       { label: "Name", value: state.details?.name.trim() ?? "" },
-      { label: "Company", value: state.details?.company.trim() ?? "" },
+      // A signed in learner's stored company may be unset (AC-13).
+      ...(account?.company === null
+        ? []
+        : [{ label: "Company", value: state.details?.company.trim() ?? "" }]),
       { label: "Email", value: state.details?.email.trim() ?? "" },
       { label: "Lab type", value: type?.name ?? "" },
       {
