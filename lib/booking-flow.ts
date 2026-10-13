@@ -7,6 +7,7 @@ import type {
 } from "@/app/book/actions";
 import { BOOK_ERRORS } from "./booking-input";
 import type { FieldErrors } from "./form-errors";
+import { firstName } from "./manage-reservations";
 
 // The /book client flow (spec 0010 AC-2 to AC-12, the state transition
 // table). Pure: the component dispatches events and does the side effects
@@ -387,7 +388,7 @@ export function flowReducer(s: FlowState, e: FlowEvent): FlowState {
         booked: s.booked,
         resetSignal: s.resetSignal,
         success: {
-          firstName: details.name.trim().split(/\s+/)[0] ?? "",
+          firstName: firstName(details.name),
           email: details.email.trim(),
         },
       };
