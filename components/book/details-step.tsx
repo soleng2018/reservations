@@ -16,6 +16,7 @@ import type { Account, DetailsNotice } from "@/lib/booking-flow";
 import type { FieldErrors } from "@/lib/form-errors";
 import { zoneLabel } from "@/lib/timezones";
 import { StepHeading } from "./step-heading";
+import { cn } from "@/lib/utils";
 
 // Step 1, "Tell us about you" (spec 0010 AC-1, AC-3). For a signed in
 // learner (spec 0011 AC-13) the account shows read only and the lab type is
@@ -143,11 +144,13 @@ export function DetailsStep({
                 </AlertDescription>
                 <Link
                   href="/reservations"
-                  className={buttonVariants({
-                    variant: "destructive",
-                    size: "sm",
-                    className: "mt-2.5 justify-self-start",
-                  })}
+                  className={cn(
+                    buttonVariants({
+                      variant: "destructive",
+                      size: "sm",
+                      className: "mt-2.5 justify-self-start",
+                    }),
+                  )}
                 >
                   Manage my reservations
                 </Link>
@@ -175,7 +178,9 @@ export function DetailsStep({
             <div className="mt-1.5 flex gap-3">
               <Link
                 href="/"
-                className={buttonVariants({ variant: "outline", size: "lg" })}
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "lg" }),
+                )}
               >
                 Back
               </Link>
@@ -194,7 +199,7 @@ export function DetailsStep({
       </form>
       {types.length === 0 ? (
         <div className="mt-5">
-          <Link href="/" className={buttonVariants({ variant: "outline" })}>
+          <Link href="/" className={cn(buttonVariants({ variant: "outline" }))}>
             Back
           </Link>
         </div>

@@ -20,6 +20,7 @@ import { dbNow } from "@/server/db/bookings";
 import { turnstileEnv } from "@/server/env";
 import { signInWithSso } from "../auth/actions";
 import { cancelReservationAction } from "./actions";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Manage your reservation" };
 
@@ -119,10 +120,12 @@ async function ReservationList() {
                       {actions.reschedule ? (
                         <Link
                           href={`/reservations/${card.id}/reschedule`}
-                          className={buttonVariants({
-                            variant: "outline",
-                            size: "sm",
-                          })}
+                          className={cn(
+                            buttonVariants({
+                              variant: "outline",
+                              size: "sm",
+                            }),
+                          )}
                         >
                           Reschedule
                         </Link>

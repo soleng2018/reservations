@@ -44,17 +44,19 @@ function Rows({ rows }: { readonly rows: readonly ConfirmRow[] }) {
       {rows.map((row) => (
         <div
           key={row.label}
-          className={cn(
-            "flex flex-wrap justify-between gap-x-4 gap-y-0.5",
-            row.struck && "opacity-60",
-          )}
+          className="flex flex-wrap justify-between gap-x-4 gap-y-0.5"
         >
           <dt className="text-fg3">{row.label}</dt>
+          {/* The mock dims a struck row to 60%, which fails AA; fg2 mutes
+              it with a passing pair instead. */}
           <dd
             className={cn(
               "min-w-0 text-right wrap-anywhere",
-              row.struck ? "text-fg1 line-through" : "font-bold",
-              !row.struck && (row.accent ? "text-nile-blue" : "text-fg1"),
+              row.struck
+                ? "text-fg2 line-through"
+                : row.accent
+                  ? "font-bold text-nile-blue"
+                  : "font-bold text-fg1",
             )}
           >
             {row.value}

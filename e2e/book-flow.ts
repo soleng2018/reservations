@@ -82,10 +82,14 @@ export type BookReply =
   | { readonly kind: "abort" } // a lost reply
   | { readonly kind: "hold"; readonly release: Promise<void> }; // progress
 
-// Answers every bookAction request with the next reply in turn (the last
-// one repeats). Returns how many it answered. Other requests pass through.
-export async function answerBook(
+// Answers every Server Action request to `url` that `matches` with the next
+// reply in turn (the last one repeats). Returns how many it answered. Other
+// requests pass through. The reply's header line is copied from an earlier
+// real action reply of the same page.
+export async function answerAction(
   page: Page,
+  url: string,
+  matches: (postData: string) => boolean,
   replies: readonly BookReply[],
 ): Promise<() => number> {
   let header: string | null = null;
@@ -95,12 +99,12 @@ export async function answerBook(
     if (first?.startsWith("0:")) header = first;
   });
   let answered = 0;
-  await page.route("**/book**", async (route) => {
+  await page.route(url, async (route) => {
     const req = route.request();
     if (
       req.method() !== "POST" ||
       !req.headers()["next-action"] ||
-      !(req.postData() ?? "").includes("cf-turnstile-response")
+      !matches(req.postData() ?? "")
     )
       return route.fallback();
     const reply = replies[Math.min(answered, replies.length - 1)];
@@ -119,6 +123,15 @@ export async function answerBook(
   });
   return () => answered;
 }
+
+// Answers every bookAction request (the one posting a Turnstile token).
+export const answerBook = (page: Page, replies: readonly BookReply[]) =>
+  answerAction(
+    page,
+    "**/book**",
+    (body) => body.includes("cf-turnstile-response"),
+    replies,
+  );
 
 export const booked = (startsAt: string, endsAt: string) => ({
   kind: "booked",

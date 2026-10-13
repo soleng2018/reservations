@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarXIcon } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 // Spec 0011 AC-6: the learner's own booking that has ended, changed, or whose
 // lab type has no bookable testbed left.
@@ -15,7 +16,7 @@ export function CannotReschedule() {
       </h1>
       <Link
         href="/reservations"
-        className={buttonVariants({ variant: "outline", size: "lg" })}
+        className={cn(buttonVariants({ variant: "outline", size: "lg" }))}
       >
         Back to your reservations
       </Link>

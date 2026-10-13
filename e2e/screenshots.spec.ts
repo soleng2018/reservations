@@ -63,6 +63,19 @@ for (const w of WIDTHS) {
     await shot(page, w.name, "blocked-dialog");
     await page.getByRole("button", { name: "Got it" }).click();
 
+    // Spec 0011 AC-18: the learner's card states, which one learner never
+    // holds at once.
+    const cards = page.locator("#reservation-cards");
+    await cards.scrollIntoViewIfNeeded();
+    await cards.screenshot({
+      path: path.join(
+        __dirname,
+        "screenshots",
+        `${w.name}-reservation-cards.png`,
+      ),
+      animations: "disabled",
+    });
+
     await page.getByRole("button", { name: "Show success toast" }).click();
     await expect(page.locator("[data-slot=toast]")).toBeVisible();
     await shot(page, w.name, "toast");

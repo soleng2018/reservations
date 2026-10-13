@@ -1,4 +1,4 @@
-import { sql, type Kysely } from "kysely";
+import { sql, type Kysely, type Transaction } from "kysely";
 import { describe, expect, it } from "vitest";
 import {
   fakeAuthentik,
@@ -7,9 +7,14 @@ import {
   fakeUser,
 } from "@/server/authentik/testing";
 import {
+  cancelOwnBooking,
+  rescheduleOwnBooking,
+} from "@/server/booking/manage";
+import {
   asConn,
   hasDb,
   inRollback,
+  makeAuthUser,
   makeTestbed,
   makeType,
   makeUser,
@@ -213,3 +218,126 @@ describe.skipIf(!hasDb)("reconcileAccess skips deactivated learners", () => {
       expect(ak.users[0]?.groups).toEqual([]);
     }));
 });
+
+// covers: spec 0011 AC-16
+describe.skipIf(!hasDb)(
+  "reconcileAccess after a learner's change (spec 0011)",
+  () => {
+    // A learner in a Current booking on `a`, already in its group, with one
+    // Authentik session and one app (Better Auth) session.
+    async function inLab(trx: Transaction<DB>) {
+      const type = await makeType(trx);
+      const [pkA, pkB] = [groupPk(), groupPk()];
+      const u = crypto.randomUUID().slice(0, 8);
+      const a = await makeTestbed(trx, type.id, {
+        name: `a ${u}`,
+        authentik_group_pk: pkA,
+      });
+      const b = await makeTestbed(trx, type.id, {
+        name: `b ${u}`,
+        authentik_group_pk: pkB,
+      });
+      const authUserId = await makeAuthUser(trx, PK + 20, 1);
+      const { user, booking } = await bookingOn(
+        trx,
+        a.id,
+        type.id,
+        PK + 20,
+        -1,
+        2,
+      );
+      await trx
+        .updateTable("users")
+        .set({ auth_user_id: authUserId })
+        .where("id", "=", user.id)
+        .execute();
+      const version = (
+        await trx
+          .selectFrom("bookings")
+          .select("version")
+          .where("id", "=", booking.id)
+          .executeTakeFirstOrThrow()
+      ).version;
+      const ak = fakeAuthentik([fakeLearner(PK + 20, { groups: [pkA] })], {
+        groups: [
+          fakeGroup(pkA, `pod-${a.slug}`),
+          fakeGroup(pkB, `pod-${b.slug}`),
+        ],
+        sessions: [
+          { uuid: "s20", user: PK + 20, username: `learner-${PK + 20}@x.test` },
+        ],
+      });
+      const appSessions = async () =>
+        (
+          await trx
+            .selectFrom("hol_auth.session")
+            .select("id")
+            .where("userId", "=", authUserId)
+            .execute()
+        ).length;
+      return { a, b, pkA, pkB, user, booking, version, ak, appSessions };
+    }
+
+    it("removes a learner who cancelled their Current booking and ends their Authentik sessions", () =>
+      inRollback(async (trx) => {
+        const w = await inLab(trx);
+        expect(
+          await cancelOwnBooking(
+            asConn(trx),
+            w.user.id,
+            w.booking.id,
+            w.version,
+          ),
+        ).toEqual({ ok: true, value: undefined });
+        await reconcileAccess(w.ak.api, asConn(trx));
+        expect(w.ak.users[0]?.groups).toEqual([]);
+        expect(w.ak.sessions).toEqual([]);
+        expect(await audited(trx, "access.revoked")).toEqual([
+          expect.objectContaining({
+            target_type: "user",
+            target_id: w.user.id,
+          }),
+        ]);
+        // The app session stays, so they stay on /reservations.
+        expect(await w.appSessions()).toBe(1);
+      }));
+
+    it("removes a learner who moved their Current booking later", () =>
+      inRollback(async (trx) => {
+        const w = await inLab(trx);
+        const moved = await rescheduleOwnBooking(asConn(trx), w.user.id, {
+          bookingId: w.booking.id,
+          version: w.version,
+          startsAt: slot(24),
+        });
+        expect(moved.ok).toBe(true);
+        await reconcileAccess(w.ak.api, asConn(trx));
+        expect(w.ak.users[0]?.groups).toEqual([]);
+        expect(w.ak.sessions).toEqual([]);
+        expect(await w.appSessions()).toBe(1);
+      }));
+
+    it("adds the learner to the new testbed's group once a move there starts", () =>
+      inRollback(async (trx) => {
+        const w = await inLab(trx);
+        // Someone else holds a at the new time, so the move lands on b.
+        await bookingOn(trx, w.a.id, w.a.testbed_type_id, PK + 21, 23, 27);
+        const moved = await rescheduleOwnBooking(asConn(trx), w.user.id, {
+          bookingId: w.booking.id,
+          version: w.version,
+          startsAt: slot(24),
+        });
+        expect(moved.ok && moved.value.testbedName).toBe(w.b.name);
+        // Forced: the moved booking's start arrives.
+        await trx
+          .updateTable("bookings")
+          .set({ starts_at: slot(-1), ends_at: slot(1) })
+          .where("id", "=", w.booking.id)
+          .execute();
+        await reconcileAccess(w.ak.api, asConn(trx));
+        expect(w.ak.users.find((u) => u.pk === PK + 20)?.groups).toEqual([
+          w.pkB,
+        ]);
+      }));
+  },
+);
