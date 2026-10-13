@@ -1,7 +1,10 @@
-import { sql, type Insertable, type Kysely } from "kysely";
+import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
 import { describe, expect, it } from "vitest";
+import { rescheduleBooking } from "@/server/db/bookings";
+import { mapConstraintError } from "@/server/db/constraint-errors";
 import {
   asConn,
+  attempt,
   hasDb,
   inRollback,
   makeTestbed,
@@ -15,6 +18,8 @@ import {
   hasLiveBooking,
   learnerBookings,
   ownReschedulable,
+  rescheduleOwnBooking,
+  toRescheduleError,
 } from "./manage";
 
 const insertBooking = (trx: Kysely<DB>, values: Insertable<Bookings>) =>
@@ -355,4 +360,316 @@ describe.skipIf(!hasDb)("cancelOwnBooking", () => {
         status: "confirmed",
       });
     }));
+});
+
+// A type with two bookable testbeds named so that `first` sorts before
+// `second`, a learner booked on `second`, and other learners to fill slots.
+async function twoBeds(trx: Transaction<DB>, from = 48, to = 50) {
+  const u = crypto.randomUUID().slice(0, 8);
+  const type = await makeType(trx);
+  const first = await makeTestbed(trx, type.id, { name: `A bed ${u}` });
+  const second = await makeTestbed(trx, type.id, { name: `B bed ${u}` });
+  const user = await makeUser(trx);
+  const booking = await insertBooking(trx, {
+    user_id: user.id,
+    testbed_id: second.id,
+    testbed_type_id: type.id,
+    starts_at: slot(from),
+    ends_at: slot(to),
+    status: "confirmed",
+  });
+  // Another learner's live booking on `testbedId` at [from, to) hours.
+  const occupy = async (testbedId: string, start: number, end: number) => {
+    const other = await makeUser(trx);
+    return insertBooking(trx, {
+      user_id: other.id,
+      testbed_id: testbedId,
+      testbed_type_id: type.id,
+      starts_at: slot(start),
+      ends_at: slot(end),
+      status: "confirmed",
+    });
+  };
+  const move = (startsAt: Date, version = booking.version) =>
+    rescheduleOwnBooking(asConn(trx), user.id, {
+      bookingId: booking.id,
+      version,
+      startsAt,
+    });
+  return { type, first, second, user, booking, occupy, move };
+}
+
+const refused = (error: string) => ({ ok: false, error });
+
+// covers: AC-9, AC-17
+describe.skipIf(!hasDb)("rescheduleOwnBooking", () => {
+  it("keeps its own testbed when it is free, bumps the version, and audits", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const r = await w.move(slot(72));
+      expect(r).toEqual({
+        ok: true,
+        value: {
+          testbedName: w.second.name,
+          typeName: w.type.name,
+          startsAt: slot(72),
+          endsAt: slot(74),
+        },
+      });
+      const after = await bookingRow(trx, w.booking.id);
+      expect(after).toMatchObject({
+        status: "confirmed",
+        testbed_id: w.second.id,
+        starts_at: slot(72),
+        ends_at: slot(74),
+        version: w.booking.version + 1,
+      });
+      expect(await auditsOf(trx, w.booking.id)).toEqual([
+        {
+          action: "booking.rescheduled",
+          actor_user_id: w.user.id,
+          summary: "Reservation rescheduled",
+          metadata: {
+            fromStartsAt: slot(48).toISOString(),
+            toStartsAt: slot(72).toISOString(),
+            fromTestbedId: w.second.id,
+            toTestbedId: w.second.id,
+            phase: "Upcoming",
+          },
+        },
+      ]);
+    }));
+
+  it("moves to the next free testbed in name order when its own is busy", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await w.occupy(w.second.id, 72, 74);
+      const r = await w.move(slot(72));
+      expect(r.ok && r.value.testbedName).toBe(w.first.name);
+      expect((await bookingRow(trx, w.booking.id)).testbed_id).toBe(w.first.id);
+    }));
+
+  it("can overlap its own old range on the same testbed", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const r = await w.move(slot(49));
+      expect(r.ok && r.value.testbedName).toBe(w.second.name);
+    }));
+
+  it("gives slot_taken and changes nothing when every testbed is busy", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await w.occupy(w.first.id, 72, 74);
+      await w.occupy(w.second.id, 73, 75);
+      expect(await w.move(slot(72))).toEqual(refused("slot_taken"));
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        starts_at: w.booking.starts_at,
+        version: w.booking.version,
+      });
+      expect(await auditsOf(trx, w.booking.id)).toEqual([]);
+    }));
+
+  it("gives slot_taken for a start inside the lead time or off the grid", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      expect(await w.move(slot(0.5))).toEqual(refused("slot_taken"));
+      expect(await w.move(new Date(slot(72).getTime() + 60_000))).toEqual(
+        refused("slot_taken"),
+      );
+    }));
+
+  it("gives same_time for its current start", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      expect(await w.move(slot(48))).toEqual(refused("same_time"));
+    }));
+
+  it("gives unavailable once the type is deleted", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await trx
+        .updateTable("testbed_types")
+        .set({ deleted_at: new Date() })
+        .where("id", "=", w.type.id)
+        .execute();
+      expect(await w.move(slot(72))).toEqual(refused("unavailable"));
+    }));
+
+  it("gives unavailable when every testbed is soft deleted", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await trx
+        .updateTable("testbeds")
+        .set({ deleted_at: new Date() })
+        .where("testbed_type_id", "=", w.type.id)
+        .execute();
+      expect(await w.move(slot(72))).toEqual(refused("unavailable"));
+    }));
+
+  it("gives stale for a version the learner did not see", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      expect(await w.move(slot(72), w.booking.version + 1)).toEqual(
+        refused("stale"),
+      );
+    }));
+
+  it("answers rescheduled again for a retry after a lost reply", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const first = await w.move(slot(72));
+      expect(await w.move(slot(72))).toEqual(first);
+      // Still one change: the retry wrote nothing.
+      expect(await auditsOf(trx, w.booking.id)).toHaveLength(1);
+      // A different start at the old version is stale.
+      expect(await w.move(slot(96))).toEqual(refused("stale"));
+    }));
+
+  it("moves a Current booking whose own start is inside the lead time", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx, -1, 1);
+      const r = await w.move(slot(24));
+      expect(r.ok).toBe(true);
+      const [row] = await auditsOf(trx, w.booking.id);
+      expect(row?.metadata).toMatchObject({ phase: "Current" });
+    }));
+
+  it("refuses a learner who was deactivated", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await trx
+        .updateTable("users")
+        .set({ status: "deactivated", deactivated_at: new Date() })
+        .where("id", "=", w.user.id)
+        .execute();
+      expect(await w.move(slot(72))).toEqual(refused("stale"));
+    }));
+
+  it("refuses another learner's booking as stale", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const other = await makeUser(trx);
+      expect(
+        await rescheduleOwnBooking(asConn(trx), other.id, {
+          bookingId: w.booking.id,
+          version: w.booking.version,
+          startsAt: slot(72),
+        }),
+      ).toEqual(refused("stale"));
+    }));
+
+  it("takes the end from the type's current duration", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await trx
+        .updateTable("testbed_types")
+        .set({ duration_value: 3 })
+        .where("id", "=", w.type.id)
+        .execute();
+      const r = await w.move(slot(72));
+      expect(r.ok && r.value.endsAt).toEqual(slot(75));
+      expect((await bookingRow(trx, w.booking.id)).ends_at).toEqual(slot(75));
+    }));
+});
+
+// A connection whose transactions fail on the audit insert with `error`, as
+// a concurrent commit or a deadlock would mid transaction.
+function failingAudit(trx: Transaction<DB>, error: unknown): Kysely<DB> {
+  const conn = asConn(trx);
+  const failing = (inner: Kysely<DB>) =>
+    new Proxy(inner, {
+      get(target, prop, receiver) {
+        if (prop === "insertInto")
+          return (table: string) => {
+            if (table === "audit_events") throw error;
+            return target.insertInto(table as "audit_events");
+          };
+        const value: unknown = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  return new Proxy(conn, {
+    get(target, prop, receiver) {
+      if (prop === "transaction")
+        return () => ({
+          execute: <T>(fn: (t: Kysely<DB>) => Promise<T>) =>
+            target.transaction().execute((t) => fn(failing(t))),
+        });
+      const value: unknown = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
+// covers: AC-9 (a race cannot be staged on one connection, so each half)
+describe.skipIf(!hasDb)("reschedule races", () => {
+  it("lets the overlap constraint refuse a move into a held range", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await w.occupy(w.second.id, 72, 74);
+      const e = await attempt(trx, () =>
+        rescheduleBooking(trx, {
+          id: w.booking.id,
+          expectedVersion: w.booking.version,
+          testbedId: w.second.id,
+          testbedTypeId: w.type.id,
+          startsAt: slot(72),
+          endsAt: slot(74),
+        }),
+      );
+      expect(mapConstraintError(e)).toEqual({ ok: false, error: "overlap" });
+    }));
+
+  it.each([
+    ["40P01", { code: "40P01" }],
+    ["40001", { code: "40001" }],
+    ["an overlap", { code: "23P01", constraint: "bookings_no_overlap" }],
+  ])("rolls back and answers slot_taken for %s", (_label, error) =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      expect(
+        await rescheduleOwnBooking(failingAudit(trx, error), w.user.id, {
+          bookingId: w.booking.id,
+          version: w.booking.version,
+          startsAt: slot(72),
+        }),
+      ).toEqual(refused("slot_taken"));
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        starts_at: w.booking.starts_at,
+        version: w.booking.version,
+      });
+    }),
+  );
+
+  it("rethrows anything else", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const boom = new Error("boom");
+      await expect(
+        rescheduleOwnBooking(failingAudit(trx, boom), w.user.id, {
+          bookingId: w.booking.id,
+          version: w.booking.version,
+          startsAt: slot(72),
+        }),
+      ).rejects.toBe(boom);
+    }));
+});
+
+// covers: AC-9
+describe("toRescheduleError", () => {
+  it.each([
+    { code: "40P01" },
+    { code: "40001" },
+    { code: "23P01", constraint: "bookings_no_overlap" },
+  ])("maps %o to slot_taken", (e) => {
+    expect(toRescheduleError(e)).toBe("slot_taken");
+  });
+
+  it.each([
+    new Error("boom"),
+    { code: "23505", constraint: "bookings_one_live_per_user" },
+    { code: "23505", constraint: "unknown_uq" },
+  ])("rethrows %o", (e) => {
+    expect(() => toRescheduleError(e)).toThrow();
+  });
 });

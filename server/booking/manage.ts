@@ -2,17 +2,33 @@ import "server-only";
 import { sql, type Kysely } from "kysely";
 import { z } from "zod";
 import { bookingPhase } from "@/lib/booking-phase";
-import { BookingStatus, DurationUnit } from "@/lib/db-enums";
-import { type Result } from "@/lib/result";
+import {
+  BookingStatus,
+  DurationUnit,
+  LIVE_BOOKING_STATUSES,
+} from "@/lib/db-enums";
+import { durationMs } from "@/lib/duration";
+import { preferFirst } from "@/lib/manage-reservations";
+import { err, type Result } from "@/lib/result";
+import { HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
 import { audit } from "@/server/audit";
-import { cancelBooking, dbNow } from "@/server/db/bookings";
+import {
+  bookableTestbedsOfType,
+  cancelBooking,
+  dbNow,
+  lockBookableTestbed,
+  rescheduleBooking,
+} from "@/server/db/bookings";
+import { mapConstraintError } from "@/server/db/constraint-errors";
 import { STALE_OWN_ATTEMPT } from "@/server/db/guest-saga";
 import { Refusal, refusable } from "@/server/db/refusal";
 import type { DB } from "@/server/db/types";
 
 // A signed in learner's own bookings (spec 0011): the /reservations list, the
-// reschedule page's load, and the learner's cancel. Every query filters by
-// the session learner, so another learner's id behaves like an unknown one.
+// reschedule page's load, and the learner's cancel and reschedule. Every
+// query filters by the session learner, so another learner's id behaves like
+// an unknown one. Both writes lock in one order: the users row, the booking,
+// the type, then each candidate testbed.
 
 // The bookableTestbedsOfType rule as SQL over the aliases `b` (bookings) and
 // `ty` (its type): a live booking whose type is live and still has a testbed
@@ -242,4 +258,197 @@ export async function cancelOwnBooking(
       });
     }),
   );
+}
+
+export type RescheduleInput = {
+  readonly bookingId: string;
+  readonly version: number;
+  readonly startsAt: Date;
+};
+
+export type Rescheduled = {
+  readonly testbedName: string;
+  readonly typeName: string;
+  readonly startsAt: Date;
+  readonly endsAt: Date;
+};
+
+export type RescheduleRefusal =
+  "stale" | "slot_taken" | "same_time" | "unavailable";
+
+// Postgres aborts the transaction on these, so they are mapped outside it.
+const PgCode = z.object({ code: z.string() });
+const RETRYABLE = new Set(["40P01", "40001"]); // deadlock, serialization
+
+// AC-9: an overlap a concurrent commit caused, a deadlock, or a serialization
+// failure all mean "pick again". Anything else is a bug and is rethrown.
+export function toRescheduleError(e: unknown): "slot_taken" {
+  const pg = PgCode.safeParse(e);
+  if (pg.success && RETRYABLE.has(pg.data.code)) return "slot_taken";
+  const mapped = mapConstraintError(e); // rethrows anything unexpected
+  if (!mapped.ok && mapped.error === "overlap") return "slot_taken";
+  throw e;
+}
+
+// The learner's booking as it is now, when a first try committed and its
+// reply was lost: same start, one version on (AC-9 step 1).
+async function alreadyRescheduled(
+  trx: Kysely<DB>,
+  userId: string,
+  input: RescheduleInput,
+): Promise<Rescheduled | undefined> {
+  const row = await trx
+    .selectFrom("bookings as b")
+    .innerJoin("testbeds as t", "t.id", "b.testbed_id")
+    .innerJoin("testbed_types as ty", "ty.id", "b.testbed_type_id")
+    .select([
+      "t.name as testbedName",
+      "ty.name as typeName",
+      "b.starts_at",
+      "b.ends_at",
+    ])
+    .where("b.id", "=", input.bookingId)
+    .where("b.user_id", "=", userId)
+    .where("b.status", "=", "confirmed")
+    .where("b.starts_at", "=", input.startsAt)
+    .where("b.version", "=", input.version + 1)
+    .executeTakeFirst();
+  return row
+    ? {
+        testbedName: row.testbedName,
+        typeName: row.typeName,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+      }
+    : undefined;
+}
+
+// AC-9, AC-17: move the learner's own booking to a new start in one locked
+// transaction, keeping its testbed when it is free, else the first free one
+// in lower(name) order. Every refusal rolls the whole transaction back, so
+// the original booking is untouched. `now()` in every guard is the
+// transaction's start time.
+export async function rescheduleOwnBooking(
+  conn: Kysely<DB>,
+  userId: string,
+  input: RescheduleInput,
+): Promise<Result<Rescheduled, RescheduleRefusal>> {
+  try {
+    return await refusable<Rescheduled, RescheduleRefusal>(() =>
+      conn.transaction().execute(async (trx) => {
+        // (0) the learner, serialized with deactivation.
+        if (!(await lockActiveLearner(trx, userId))) throw new Refusal("stale");
+
+        // (1) the booking at the version the learner saw.
+        const booking = await trx
+          .selectFrom("bookings")
+          .select(["testbed_id", "testbed_type_id", "starts_at", "ends_at"])
+          .where("id", "=", input.bookingId)
+          .where("user_id", "=", userId)
+          .where("status", "=", "confirmed")
+          .where("ends_at", ">", sql<Date>`now()`)
+          .where("version", "=", input.version)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!booking) {
+          const done = await alreadyRescheduled(trx, userId, input);
+          if (done) return done;
+          throw new Refusal("stale");
+        }
+
+        // (2) the type, held so its duration cannot change under us.
+        const type = await trx
+          .selectFrom("testbed_types")
+          .select(["name", "duration_value", "duration_unit"])
+          .where("id", "=", booking.testbed_type_id)
+          .where("deleted_at", "is", null)
+          .forShare()
+          .executeTakeFirst();
+        if (!type) throw new Refusal("unavailable");
+
+        // (3) the new range, from the type's current duration.
+        const endsAt = new Date(
+          input.startsAt.getTime() +
+            durationMs(
+              type.duration_value,
+              DurationUnit.parse(type.duration_unit),
+            ),
+        );
+        if (input.startsAt.getTime() === booking.starts_at.getTime())
+          throw new Refusal("same_time");
+        const now = await dbNow(trx);
+        if (!isOfferableStart(input.startsAt, now, LEAD_MS, HORIZON_MS))
+          throw new Refusal("slot_taken");
+
+        // (4) the kept testbed first, then the rest; the overlap constraint
+        // stays the last word.
+        const candidates = preferFirst(
+          await bookableTestbedsOfType(trx, booking.testbed_type_id),
+          booking.testbed_id,
+        );
+        const assign = async (
+          i: number,
+          anyLocked: boolean,
+        ): Promise<Rescheduled> => {
+          const candidate = candidates[i];
+          if (!candidate)
+            throw new Refusal(anyLocked ? "slot_taken" : "unavailable");
+          const locked = await lockBookableTestbed(trx, candidate.id);
+          if (!locked.ok) return assign(i + 1, anyLocked);
+          const clash = await trx
+            .selectFrom("bookings")
+            .select("id")
+            .where("testbed_id", "=", candidate.id)
+            .where("id", "!=", input.bookingId)
+            .where("status", "in", LIVE_BOOKING_STATUSES)
+            .where("starts_at", "<", endsAt)
+            .where("ends_at", ">", input.startsAt)
+            .executeTakeFirst();
+          if (clash) return assign(i + 1, true);
+
+          const moved = await rescheduleBooking(trx, {
+            id: input.bookingId,
+            expectedVersion: input.version,
+            testbedId: candidate.id,
+            testbedTypeId: booking.testbed_type_id,
+            startsAt: input.startsAt,
+            endsAt,
+          });
+          if (!moved.ok) throw new Refusal("stale");
+
+          // (5) the audit row, in the same transaction.
+          await audit(trx, {
+            actorUserId: userId,
+            action: "booking.rescheduled",
+            targetType: "booking",
+            targetId: input.bookingId,
+            summary: "Reservation rescheduled",
+            metadata: {
+              fromStartsAt: booking.starts_at.toISOString(),
+              toStartsAt: input.startsAt.toISOString(),
+              fromTestbedId: booking.testbed_id,
+              toTestbedId: candidate.id,
+              phase: bookingPhase(
+                {
+                  status: "confirmed",
+                  startsAt: booking.starts_at,
+                  endsAt: booking.ends_at,
+                },
+                now,
+              ),
+            },
+          });
+          return {
+            testbedName: locked.value.name,
+            typeName: type.name,
+            startsAt: input.startsAt,
+            endsAt,
+          };
+        };
+        return assign(0, false);
+      }),
+    );
+  } catch (e) {
+    return err(toRescheduleError(e));
+  }
 }

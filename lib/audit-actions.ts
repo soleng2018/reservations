@@ -42,6 +42,8 @@ export const AuditAction = z.enum([
   "user.updated",
   // One row per booking, for an admin cancel and for deactivation.
   "booking.cancelled",
+  // Feature 13 (spec 0011 AC-17): a learner moved their own booking.
+  "booking.rescheduled",
   // The admin's own row, the first time the console learns their zone.
   "admin.timezone_set",
 ]);
