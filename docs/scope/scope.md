@@ -212,15 +212,15 @@ spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/b
 "Manage an existing reservation" from the mock: sign in through Authentik, see all bookings with status, reserve another when none is active, and cancel or reschedule Upcoming and Current bookings through the same calendar.
 **Done when:** cancel frees the testbed at once (ending a Current booking early); reschedule either succeeds atomically or leaves the original untouched; Past bookings cannot be changed; a deactivated user cannot sign in.
 - [x] Design it (spec): `/architect manage reservations`
-- [ ] Build it: `/develop manage reservations`
-  - [ ] List tracer: learner bookings read, cards, Reserve another rule (AC-1, 2, 3, 15)
-  - [ ] Cancel: locked learner cancel with audit, confirm dialog, toasts (AC-4, 5, 15, 17)
-  - [ ] Reschedule end to end: excluded own range, kept testbed, locked in place update, reschedule page and actions, bare flow (AC-6, 7, 9, 11, 15, 17)
-  - [ ] Reschedule polish: preview, Current slot, progress and failure routing, history, per user buckets (AC-7, 8, 10, 12, 14)
-  - [ ] Signed in `/book`, then guards and end to end: account summary, session override, `signed_out`, reconciler, Playwright journey, axe, screenshots (AC-3, 13, 15, 16, 18)
+- [x] Build it: `/develop manage reservations`
+  - [x] List tracer: learner bookings read, cards, Reserve another rule (AC-1, 2, 3, 15)
+  - [x] Cancel: locked learner cancel with audit, confirm dialog, toasts (AC-4, 5, 15, 17)
+  - [x] Reschedule end to end: excluded own range, kept testbed, locked in place update, reschedule page and actions, bare flow (AC-6, 7, 9, 11, 15, 17)
+  - [x] Reschedule polish: preview, Current slot, progress and failure routing, history, per user buckets (AC-7, 8, 10, 12, 14)
+  - [x] Signed in `/book`, then guards and end to end: account summary, session override, `signed_out`, reconciler, Playwright journey, axe, screenshots (AC-3, 13, 15, 16, 18)
 - [ ] Verify it: `/check verify manage reservations`
 - [ ] Test it: `/test manage reservations`
-spec [0011](../specs/0011-manage-reservations/index.md)
+spec [0011](../specs/0011-manage-reservations/index.md) · code in `app/reservations/`, `components/reservations/`, `server/booking/manage.ts`, `server/booking/account.ts`, `lib/manage-reservations.ts`, `lib/reschedule-flow.ts`, `lib/time-pick.ts`, `app/book/`, `components/book/`, `e2e/reservations.spec.ts`
 
 ### 14. Lab access & booking result screens · needs a decision
 The success screen after booking or rescheduling, and the reservation detail page, both showing the testbed's Nile Portal, LMS course, and client links as in the mock.
