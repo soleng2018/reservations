@@ -233,10 +233,10 @@ Access is enforced by Authentik: the learner is in the assigned testbed's group 
   - [x] Tracer: `ownLabAccess`, the lab access card, the `/reservations/[id]` detail page, and View lab access on Current and Past cards (AC-1, 6, 7, 8)
   - [x] Success screens: lab access card on book and reschedule success, guest and new learner copy (AC-2, 3, 4, 5)
   - [ ] Cloudflare revoke strand: env, revoker with retries and breaker, reconciler order and audit outcome (AC-9, 10, 11, 12)
-  - [ ] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
+  - [x] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
 - [ ] Verify it: `/check verify lab access & booking result screens`
 - [ ] Test it: `/test lab access & booking result screens`
-spec [0012](../specs/0012-lab-access-result-screens/index.md)
+spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/reservations/[id]/`, `components/reservations/lab-access-card.tsx`, `server/booking/lab-access.ts`, `lib/lab-access.ts`, `server/cloudflare/`, `app/book/`, `components/book/`, `e2e/lab-access.spec.ts`
 
 ## Slice 4: Notifications
 
