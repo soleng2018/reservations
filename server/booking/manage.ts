@@ -291,7 +291,8 @@ export function toRescheduleError(e: unknown): "slot_taken" {
 }
 
 // The learner's booking as it is now, when a first try committed and its
-// reply was lost: same start, one version on (AC-9 step 1).
+// reply was lost: same start, one version on (AC-9 step 1). No `ends_at >
+// now()` guard on purpose: it reports a move that did commit and writes nothing.
 async function alreadyRescheduled(
   trx: Kysely<DB>,
   userId: string,
@@ -374,6 +375,8 @@ export async function rescheduleOwnBooking(
               DurationUnit.parse(type.duration_unit),
             ),
         );
+        // same_time before the offerable check: a Current booking's own start
+        // is past, and "already your time" is the truer reply there.
         if (input.startsAt.getTime() === booking.starts_at.getTime())
           throw new Refusal("same_time");
         const now = await dbNow(trx);

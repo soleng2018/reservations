@@ -484,6 +484,12 @@ describe.skipIf(!hasDb)("rescheduleOwnBooking", () => {
       expect(await w.move(slot(48))).toEqual(refused("same_time"));
     }));
 
+  it("gives same_time, not slot_taken, for a Current booking's past start", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx, -1, 1);
+      expect(await w.move(slot(-1))).toEqual(refused("same_time"));
+    }));
+
   it("gives unavailable once the type is deleted", () =>
     inRollback(async (trx) => {
       const w = await twoBeds(trx);

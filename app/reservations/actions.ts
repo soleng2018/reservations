@@ -86,7 +86,7 @@ export async function resendSetPassword(
 
 const CancelInput = z.object({
   bookingId: z.uuid(),
-  version: z.number().int(),
+  version: z.number().int().positive(),
 });
 
 // Spec 0011 AC-4, AC-5: the learner cancels their own Upcoming or Current
