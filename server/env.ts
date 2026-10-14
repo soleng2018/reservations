@@ -235,17 +235,66 @@ export function assertEncryptionEnv(): Result<EncryptionEnv, string> {
   }
 }
 
+// Spec 0012 AC-11: the Cloudflare Access revoke, worker only. The account id
+// and the token are both set or both unset (null: the revoke is off). Every
+// message names the problem and never prints the token.
+export type CloudflareEnv = {
+  readonly accountId: string;
+  readonly apiToken: string;
+};
+
+const CloudflareAccountId = z
+  .string()
+  .regex(
+    /^[0-9a-f]{32}$/i,
+    "CLOUDFLARE_ACCOUNT_ID is not a Cloudflare account id",
+  );
+
+function readCloudflareToken(): string | undefined {
+  let token: string | undefined;
+  try {
+    token = secret("CLOUDFLARE_API_TOKEN");
+  } catch {
+    throw new Error("Cloudflare env: CLOUDFLARE_API_TOKEN_FILE can't be read");
+  }
+  if (process.env.CLOUDFLARE_API_TOKEN_FILE && !token)
+    throw new Error("Cloudflare env: CLOUDFLARE_API_TOKEN_FILE is empty");
+  return token || undefined;
+}
+
+export function cloudflareEnv(): CloudflareEnv | null {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || undefined;
+  const apiToken = readCloudflareToken();
+  if (accountId === undefined && apiToken === undefined) return null;
+  if (accountId === undefined || apiToken === undefined)
+    throw new Error(
+      "Cloudflare env: set both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN_FILE, or neither",
+    );
+  const id = CloudflareAccountId.safeParse(accountId);
+  if (!id.success)
+    throw new Error(
+      `Cloudflare env: ${id.error.issues[0]?.message ?? "invalid"}`,
+    );
+  return { accountId: id.data, apiToken };
+}
+
 // Worker only (spec 0001, 0004): `npm run worker` exits unless this is true.
 const workerSchema = z.object({
   WORKER_ENABLED: z.stringbool().default(false),
 });
 
-export type WorkerEnv = z.infer<typeof workerSchema>;
+export type WorkerEnv = z.infer<typeof workerSchema> & {
+  readonly cloudflare: CloudflareEnv | null;
+};
 
+// Fails fast at start on a half set Cloudflare config (spec 0012 AC-11).
 export function workerEnv(): WorkerEnv {
-  return workerSchema.parse({
-    WORKER_ENABLED: process.env.WORKER_ENABLED || undefined,
-  });
+  return {
+    ...workerSchema.parse({
+      WORKER_ENABLED: process.env.WORKER_ENABLED || undefined,
+    }),
+    cloudflare: cloudflareEnv(),
+  };
 }
 
 // The admin entry path only, for proxy.ts (it must not need the auth secrets).
