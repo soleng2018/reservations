@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { membershipDiff } from "./reconcile";
+import { membershipDiff, revokeStateLine } from "./reconcile";
 
 // covers: AC-12
 describe("membershipDiff (AC-12)", () => {
@@ -20,5 +20,21 @@ describe("membershipDiff (AC-12)", () => {
         { pk: 2, holLearner: false },
       ]),
     ).toEqual({ add: [], remove: [1] });
+  });
+});
+
+// covers: spec 0012 AC-11
+describe("revokeStateLine (spec 0012 AC-11)", () => {
+  it("says the state on the first run and again only when it changes", () => {
+    const kinds = ["off", "on", "on", "broken"] as const;
+    const lines = kinds.map((next, i) =>
+      revokeStateLine(i === 0 ? undefined : kinds[i - 1], next),
+    );
+    expect(lines).toEqual([
+      "Cloudflare VM revoke is off",
+      "Cloudflare VM revoke is on",
+      null,
+      "Cloudflare VM revoke is broken",
+    ]);
   });
 });

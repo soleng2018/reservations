@@ -2,9 +2,11 @@
 // share one database, so a worker started anywhere IS the production worker;
 // the advisory lock keeps it to one.
 import { setTimeout as sleep } from "node:timers/promises";
+import { revokeStateLine, type RevokeKind } from "@/lib/reconcile";
 import { authentik } from "@/server/authentik/client";
+import { cloudflareRevokeConfig } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
-import { dbEnv, workerEnv } from "@/server/env";
+import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
   purgeDue,
@@ -66,6 +68,21 @@ async function main(): Promise<number> {
   // A loop, not recursion: the process runs for days, and a promise chain
   // per tick would grow without bound.
   let lastPurge: number | undefined;
+  let lastRevokeKind: RevokeKind | undefined;
+  // Spec 0012 AC-11: read at the start of each reconciler run from the live
+  // CLOUDFLARE API key, so a rotated token works on the next tick. The
+  // keyring is read only while that key exists. The state is logged on the
+  // first run and again only when it changes.
+  const revokeSource = async () => {
+    const source = await cloudflareRevokeConfig(
+      conn,
+      () => encryptionEnv().keyring,
+    );
+    const line = revokeStateLine(lastRevokeKind, source.kind);
+    if (line) log(`worker: ${line}`);
+    lastRevokeKind = source.kind;
+    return source;
+  };
   while (!stop.signal.aborted) {
     // A dead lock connection is noticed here even when idle.
     await lock.query("select 1").catch((e: Error) => lost(e.message));
@@ -81,7 +98,10 @@ async function main(): Promise<number> {
         name: "testbed create sweeper",
         run: () => sweepTestbedCreates(api, conn),
       },
-      { name: "access reconciler", run: () => reconcileAccess(api, conn) },
+      {
+        name: "access reconciler",
+        run: () => reconcileAccess(api, conn, revokeSource),
+      },
       {
         name: "testbed teardown",
         run: () => teardownDeletedTestbeds(api, conn),

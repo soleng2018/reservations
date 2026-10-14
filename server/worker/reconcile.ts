@@ -1,4 +1,5 @@
 import "server-only";
+import { setTimeout as sleep } from "node:timers/promises";
 import { sql, type Kysely } from "kysely";
 import { membershipDiff } from "@/lib/reconcile";
 import { audit } from "@/server/audit";
@@ -10,12 +11,22 @@ import {
 } from "@/server/authentik/groups";
 import { guardGroupWrite } from "@/server/authentik/guard";
 import { endAuthentikSessions } from "@/server/authentik/sessions";
+import {
+  makeRevoker,
+  type CloudflareConfig,
+  type RevokeSource,
+  type VmRevoke,
+  type VmRevoker,
+} from "@/server/cloudflare/access";
 import type { DB } from "@/server/db/types";
 
 // The access reconciler (spec 0004 AC-12), the only code that adds or
 // removes `pod-*` members. Each group's members are made to match the
 // learners whose confirmed booking on that testbed is Current by the DB
-// clock. A soft deleted testbed's group is emptied of tagged learners.
+// clock. A soft deleted testbed's group is emptied of tagged learners. Each
+// removal also ends the learner's Authentik sessions and, when the revoke is
+// on, their Cloudflare Access sessions (spec 0012 AC-10), and is the only
+// caller of that revoke.
 
 type Testbed = {
   readonly id: string;
@@ -30,10 +41,56 @@ type Current = {
   readonly pk: number;
 };
 
+// One run's VM revoke: `off` when there is no live CLOUDFLARE key.
+type RunRevoke = (email: string | null) => Promise<VmRevoke | "off">;
+
+const liveRevoker = (config: CloudflareConfig): VmRevoker =>
+  makeRevoker(config, { sleep });
+
+// AC-11: a key the worker can't read records every revoke as failed with no
+// call, and says so once per run, only when the run had a removal.
+const brokenRevoke = (): RunRevoke => {
+  let said = false;
+  return async () => {
+    if (!said) {
+      said = true;
+      console.error("reconciler: Cloudflare revoke key can't be read");
+    }
+    return "failed";
+  };
+};
+
+const runRevoke = (
+  source: RevokeSource,
+  newRevoker: (config: CloudflareConfig) => VmRevoker,
+): RunRevoke => {
+  switch (source.kind) {
+    case "off":
+      return async () => "off";
+    case "broken":
+      return brokenRevoke();
+    case "on": {
+      const revoker = newRevoker(source.config);
+      // No users row means no email: failed, with no call and no trip.
+      return async (email) => (email === null ? "failed" : revoker(email));
+    }
+    default: {
+      const never: never = source;
+      throw new Error(`unknown revoke source: ${String(never)}`);
+    }
+  }
+};
+
+// `revokeSource` is read once at the start of each run, so a rotated token
+// takes effect on the next run; the revoker it yields (retries, breaker)
+// lives for this run only. `newRevoker` is a seam for tests.
 export async function reconcileAccess(
   api: CoreApi,
   conn: Kysely<DB>,
+  revokeSource: () => Promise<RevokeSource>,
+  newRevoker: (config: CloudflareConfig) => VmRevoker = liveRevoker,
 ): Promise<void> {
+  const revoke = runRevoke(await revokeSource(), newRevoker);
   const testbeds = await conn
     .selectFrom("testbeds")
     .select(["id", "authentik_group_pk", "deleted_at"])
@@ -70,7 +127,7 @@ export async function reconcileAccess(
       deleted: t.deleted_at !== null,
     };
     try {
-      await reconcileGroup(api, conn, testbed, live);
+      await reconcileGroup(api, conn, testbed, live, revoke);
     } catch (e) {
       console.error(`reconciler: group ${testbed.groupPk} failed`, e);
     }
@@ -82,6 +139,7 @@ async function reconcileGroup(
   conn: Kysely<DB>,
   testbed: Testbed,
   current: readonly Current[],
+  revoke: RunRevoke,
 ): Promise<void> {
   const group = await guardGroupWrite(api, testbed.groupPk);
   if (!group.ok) {
@@ -136,9 +194,21 @@ async function reconcileGroup(
     }
     const user = await conn
       .selectFrom("users")
-      .select("id")
+      .select(["id", "email"])
       .where("authentik_user_pk", "=", pk)
       .executeTakeFirst();
+    const who = user ? `user ${user.id}` : `pk ${pk}`;
+    // Membership is already gone, so neither step is retried after this
+    // run: a failure is logged (by id, never the email) and audited.
+    // Ending the Authentik sessions cuts off a learner already in the lab
+    // (they sign in again to manage bookings; accepted). The VM revoke runs
+    // even when that failed (AC-10).
+    const ended = await endAuthentikSessions(api, pk);
+    if (!ended.ok) console.error(`reconciler: could not end sessions of ${pk}`);
+    const vmRevoke = await revoke(user?.email ?? null);
+    if (vmRevoke === "failed")
+      console.error(`reconciler: Cloudflare VM revoke failed for ${who}`);
+    // AC-12: written last, so it records what happened.
     await audit(conn, {
       actorUserId: null,
       action: "access.revoked",
@@ -149,12 +219,9 @@ async function reconcileGroup(
         testbedId: testbed.id,
         groupPk: testbed.groupPk,
         authentikUserPk: pk,
+        sessionsEnded: ended.ok,
+        vmRevoke,
       },
     });
-    // Cuts off a learner already in the lab (they sign in again to manage
-    // bookings; accepted). Membership is already gone, so a failure here is
-    // logged, not retried.
-    const ended = await endAuthentikSessions(api, pk);
-    if (!ended.ok) console.error(`reconciler: could not end sessions of ${pk}`);
   }
 }
