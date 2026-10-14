@@ -45,17 +45,20 @@ export type CardActions = {
   readonly cancel: boolean;
   // "This lab type can't be rescheduled right now."
   readonly cannotReschedule: boolean;
+  // "View lab access" (spec 0012 AC-6), between Reschedule and Cancel.
+  readonly viewAccess: boolean;
 };
 
 const NONE: CardActions = {
   reschedule: false,
   cancel: false,
   cannotReschedule: false,
+  viewAccess: false,
 };
 
 // Upcoming and Current cards can be cancelled, and rescheduled when the type
-// still has a bookable testbed. Past cards have no action yet (feature 14
-// adds "View lab access").
+// still has a bookable testbed. Current and Past cards link to their lab
+// access; Upcoming ones do not (the mock).
 export function cardActions(
   phase: BookingPhase,
   reschedulable: boolean,
@@ -67,8 +70,10 @@ export function cardActions(
         reschedule: reschedulable,
         cancel: true,
         cannotReschedule: !reschedulable,
+        viewAccess: phase === "Current",
       };
     case "Past":
+      return { ...NONE, viewAccess: true };
     case "Pending":
     case "Cancelled":
       return NONE;

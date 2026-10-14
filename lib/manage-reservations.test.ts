@@ -74,32 +74,45 @@ describe("sortCards", () => {
 
 // covers: AC-1, AC-6
 describe("cardActions", () => {
-  it.each(["Upcoming", "Current"] as const)(
-    "%s offers Reschedule and Cancel when reschedulable",
-    (phase) => {
+  it.each([
+    ["Upcoming", false],
+    ["Current", true],
+  ] as const)(
+    "%s offers Reschedule and Cancel when reschedulable (View lab access: %s)",
+    (phase, viewAccess) => {
       expect(cardActions(phase, true)).toEqual({
         reschedule: true,
         cancel: true,
         cannotReschedule: false,
+        viewAccess,
       });
       expect(cardActions(phase, false)).toEqual({
         reschedule: false,
         cancel: true,
         cannotReschedule: true,
+        viewAccess,
       });
     },
   );
 
-  it.each(["Past", "Pending", "Cancelled"] as const)(
-    "%s has no action",
-    (phase) => {
-      expect(cardActions(phase, true)).toEqual({
-        reschedule: false,
-        cancel: false,
-        cannotReschedule: false,
-      });
-    },
-  );
+  // covers: spec 0012 AC-6
+  it("gives a Past card View lab access only", () => {
+    expect(cardActions("Past", true)).toEqual({
+      reschedule: false,
+      cancel: false,
+      cannotReschedule: false,
+      viewAccess: true,
+    });
+  });
+
+  it.each(["Pending", "Cancelled"] as const)("%s has no action", (phase) => {
+    expect(cardActions(phase, true)).toEqual({
+      reschedule: false,
+      cancel: false,
+      cannotReschedule: false,
+      viewAccess: false,
+    });
+  });
 });
 
 // covers: AC-9

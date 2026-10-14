@@ -88,6 +88,14 @@ const pairs = (t: Tokens): readonly Pair[] => {
       t.cta.map((stop, i) => [`bg-nile-cta stop ${i + 1}`, stop] as const),
     ),
     ...on("nile-blue", c("nile-blue"), [["nile-blue-100", c("nile-blue-100")]]),
+    // The lab access card (spec 0012): the "Testbed assigned" row, the link
+    // rows, and the "Ended" tag (a neutral Badge) on a Past booking (AC-8).
+    ...on("nile-blue", c("nile-blue"), [
+      ["nile-blue-050", c("nile-blue-050")],
+      mist,
+    ]),
+    ...on("fg1", c("fg1"), [["nile-blue-050", c("nile-blue-050")]]),
+    ...on("ended tag fg2", c("fg2"), [inset]),
     // The learner footer's link (spec 0009 AC-5).
     ...on("primary", v("primary"), [mist]),
     ...on("success-fg", c("success-fg"), [["teal-100", c("teal-100")]]),

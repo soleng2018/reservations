@@ -115,7 +115,7 @@ async function ReservationList() {
                     : undefined
                 }
                 actions={
-                  actions.reschedule || actions.cancel ? (
+                  actions.reschedule || actions.cancel || actions.viewAccess ? (
                     <>
                       {actions.reschedule ? (
                         <Link
@@ -128,6 +128,19 @@ async function ReservationList() {
                           )}
                         >
                           Reschedule
+                        </Link>
+                      ) : null}
+                      {actions.viewAccess ? (
+                        <Link
+                          href={`/reservations/${card.id}`}
+                          className={cn(
+                            buttonVariants({
+                              variant: "outline",
+                              size: "sm",
+                            }),
+                          )}
+                        >
+                          View lab access
                         </Link>
                       ) : null}
                       {actions.cancel ? (
