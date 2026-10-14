@@ -64,6 +64,9 @@ Steps marked **(after task 6)** need the reconciler strand and the Cloudflare AP
 - [ ] `npx playwright test e2e/lab-access.spec.ts` → passes with axe at 1280 and 390, screenshots in `e2e/screenshots/*-lab-*.png` → AC-2, AC-6, AC-7
 - [ ] `npx vitest run tests/design-contrast.test.ts tests/os-password-scan.test.ts tests/secret-column-scan.test.ts` → the Ended tag pair is AA, `os_password` still appears only in `server/catalog/testbeds.ts`, and `secret_ciphertext` only in `server/catalog/api-keys.ts` → AC-1, AC-8, AC-11
 - [ ] `npm run authentik:setup` (dry run) → reports the HOL Labs objects as present with no changes, and no warning for `hol-lab-authorization` → AC-9
+- [ ] The same dry run needs `CLOUDFLARE_TEAM_DOMAIN=soleng2018.cloudflareaccess.com` (plus `AUTHENTIK_URL`, `AUTHENTIK_MASTER_TOKEN_FILE`, and `APP_URLS`); without it, expect it to stop with "CLOUDFLARE_TEAM_DOMAIN is missing" and read nothing → AC-9
+- [ ] `npx playwright test e2e/hol-labs.spec.ts e2e/isolation.spec.ts` → a learner passes HOL Labs only while in a `pod-*` group (its own throwaway `pod-hol-test-e2e-labs`, deleted after), with that group in the `groups` claim; `cloudflare-integration` stays denied meanwhile; an admin passes with no group; no code ever reaches Cloudflare → AC-9 (spec 0003 AC-17, AC-19)
+- [ ] With the worker off, read `cloudflareRevokeConfig` once against the real database (a throwaway `tsx --conditions=react-server` script that prints only the kind) → `off` until the owner adds the `CLOUDFLARE` key, then `on`; never the token → AC-11
 
 ## Acceptance-criteria coverage
 - AC-1: DB tests in `server/booking/lab-access.test.ts`, Value sourcing ownership and verified gate steps
