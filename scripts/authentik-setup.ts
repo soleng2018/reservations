@@ -3,7 +3,8 @@
 //   AUTHENTIK_URL=https://authentik.example \
 //   AUTHENTIK_MASTER_TOKEN_FILE=~/secrets/authentik_master_token \
 //   APP_URLS=https://hol.example,http://localhost:3000 \
-//   npm run authentik:setup -- [--apply] [--secret-out <path>]
+//   CLOUDFLARE_TEAM_DOMAIN=<team>.cloudflareaccess.com \
+//   npm run authentik:setup -- [--apply] [--secret-out <path>] [--labs-secret-out <path>]
 //
 // Without --apply it only prints what it would change. The master token is
 // read here and nowhere else: web and worker never load it, so it has no
@@ -20,6 +21,12 @@ import {
   HOL_AUTHORIZATION_FLOW_SLUG,
   ISOLATION_BINDING_SETTINGS,
   ISOLATION_POLICY,
+  LAB_AUTHORIZATION_FLOW_SLUG,
+  LABS_APP_NAME,
+  LABS_APP_SLUG,
+  LABS_BINDING_SETTINGS,
+  LABS_POLICY,
+  LABS_PROVIDER_NAME,
   LEARNER_PATH,
   PROVIDER_NAME,
   PROVISIONING_ACCOUNT,
@@ -29,12 +36,17 @@ import {
   RECOVERY_FLOW_SLUG,
   desiredHolAuthorizationFlow,
   desiredIsolationBinding,
+  desiredLabAuthorizationFlow,
+  desiredLabsProvider,
   desiredProvider,
   diffFields,
   holFlowProblems,
   isolationExpression,
   isolationFlowProblems,
+  labsAccessExpression,
+  labsAppProblems,
   parseAppUrls,
+  parseTeamDomain,
   planPermissions,
   uncoveredProviders,
   type FieldChange,
@@ -55,6 +67,7 @@ const { values: args } = parseArgs({
   options: {
     apply: { type: "boolean", default: false },
     "secret-out": { type: "string" },
+    "labs-secret-out": { type: "string" },
   },
 });
 
@@ -142,6 +155,11 @@ const write = async <T>(
   say(`  ${apply ? "apply " : "would "}  ${label}`);
   return apply ? run() : undefined;
 };
+
+// Applications are listed only to the token's own user unless asked for the
+// full list, so without this the script would miss `hol` and try to create it.
+const appLookup = (slug: string) =>
+  `/core/applications/?superuser_full_list=true&slug=${q(slug)}`;
 
 // ---- Steps -----------------------------------------------------------------
 
@@ -234,11 +252,7 @@ async function ensureApplication(providerPk: number | undefined) {
     name: z.string(),
     provider: z.number().nullable(),
   });
-  const current = await one(
-    app,
-    `/core/applications/?slug=${q(APP_SLUG)}`,
-    "application",
-  );
+  const current = await one(app, appLookup(APP_SLUG), "application");
   const desired = {
     name: APP_NAME,
     slug: APP_SLUG,
@@ -409,19 +423,25 @@ async function ensureRecoveryFlow(): Promise<string | undefined> {
   return flow?.pk;
 }
 
-// hol-authorization (AC-17): HOL's own authorization flow, with nothing
-// bound to it, so the learner deny on the default flows never reaches HOL.
-async function ensureHolAuthorizationFlow(): Promise<string | undefined> {
-  say("HOL authorization flow");
+// hol-authorization (AC-17) and hol-lab-authorization (AC-19): an app's own
+// authorization flow, with nothing bound to it, so the learner deny on the
+// default flows never reaches HOL or HOL Labs.
+async function ensureOwnAuthorizationFlow(
+  title: string,
+  desired:
+    typeof desiredHolAuthorizationFlow | typeof desiredLabAuthorizationFlow,
+): Promise<string | undefined> {
+  say(title);
+  const slug = desired.slug;
   const holFlow = flowSchema.extend({ policybindingmodel_ptr_id: z.string() });
   const current = await one(
     holFlow,
-    `/flows/instances/?slug=${q(HOL_AUTHORIZATION_FLOW_SLUG)}`,
+    `/flows/instances/?slug=${q(slug)}`,
     "flow",
   );
   if (!current) {
-    const made = await write(`create flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, () =>
-      call(holFlow, "POST", "/flows/instances/", desiredHolAuthorizationFlow),
+    const made = await write(`create flow ${slug}`, () =>
+      call(holFlow, "POST", "/flows/instances/", desired),
     );
     return made?.pk;
   }
@@ -432,27 +452,183 @@ async function ensureHolAuthorizationFlow(): Promise<string | undefined> {
     ),
     list(pkOnly, `/flows/bindings/?target=${current.pk}&page_size=50`),
   ]);
-  const problems = holFlowProblems({
-    designation: current.designation,
-    policyBindings: policies.length,
-    stageBindings: stages.length,
-  });
+  const problems = holFlowProblems(
+    {
+      designation: current.designation,
+      policyBindings: policies.length,
+      stageBindings: stages.length,
+    },
+    slug,
+  );
   if (problems.length > 0)
     throw new Error(
-      `${HOL_AUTHORIZATION_FLOW_SLUG} would not keep HOL open, nothing written:\n  ${problems.join("\n  ")}`,
+      `${slug} would not keep its app open, nothing written:\n  ${problems.join("\n  ")}`,
     );
-  const changes = diffFields(current, desiredHolAuthorizationFlow);
-  reportChanges(`flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, changes);
+  const changes = diffFields(current, desired);
+  reportChanges(`flow ${slug}`, changes);
   if (changes.length > 0)
-    await write(`update flow ${HOL_AUTHORIZATION_FLOW_SLUG}`, () =>
+    await write(`update flow ${slug}`, () =>
       call(
         holFlow,
         "PATCH",
-        `/flows/instances/${q(HOL_AUTHORIZATION_FLOW_SLUG)}/`,
+        `/flows/instances/${q(slug)}/`,
         Object.fromEntries(changes.map((c) => [c.field, c.to])),
       ),
     );
   return current.pk;
+}
+
+// On a dry run before hol-lab-authorization exists, this stands in for its pk.
+const PENDING_LAB_FLOW = `<${LAB_AUTHORIZATION_FLOW_SLUG}>`;
+
+// HOL Labs (AC-19): adopted by name and slug when they exist (spike 3 made
+// them by hand), else created. Returns the provider, and whether this run
+// created it (only then is its secret shown).
+async function ensureLabsProvider(
+  teamDomain: string,
+  labFlowPk: string | undefined,
+) {
+  say("HOL Labs provider");
+  const desired = desiredLabsProvider({
+    teamDomain,
+    authorizationFlow: labFlowPk ?? PENDING_LAB_FLOW,
+    ...(await lookups()),
+  });
+  const current = await one(
+    providerSchema,
+    `/providers/oauth2/?name=${q(LABS_PROVIDER_NAME)}`,
+    "provider",
+  );
+  if (!current) {
+    const made = await write(`create provider ${LABS_PROVIDER_NAME}`, () =>
+      call(providerSchema, "POST", "/providers/oauth2/", desired),
+    );
+    return made && { provider: made, created: true };
+  }
+  const changes = diffFields(current, desired);
+  reportChanges(LABS_PROVIDER_NAME, changes);
+  if (changes.length === 0) return { provider: current, created: false };
+  const patch = Object.fromEntries(changes.map((c) => [c.field, c.to]));
+  const updated = await write(`update provider ${LABS_PROVIDER_NAME}`, () =>
+    call(providerSchema, "PATCH", `/providers/oauth2/${current.pk}/`, patch),
+  );
+  return { provider: updated ?? current, created: false };
+}
+
+// The HOL Labs application and hol-labs-access bound to it, alone.
+async function ensureLabsApplication(providerPk: number | undefined) {
+  say("HOL Labs application");
+  const app = z.looseObject({
+    pk: z.string(),
+    slug: z.string(),
+    name: z.string(),
+    provider: z.number().nullable(),
+  });
+  const policySchema = z.looseObject({
+    pk: z.string(),
+    name: z.string(),
+    expression: z.string(),
+  });
+  const policyBinding = z.looseObject({
+    pk: z.string(),
+    policy: z.string().nullable(),
+    order: z.number(),
+    enabled: z.boolean(),
+    negate: z.boolean(),
+    timeout: z.number(),
+    failure_result: z.boolean(),
+  });
+  const desired = {
+    name: LABS_APP_NAME,
+    slug: LABS_APP_SLUG,
+    provider: providerPk ?? null,
+  };
+  const expression = labsAccessExpression();
+
+  const currentApp = await one(app, appLookup(LABS_APP_SLUG), "application");
+  const currentPolicy = await one(
+    policySchema,
+    `/policies/expression/?name=${q(LABS_POLICY)}`,
+    LABS_POLICY,
+  );
+  const bindings = currentApp
+    ? await list(
+        policyBinding,
+        `/policies/bindings/?target=${currentApp.pk}&page_size=50`,
+      )
+    : [];
+  const problems = labsAppProblems(bindings, currentPolicy?.pk);
+  if (problems.length > 0)
+    throw new Error(
+      `cannot bind ${LABS_POLICY}, nothing written:\n  ${problems.join("\n  ")}`,
+    );
+
+  // The policy first, so the app is never open without it.
+  const policy =
+    currentPolicy ??
+    (await write(`create policy ${LABS_POLICY}`, () =>
+      call(policySchema, "POST", "/policies/expression/", {
+        name: LABS_POLICY,
+        expression,
+      }),
+    ));
+  if (currentPolicy) {
+    const changes = diffFields(currentPolicy, { expression });
+    reportChanges(`policy ${LABS_POLICY}`, changes);
+    if (changes.length > 0)
+      await write(`update policy ${LABS_POLICY} expression`, () =>
+        call(
+          policySchema,
+          "PATCH",
+          `/policies/expression/${currentPolicy.pk}/`,
+          {
+            expression,
+          },
+        ),
+      );
+  }
+
+  let appPk = currentApp?.pk;
+  if (!currentApp) {
+    const made = await write(`create application ${LABS_APP_SLUG}`, () =>
+      call(app, "POST", "/core/applications/", desired),
+    );
+    appPk = made?.pk;
+  } else {
+    const changes = diffFields(currentApp, desired);
+    reportChanges(`application ${LABS_APP_SLUG}`, changes);
+    if (changes.length > 0)
+      await write(`update application ${LABS_APP_SLUG}`, () =>
+        call(app, "PATCH", `/core/applications/${q(LABS_APP_SLUG)}/`, desired),
+      );
+  }
+
+  if (!policy || !appPk) {
+    say(`  would   bind ${LABS_POLICY} to ${LABS_APP_SLUG}`);
+    return;
+  }
+  const have = bindings.find((b) => b.policy === policy.pk);
+  if (!have) {
+    await write(`bind ${LABS_POLICY} to ${LABS_APP_SLUG}`, () =>
+      call(policyBinding, "POST", "/policies/bindings/", {
+        target: appPk,
+        policy: policy.pk,
+        ...LABS_BINDING_SETTINGS,
+      }),
+    );
+    return;
+  }
+  const changes = diffFields(have, LABS_BINDING_SETTINGS);
+  reportChanges(`${LABS_APP_SLUG} binding ${have.pk}`, changes);
+  if (changes.length > 0)
+    await write(`update ${LABS_APP_SLUG} binding ${have.pk}`, () =>
+      call(
+        policyBinding,
+        "PATCH",
+        `/policies/bindings/${have.pk}/`,
+        LABS_BINDING_SETTINGS,
+      ),
+    );
 }
 
 // hol-invalidation and its logout stage came from an earlier version of this
@@ -506,7 +682,10 @@ async function removeLegacyInvalidation() {
 // default authorization flow. Both flows are checked before either is
 // written, and nothing on them changes except our one binding. It runs after
 // the HOL provider is on hol-authorization, so HOL is never denied.
-async function ensureIsolation(holFlowPk: string | undefined) {
+async function ensureIsolation(
+  holFlowPk: string | undefined,
+  labFlowPk: string | undefined,
+) {
   say("Learner isolation");
   const authFlow = z.looseObject({
     pk: z.string(),
@@ -628,6 +807,7 @@ async function ensureIsolation(holFlowPk: string | undefined) {
   uncoveredProviders(providers, [
     ...flows.map(({ flow }) => flow.pk),
     ...(holFlowPk ? [holFlowPk] : []),
+    ...(labFlowPk ? [labFlowPk] : []),
   ]).forEach((p) =>
     say(
       `  warn    provider ${p.name} uses authorization flow ${p.authorization_flow}; isolation does not cover it`,
@@ -752,25 +932,53 @@ async function main(): Promise<number> {
     console.error(urls.error);
     return 1;
   }
+  const team = parseTeamDomain(process.env.CLOUDFLARE_TEAM_DOMAIN);
+  if (!team.ok) {
+    console.error(team.error);
+    return 1;
+  }
   say(
     `${apply ? "Applying" : "Dry run (pass --apply to write)"} against ${env.AUTHENTIK_URL}`,
   );
-  say(`App URLs: ${urls.urls.join(", ")}\n`);
+  say(`App URLs: ${urls.urls.join(", ")}`);
+  say(`Cloudflare team domain: ${team.domain}\n`);
 
   // Order matters (spec 0003 Bindings): HOL moves to its own flow before the
   // deny is bound to the default flows.
-  const holFlowPk = await ensureHolAuthorizationFlow();
+  const holFlowPk = await ensureOwnAuthorizationFlow(
+    "HOL authorization flow",
+    desiredHolAuthorizationFlow,
+  );
   const provider = await ensureProvider(urls.urls, holFlowPk);
   await removeLegacyInvalidation();
   await ensureApplication(provider?.pk);
   await ensureAdminGroup();
   const flowPk = await ensureRecoveryFlow();
   await ensureBrandRecovery(flowPk);
-  await ensureIsolation(holFlowPk);
+  const labFlowPk = await ensureOwnAuthorizationFlow(
+    "HOL Labs authorization flow",
+    desiredLabAuthorizationFlow,
+  );
+  const labs = await ensureLabsProvider(team.domain, labFlowPk);
+  await ensureLabsApplication(labs?.provider.pk);
+  await ensureIsolation(holFlowPk, labFlowPk);
   const account = await ensureProvisioning();
   say(
     `\nLearner path: ${LEARNER_PATH} (Authentik creates a path when the first user is put in it; nothing to set up)`,
   );
+
+  if (labs) {
+    // The client id goes into Cloudflare's "Reservations HOL Labs" login.
+    say(`\nHOL Labs client id: ${labs.provider.client_id}`);
+    // Its secret only when this run made the provider, never on a rerun.
+    if (labs.created) {
+      const labsOut = args["labs-secret-out"];
+      if (labsOut) {
+        writeFileSync(labsOut, labs.provider.client_secret, { mode: 0o600 });
+        say(`HOL Labs client secret written to ${labsOut}`);
+      } else say(`HOL Labs client secret: ${labs.provider.client_secret}`);
+    }
+  }
 
   if (!provider || !apply) {
     say("\nDry run done. Nothing was written.");

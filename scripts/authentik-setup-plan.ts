@@ -39,9 +39,12 @@ export const PROVISIONING_PERMISSIONS: readonly string[] = [
   "authentik_core.delete_authenticatedsession",
 ].toSorted();
 
+// Authentik returns `redirect_uri_type` on every entry, so it is part of
+// what we want, or every run would report a change.
 export type RedirectUri = {
   readonly matching_mode: "strict" | "regex";
   readonly url: string;
+  readonly redirect_uri_type: "authorization";
 };
 
 // One change to a field: what it is now and what it will become.
@@ -100,8 +103,12 @@ export const redirectUris = (
   appUrls.map((origin): RedirectUri => {
     const url = `${origin}${CALLBACK_PATH}`;
     return origin.startsWith("http:")
-      ? { matching_mode: "regex", url: exactRegex(url) }
-      : { matching_mode: "strict", url };
+      ? {
+          matching_mode: "regex",
+          url: exactRegex(url),
+          redirect_uri_type: "authorization",
+        }
+      : { matching_mode: "strict", url, redirect_uri_type: "authorization" };
   });
 
 // Order free comparison for arrays of primitives or plain objects.
@@ -224,33 +231,32 @@ export const isolationFlowProblems = (
     : []),
 ];
 
-// Why hol-authorization would not keep HOL open for learners: it must be an
-// authorization flow with nothing bound to it, stages or policies.
-export const holFlowProblems = (flow: {
-  readonly designation: string;
-  readonly policyBindings: number;
-  readonly stageBindings: number;
-}): readonly string[] => [
+// Why an app's own authorization flow (hol-authorization, or
+// hol-lab-authorization for HOL Labs) would not keep that app open for
+// learners: it must be an authorization flow with nothing bound to it,
+// stages or policies.
+export const holFlowProblems = (
+  flow: {
+    readonly designation: string;
+    readonly policyBindings: number;
+    readonly stageBindings: number;
+  },
+  slug: string = HOL_AUTHORIZATION_FLOW_SLUG,
+): readonly string[] => [
   ...(flow.designation === "authorization"
     ? []
-    : [
-        `${HOL_AUTHORIZATION_FLOW_SLUG}: designation is ${flow.designation}, expected authorization`,
-      ]),
+    : [`${slug}: designation is ${flow.designation}, expected authorization`]),
   ...(flow.policyBindings === 0
     ? []
-    : [
-        `${HOL_AUTHORIZATION_FLOW_SLUG}: has ${flow.policyBindings} policy binding(s)`,
-      ]),
+    : [`${slug}: has ${flow.policyBindings} policy binding(s)`]),
   ...(flow.stageBindings === 0
     ? []
-    : [
-        `${HOL_AUTHORIZATION_FLOW_SLUG}: has ${flow.stageBindings} stage binding(s)`,
-      ]),
+    : [`${slug}: has ${flow.stageBindings} stage binding(s)`]),
 ];
 
 // Providers isolation does not cover: their authorization flow is neither a
-// default flow nor hol-authorization, so the script warns about them (and
-// never edits them).
+// default flow, nor hol-authorization, nor hol-lab-authorization, so the
+// script warns about them (and never edits them).
 export const uncoveredProviders = (
   providers: readonly {
     readonly name: string;
@@ -259,6 +265,93 @@ export const uncoveredProviders = (
   coveredFlowPks: readonly string[],
 ): readonly { readonly name: string; readonly authorization_flow: string }[] =>
   providers.filter((p) => !coveredFlowPks.includes(p.authorization_flow));
+
+// ---- HOL Labs (AC-19, spec 0012) ------------------------------------------
+// The login Cloudflare Access uses for the lab VMs. Learners pass only while
+// they are in a testbed `pod-*` group; each VM's Cloudflare policy then checks
+// the exact `pod-<slug>` in the groups claim.
+
+export const LABS_APP_SLUG = "hol-labs";
+export const LABS_APP_NAME = "HOL Labs";
+export const LABS_PROVIDER_NAME = "HOL Labs";
+export const LAB_AUTHORIZATION_FLOW_SLUG = "hol-lab-authorization";
+export const LABS_POLICY = "hol-labs-access";
+
+export type ParsedTeamDomain =
+  | { readonly ok: true; readonly domain: string }
+  | { readonly ok: false; readonly error: string };
+
+// CLOUDFLARE_TEAM_DOMAIN: the Zero Trust team's host, e.g.
+// soleng2018.cloudflareaccess.com (a bare host, no scheme or path).
+export function parseTeamDomain(raw: string | undefined): ParsedTeamDomain {
+  const domain = (raw ?? "").trim().toLowerCase();
+  if (domain === "")
+    return { ok: false, error: "CLOUDFLARE_TEAM_DOMAIN is missing" };
+  return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.cloudflareaccess\.com$/.test(domain)
+    ? { ok: true, domain }
+    : {
+        ok: false,
+        error:
+          "CLOUDFLARE_TEAM_DOMAIN must be a bare host like <team>.cloudflareaccess.com",
+      };
+}
+
+export const desiredLabAuthorizationFlow = {
+  ...desiredHolAuthorizationFlow,
+  name: "HOL lab authorization",
+  slug: LAB_AUTHORIZATION_FLOW_SLUG,
+} as const;
+
+export type LabsProviderInputs = Omit<ProviderInputs, "appUrls"> & {
+  readonly teamDomain: string;
+};
+
+export const desiredLabsProvider = (i: LabsProviderInputs) => ({
+  name: LABS_PROVIDER_NAME,
+  client_type: "confidential",
+  grant_types: ["authorization_code", "refresh_token"],
+  // Cloudflare only needs a stable id; it never sees the Authentik pk.
+  sub_mode: "hashed_user_id",
+  issuer_mode: "per_provider",
+  include_claims_in_id_token: true,
+  authorization_flow: i.authorizationFlow,
+  invalidation_flow: i.invalidationFlow,
+  signing_key: i.signingKey,
+  property_mappings: [...i.scopeMappings].toSorted(),
+  redirect_uris: [
+    {
+      matching_mode: "strict",
+      url: `https://${i.teamDomain}/cdn-cgi/access/callback`,
+      redirect_uri_type: "authorization",
+    },
+  ] satisfies readonly RedirectUri[],
+});
+
+// Reads only the user's path and groups, never the app or the VM.
+export const labsAccessExpression = (): string =>
+  [
+    "# HOL Labs (Cloudflare Access for the lab VMs). Staff and admins pass;",
+    "# a booking created learner passes only while in a testbed pod-* group,",
+    "# which the HOL worker manages on the booking clock. Cloudflare's own",
+    "# per app rule then checks the exact pod-<slug> in the groups claim.",
+    'path = getattr(request.user, "path", "") or ""',
+    `if not (path == "${LEARNER_PATH}" or path.startswith("${LEARNER_PATH}/")):`,
+    "    return True",
+    'return request.user.groups.filter(name__startswith="pod-").exists()',
+  ].join("\n");
+
+export const LABS_BINDING_SETTINGS = ISOLATION_BINDING_SETTINGS;
+
+// Why binding hol-labs-access to the application would not hold: under
+// `any`, a second passing binding (a policy, group, or user) would let every
+// learner in, so the app must hold no other binding.
+export const labsAppProblems = (
+  bindings: readonly { readonly policy: string | null }[],
+  policyPk: string | undefined,
+): readonly string[] =>
+  bindings.some((b) => b.policy === null || b.policy !== policyPk)
+    ? [`${LABS_APP_SLUG}: has a binding other than ${LABS_POLICY}`]
+    : [];
 
 export type PermissionPlan = {
   readonly add: readonly string[];
