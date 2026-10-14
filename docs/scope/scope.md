@@ -43,7 +43,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 12 | Availability & booking rules | Slice 3 | done |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | done |
 | 14 | Lab access & booking result screens | Slice 3 | in-progress |
-| 15 | Email delivery & booking confirmations | Slice 4 | planned |
+| 15 | Email delivery & booking confirmations | Slice 4 | in-progress |
 | 16 | Set password / welcome email | Slice 4 | planned |
 | 17 | Reminder before start | Slice 4 | planned |
 | 18 | Admin audit log | Slice 5 | planned |
@@ -242,10 +242,19 @@ spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/re
 
 ## Slice 4: Notifications
 
-### 15. Email delivery & booking confirmations · needs a decision
+### 15. Email delivery & booking confirmations · in-progress
 Set up email sending and shared templates (the umbrella that features 16 and 17 build on), then send a confirmation with a calendar invite on book, reschedule, and cancel, with times in the learner's timezone. Book, reschedule, and cancel use the mock's email templates.
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
-- [ ] Design it (spec): `/architect email delivery & booking confirmations`
+- [x] Design it (spec): `/architect email delivery & booking confirmations`
+- [ ] Build it: `/develop email delivery & booking confirmations`
+  - [ ] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` key on create with its save check, `google:connect`, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
+  - [ ] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
+  - [ ] Calendar mirror and backfill (AC-19, 20)
+  - [ ] Key edit and the console Emails section (AC-4, 21)
+  - [ ] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
+- [ ] Verify it: `/check verify email delivery & booking confirmations`
+- [ ] Test it: `/test email delivery & booking confirmations`
+spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md)
 
 ### 16. Set password / welcome email
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
@@ -276,6 +285,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Learner timezone setting**: let a learner change their account timezone from the manage page (today it is fixed at first booking or by an admin) · from spec 0011
 - **Social card with headline text**: draw the landing headline into the link preview image (`opengraph-image.tsx` with a committed Inter font) if marketing wants text in previews · from spec 0009
 - **Secret rotation script**: `secrets:rotate` encrypts every stored secret again under the active keyring key in one transaction; needed once something decrypts them · from spec 0006
+- **Email breaker alert**: tell someone (a console banner or a note to the Ops BCC) when Google has rejected the HOL mailbox key for over an hour · from spec 0013
 
 ## Legend
 

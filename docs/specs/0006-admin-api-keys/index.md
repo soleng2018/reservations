@@ -3,6 +3,7 @@
 **Date**: 2026-10-10
 **Status**: Accepted
 **Amended**: 2026-10-14 by [spec 0012](../0012-lab-access-result-screens/index.md): a third key type, `CLOUDFLARE`, that the worker reads (AC-3, AC-5, AC-12)
+**Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): a fourth key type, `GOOGLE`, entered as an uploaded key file with Calendar ID, Dev inbox, and Ops BCC fields; `googleMailConfig` is `decryptSecret`'s second production caller (worker only).
 
 ## Summary
 

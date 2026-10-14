@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted
+**Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): `integration_secrets` is dropped from the target; `api_keys` gains `sender_email`, `calendar_id`, `dev_inbox`, `ops_bcc`; `email_messages` is built with `sent_to`, `details`, and a `suppressed` status, without the welcome unique index (left to feature 16).
 
 ## Summary
 
