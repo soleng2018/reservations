@@ -204,6 +204,7 @@ test("a learner books again, reschedules, and cancels from /reservations", async
         typeName: TYPE,
         startsAt: moved,
         endsAt: moved,
+        access: null,
       },
     },
   ]);

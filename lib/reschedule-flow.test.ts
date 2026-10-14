@@ -24,6 +24,7 @@ const DONE: RescheduleResult = {
   typeName: "Basic",
   startsAt: START,
   endsAt: "2026-10-13T15:00:00.000Z",
+  access: null,
 };
 const error = (
   code: Extract<RescheduleResult, { kind: "error" }>["code"],

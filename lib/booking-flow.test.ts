@@ -37,6 +37,7 @@ const BOOKED: BookState = {
   endsAt: "2026-10-13T17:00:00.000Z",
   timezone: "America/New_York",
   newUser: true,
+  access: null,
 };
 const error = (code: Exclude<BookState, { kind: "booked" | "idle" }>["code"]) =>
   ({ kind: "error", code, fields: {} }) as const;

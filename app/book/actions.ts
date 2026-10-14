@@ -10,11 +10,13 @@ import {
   type DetailsErrorCode,
 } from "@/lib/booking-input";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
+import type { LabLinks } from "@/lib/lab-access";
 import { err, ok, type Result } from "@/lib/result";
 import { authentik } from "@/server/authentik/client";
 import { sessionAccount, type LearnerAccount } from "@/server/booking/account";
 import { firstFreeTestbed, startsFor } from "@/server/booking/availability";
 import { checkGuestDetails } from "@/server/booking/details-check";
+import { sessionLabLinks } from "@/server/booking/lab-access";
 import {
   bookAsGuest,
   type GuestBookingError,
@@ -216,6 +218,8 @@ export type BookState =
       readonly endsAt: string;
       readonly timezone: string;
       readonly newUser: boolean;
+      // Only for the signed in learner who booked (spec 0012 AC-2, AC-3).
+      readonly access: LabLinks | null;
     }
   | {
       readonly kind: "error";
@@ -318,6 +322,8 @@ export async function bookAction(
 
   const booked = await bookAsGuest(authentik(), conn, input);
   if (!booked.ok) return failed(toCode(booked.error));
+  // Read after the saga committed, from the session account read above.
+  const access = await sessionLabLinks(conn, account?.id, booked.value);
   return {
     kind: "booked",
     typeName: booked.value.typeName,
@@ -326,5 +332,6 @@ export async function bookAction(
     endsAt: booked.value.endsAt.toISOString(),
     timezone: input.timezone,
     newUser: booked.value.newUser,
+    access,
   };
 }

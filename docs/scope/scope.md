@@ -231,7 +231,7 @@ Access is enforced by Authentik: the learner is in the assigned testbed's group 
 - [ ] Build it: `/develop lab access & booking result screens`
   - [ ] Spike 3 with the owner: Cloudflare Access revoke ends an open browser VM session (AC-10)
   - [x] Tracer: `ownLabAccess`, the lab access card, the `/reservations/[id]` detail page, and View lab access on Current and Past cards (AC-1, 6, 7, 8)
-  - [ ] Success screens: lab access card on book and reschedule success, guest and new learner copy (AC-2, 3, 4, 5)
+  - [x] Success screens: lab access card on book and reschedule success, guest and new learner copy (AC-2, 3, 4, 5)
   - [ ] Cloudflare revoke strand: env, revoker with retries and breaker, reconciler order and audit outcome (AC-9, 10, 11, 12)
   - [ ] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
 - [ ] Verify it: `/check verify lab access & booking result screens`

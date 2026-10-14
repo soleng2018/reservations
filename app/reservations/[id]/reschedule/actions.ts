@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { RescheduleErrorCode } from "@/lib/booking-input";
+import type { LabLinks } from "@/lib/lab-access";
 import { requireLearner } from "@/server/auth/require";
 import { firstFreeTestbed, startsFor } from "@/server/booking/availability";
+import { ownLabLinks } from "@/server/booking/lab-access";
 import {
   ownReschedulable,
   rescheduleOwnBooking,
@@ -110,6 +112,8 @@ export type RescheduleResult =
       readonly typeName: string;
       readonly startsAt: string; // ISO
       readonly endsAt: string; // ISO
+      // The moved booking's links, its new testbed's (spec 0012 AC-5).
+      readonly access: LabLinks | null;
     }
   | { readonly kind: "error"; readonly code: RescheduleErrorCode };
 
@@ -146,11 +150,14 @@ export async function rescheduleAction(
   const moved = await rescheduleOwnBooking(conn, user.id, input.data);
   revalidatePath("/reservations");
   if (!moved.ok) return failed(moved.error);
+  // Read after the move committed; a miss or a failed read leaves the card out.
+  const access = await ownLabLinks(conn, user.id, input.data.bookingId);
   return {
     kind: "rescheduled",
     testbedName: moved.value.testbedName,
     typeName: moved.value.typeName,
     startsAt: moved.value.startsAt.toISOString(),
     endsAt: moved.value.endsAt.toISOString(),
+    access,
   };
 }

@@ -127,6 +127,7 @@ describe.skipIf(!hasDb)("bookAction (AC-4, AC-6)", () => {
         ).toISOString(),
         timezone: "America/New_York",
         newUser: true,
+        access: null,
       });
     }));
 
@@ -669,5 +670,50 @@ describe.skipIf(!hasDb)("signed in /book (spec 0011 AC-13)", () => {
         .where("email", "=", email)
         .executeTakeFirstOrThrow();
       expect(await bookingsOf(trx, guest.id)).toHaveLength(1);
+    }));
+});
+
+// covers: spec 0012 AC-2, AC-3
+describe.skipIf(!hasDb)("bookAction lab access (spec 0012)", () => {
+  const PORTAL = "https://lab-portal.example.test";
+
+  // A verified learner and a type whose only testbed has distinct URLs.
+  async function learnerWorld(trx: Kysely<DB>) {
+    const { type, values } = await setup(trx);
+    await trx
+      .updateTable("testbeds")
+      .set({ portal_url: PORTAL, lms_url: "https://lab-lms.example.test" })
+      .where("testbed_type_id", "=", type.id)
+      .execute();
+    const learner = await makeUser(trx, { email_verified_at: new Date() });
+    return { values, learner };
+  }
+
+  it("gives the signed in learner who booked their links", () =>
+    run(async (trx) => {
+      const { values, learner } = await learnerWorld(trx);
+      signIn(learner);
+      const state = await bookAction(IDLE, form({ ...values, asAccount: "1" }));
+      expect(state).toMatchObject({
+        kind: "booked",
+        access: {
+          portalUrl: PORTAL,
+          lmsUrl: "https://lab-lms.example.test",
+          clients: [],
+        },
+      });
+    }));
+
+  it("never gives a guest links, even with a verified learner's email", () =>
+    run(async (trx) => {
+      const { values, learner } = await learnerWorld(trx);
+      const state = await bookAction(
+        IDLE,
+        form({ ...values, email: learner.email, name: learner.name }),
+      );
+      expect(state).toMatchObject({ kind: "booked", access: null });
+      const json = JSON.stringify(state);
+      expect(json).not.toContain(PORTAL);
+      expect(json).not.toContain("lab-lms.example.test");
     }));
 });

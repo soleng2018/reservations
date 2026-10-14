@@ -141,6 +141,7 @@ export const booked = (startsAt: string, endsAt: string) => ({
   endsAt,
   timezone: "America/New_York",
   newUser: true,
+  access: null,
 });
 
 export const failed = (code: string) => ({ kind: "error", code, fields: {} });

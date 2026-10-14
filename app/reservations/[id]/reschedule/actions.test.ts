@@ -174,9 +174,54 @@ describe.skipIf(!hasDb)("rescheduleAction", () => {
         typeName: type.name,
         startsAt: slot(72).toISOString(),
         endsAt: slot(74).toISOString(),
+        // An unverified learner gets no links (spec 0012 AC-1).
+        access: null,
       });
       expect(await startsOf(trx, booking.id)).toEqual(slot(72));
       expect(ctx.revalidated).toEqual(["/reservations"]);
+    }));
+
+  // covers: spec 0012 AC-5
+  it("returns the new testbed's links when the move changes the testbed", () =>
+    withConn(async (trx) => {
+      const { booking, testbed, type, user } = await signedIn(trx);
+      await trx
+        .updateTable("users")
+        .set({ email_verified_at: new Date() })
+        .where("id", "=", user.id)
+        .execute();
+      // The kept testbed is busy at the new time, so the move goes elsewhere.
+      const other = await makeUser(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: other.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(72),
+          ends_at: slot(74),
+          status: "confirmed",
+        })
+        .execute();
+      const moved = await makeTestbed(trx, type.id, {
+        portal_url: "https://moved-portal.example.test",
+        lms_url: "https://moved-lms.example.test",
+      });
+      expect(
+        await rescheduleAction(
+          booking.id,
+          booking.version,
+          slot(72).toISOString(),
+        ),
+      ).toMatchObject({
+        kind: "rescheduled",
+        testbedName: moved.name,
+        access: {
+          portalUrl: "https://moved-portal.example.test",
+          lmsUrl: "https://moved-lms.example.test",
+          clients: [],
+        },
+      });
     }));
 
   it("answers invalid for bad input", () =>
