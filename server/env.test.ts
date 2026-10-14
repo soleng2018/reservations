@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appUrl, cloudflareEnv, isProduction, workerEnv } from "./env";
+import { appUrl, isProduction } from "./env";
 
 describe("isProduction", () => {
   afterEach(() => {
@@ -157,72 +157,5 @@ describe("appUrl", () => {
   ])("throws when APP_URL is %s", (_, value) => {
     vi.stubEnv("APP_URL", value);
     expect(() => appUrl()).toThrow();
-  });
-});
-
-// covers: spec 0012 AC-11
-describe("cloudflareEnv", () => {
-  const ACCOUNT = "0123456789abcdef0123456789abcdef";
-  const set = (account?: string, token?: string, file?: string) => {
-    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", account);
-    vi.stubEnv("CLOUDFLARE_API_TOKEN", token);
-    vi.stubEnv("CLOUDFLARE_API_TOKEN_FILE", file);
-  };
-  const tokenFile = async (content: string) => {
-    const { mkdtempSync, writeFileSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
-    const path = await import("node:path");
-    const file = path.join(mkdtempSync(path.join(tmpdir(), "cf-")), "t");
-    writeFileSync(file, content);
-    return file;
-  };
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("is off when both are unset", () => {
-    set();
-    expect(cloudflareEnv()).toBeNull();
-  });
-
-  it("reads the token from the file", async () => {
-    set(ACCOUNT, undefined, await tokenFile("cf-secret-token\n"));
-    expect(cloudflareEnv()).toEqual({
-      accountId: ACCOUNT,
-      apiToken: "cf-secret-token",
-    });
-  });
-
-  it("fails when only one is set, without printing the token", () => {
-    set(ACCOUNT);
-    expect(() => cloudflareEnv()).toThrow("set both");
-    set(undefined, "cf-secret-token");
-    expect(() => cloudflareEnv()).toThrow("set both");
-    try {
-      cloudflareEnv();
-    } catch (e) {
-      expect(String(e)).not.toContain("cf-secret-token");
-    }
-  });
-
-  it("fails on an empty or unreadable token file", async () => {
-    set(ACCOUNT, undefined, await tokenFile("  \n"));
-    expect(() => cloudflareEnv()).toThrow("CLOUDFLARE_API_TOKEN_FILE is empty");
-    set(ACCOUNT, undefined, "/nonexistent/cf-token");
-    expect(() => cloudflareEnv()).toThrow("can't be read");
-  });
-
-  it("fails on an account id that is not one", () => {
-    set("../../zones", "cf-secret-token");
-    expect(() => cloudflareEnv()).toThrow("not a Cloudflare account id");
-  });
-
-  it("is checked by workerEnv at start", () => {
-    vi.stubEnv("WORKER_ENABLED", undefined);
-    set(ACCOUNT);
-    expect(() => workerEnv()).toThrow("set both");
-    set();
-    expect(workerEnv()).toEqual({ WORKER_ENABLED: false, cloudflare: null });
   });
 });

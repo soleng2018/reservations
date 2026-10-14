@@ -1,15 +1,18 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CloudflareEnv } from "@/server/env";
-import { makeRevoker, revokeAccessUser } from "./access";
+import {
+  makeRevoker,
+  revokeAccessUser,
+  verifyCloudflareToken,
+  type CloudflareConfig,
+} from "./access";
 
 vi.mock("server-only", () => ({}));
 
-const ENV: CloudflareEnv = {
-  accountId: "0123456789abcdef0123456789abcdef",
-  apiToken: "cf-token-do-not-log",
-};
+const ACCOUNT = "0123456789abcdef0123456789abcdef";
+const TOKEN = "cf-token-do-not-log";
+const ACCOUNT_PATH = `/client/v4/accounts/${ACCOUNT}`;
 const EMAIL = "learner-secret@example.test";
 
 type Seen = {
@@ -24,7 +27,8 @@ type Seen = {
 type Answer = { readonly status: number; readonly body?: string } | "hang";
 
 let server: Server;
-let baseUrl: string;
+let origin: string;
+let config: CloudflareConfig;
 let seen: Seen[];
 let script: readonly Answer[];
 
@@ -48,7 +52,9 @@ beforeEach(async () => {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  // The stub stands in for https://api.cloudflare.com (spec 0012 AC-11).
+  config = { baseUrl: `${origin}${ACCOUNT_PATH}`, apiToken: TOKEN };
 });
 
 afterEach(async () => {
@@ -58,7 +64,7 @@ afterEach(async () => {
 });
 
 const revoke = (timeoutMs = 2000) =>
-  revokeAccessUser(ENV, EMAIL, { baseUrl, timeoutMs });
+  revokeAccessUser(config, EMAIL, { timeoutMs });
 
 // covers: AC-10, AC-11
 describe("revokeAccessUser", () => {
@@ -67,8 +73,8 @@ describe("revokeAccessUser", () => {
     expect(seen).toEqual([
       {
         method: "POST",
-        url: `/accounts/${ENV.accountId}/access/organizations/revoke_user`,
-        auth: `Bearer ${ENV.apiToken}`,
+        url: `${ACCOUNT_PATH}/access/organizations/revoke_user`,
+        auth: `Bearer ${TOKEN}`,
         body: JSON.stringify({ email: EMAIL }),
       },
     ]);
@@ -97,8 +103,62 @@ describe("revokeAccessUser", () => {
     script = ["hang"];
     expect(await revoke(50)).toEqual({ ok: false, error: "unavailable" });
     expect(
-      await revokeAccessUser(ENV, EMAIL, { baseUrl: "http://127.0.0.1:1" }),
+      await revokeAccessUser(
+        { baseUrl: `http://127.0.0.1:1${ACCOUNT_PATH}`, apiToken: TOKEN },
+        EMAIL,
+      ),
     ).toEqual({ ok: false, error: "unavailable" });
+  });
+});
+
+// covers: AC-11 (spec 0006 AC-12, the save time check)
+describe("verifyCloudflareToken", () => {
+  const verify = (timeoutMs = 2000) =>
+    verifyCloudflareToken(config, { timeoutMs });
+
+  it("reads the Access organization with the bearer token", async () => {
+    expect(await verify()).toEqual({ ok: true, value: undefined });
+    expect(seen).toEqual([
+      {
+        method: "GET",
+        url: `${ACCOUNT_PATH}/access/organizations`,
+        auth: `Bearer ${TOKEN}`,
+        body: "",
+      },
+    ]);
+  });
+
+  it.each([
+    [403, "invalid"],
+    [400, "invalid"],
+    [401, "invalid"],
+    [503, "unavailable"],
+  ] as const)("answers %i as %s", async (status, error) => {
+    script = [{ status }];
+    expect(await verify()).toEqual({ ok: false, error });
+  });
+
+  it("is invalid for a 2xx without success: true", async () => {
+    script = [{ status: 200, body: '{"success":false}' }];
+    expect(await verify()).toEqual({ ok: false, error: "invalid" });
+  });
+
+  it("is unavailable on a timeout or a network error", async () => {
+    script = ["hang"];
+    expect(await verify(50)).toEqual({ ok: false, error: "unavailable" });
+    expect(
+      await verifyCloudflareToken({
+        baseUrl: `http://127.0.0.1:1${ACCOUNT_PATH}`,
+        apiToken: TOKEN,
+      }),
+    ).toEqual({ ok: false, error: "unavailable" });
+  });
+
+  it("never puts the token or the URL in its result", async () => {
+    script = [{ status: 403, body: `{"errors":["${TOKEN}"]}` }];
+    const result = JSON.stringify(await verify());
+    for (const secret of [TOKEN, origin, ACCOUNT])
+      expect(result).not.toContain(secret);
   });
 });
 
@@ -107,8 +167,7 @@ describe("makeRevoker", () => {
   const setup = () => {
     const delays: number[] = [];
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const revoker = makeRevoker(ENV, {
-      baseUrl,
+    const revoker = makeRevoker(config, {
       timeoutMs: 2000,
       sleep: async (ms) => {
         delays.push(ms);
@@ -137,7 +196,7 @@ describe("makeRevoker", () => {
     expect(await revoker("other@example.test")).toBe("failed");
     expect(seen).toHaveLength(3);
     expect(error).toHaveBeenCalledOnce();
-    for (const secret of [EMAIL, ENV.apiToken, baseUrl, "revoke_user"])
+    for (const secret of [EMAIL, TOKEN, origin, "revoke_user"])
       expect(logged(error)).not.toContain(secret);
   });
 
@@ -155,7 +214,7 @@ describe("makeRevoker", () => {
     expect(delays).toEqual([]);
     expect(await revoker("other@example.test")).toBe("failed");
     expect(seen).toHaveLength(1);
-    for (const secret of [EMAIL, ENV.apiToken, baseUrl])
+    for (const secret of [EMAIL, TOKEN, origin])
       expect(logged(error)).not.toContain(secret);
   });
 
