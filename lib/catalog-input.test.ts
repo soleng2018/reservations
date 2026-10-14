@@ -296,6 +296,62 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
   });
 });
 
+// covers: spec 0006 AC-12, spec 0012 AC-11 (the CLOUDFLARE base URL)
+describe("a CLOUDFLARE key's base URL", () => {
+  const ACCOUNT = "e6043d055ee10da55bd8e4b39758c681";
+  const ROUTE = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}`;
+  const RULE =
+    "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.";
+  const key = (baseUrl: string) => ({
+    name: "Cloudflare",
+    type: "CLOUDFLARE",
+    baseUrl,
+    secret: "cf-token",
+  });
+
+  it("accepts the account route, trimmed, on add and edit", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(schema.parse(key(`  ${ROUTE}  `)).baseUrl).toBe(ROUTE);
+  });
+
+  it.each([
+    [`${ROUTE}/`, "a trailing slash"],
+    [ROUTE.toUpperCase().replace("HTTPS", "https"), "an upper case id"],
+    [`${ROUTE}/access/organizations`, "a longer path"],
+    [ROUTE.slice(0, -1), "a short account id"],
+    ["https://api.cloudflare.com/client/v4", "no account"],
+    [
+      `https://cloudflare.example/client/v4/accounts/${ACCOUNT}`,
+      "another host",
+    ],
+  ])("refuses %s (%s)", (baseUrl) => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(fieldErrors(errorsOf(schema.safeParse(key(baseUrl))))).toEqual({
+        baseUrl: RULE,
+      });
+  });
+
+  it("shows only the URL's own error when it is not an https URL", () => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse(key("api.cloudflare.com")));
+    expect(e.issues.map((i) => i.message)).toEqual(["Enter an https:// URL."]);
+  });
+
+  it("still checks the URL when another field fails", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({ ...key(`${ROUTE}/`), name: "" }),
+    );
+    expect(fieldErrors(e)).toEqual({ name: "Enter a name.", baseUrl: RULE });
+  });
+
+  it("leaves IDP and AI base URLs alone", () => {
+    for (const type of ["IDP", "AI"])
+      expect(
+        ApiKeyCreateInput.safeParse({ ...key("https://acme.example"), type })
+          .success,
+      ).toBe(true);
+  });
+});
+
 describe("HttpsUrl", () => {
   it("caps every catalog URL at 2048 characters", () => {
     expect(

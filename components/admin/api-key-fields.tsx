@@ -9,7 +9,8 @@ import type { ApiKeyType } from "@/lib/db-enums";
 const TYPES = [
   { value: "IDP", label: "IDP" },
   { value: "AI", label: "AI" },
-] as const;
+  { value: "CLOUDFLARE", label: "CLOUDFLARE" },
+] as const satisfies readonly { value: ApiKeyType; label: string }[];
 
 export type ApiKeyDefaults = {
   readonly name: string;

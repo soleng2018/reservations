@@ -31,15 +31,18 @@ import {
 
 export const metadata: Metadata = { title: "API Keys" };
 
-// The mock's blue for IDP, violet for AI.
+// The mock's blue for IDP, violet for AI; grey for the Cloudflare key
+// (spec 0006 AC-12).
 const TYPE_TONE = {
   IDP: "info",
   AI: "accent",
-} as const satisfies Record<ApiKeyType, "info" | "accent">;
+  CLOUDFLARE: "neutral",
+} as const satisfies Record<ApiKeyType, "info" | "accent" | "neutral">;
 
-// Spec 0006: list, search, add, edit, and delete IDP and AI credentials. The
-// secret never leaves the server: rows carry no secret field, the Key value
-// cell is a fixed mask, and there is no reveal or copy anywhere (AC-1, AC-8).
+// Spec 0006: list, search, add, edit, and delete IDP, AI, and Cloudflare
+// credentials. The secret never leaves the server: rows carry no secret
+// field, the Key value cell is a fixed mask, and there is no reveal or copy
+// anywhere (AC-1, AC-8).
 export default async function ApiKeysPage() {
   const { user } = await requireAdmin();
   const encryption = assertEncryptionEnv();

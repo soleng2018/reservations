@@ -19,6 +19,7 @@ import {
   createApiKey,
   deleteApiKey,
   updateApiKey,
+  type ApiKeyCreateError,
 } from "@/server/catalog/api-keys";
 import {
   createTestbed,
@@ -165,12 +166,38 @@ const NOT_CONFIGURED: AdminFormState = {
   message: API_KEY_MESSAGES.notConfigured,
   fields: {},
 };
-const DUPLICATE_KEY: AdminFormState = {
-  kind: "error",
-  fields: { name: API_KEY_MESSAGES.duplicateName },
+// The save errors create and update share (spec 0006 AC-3, AC-12).
+const apiKeyError = (e: ApiKeyCreateError): AdminFormState => {
+  switch (e) {
+    case "duplicate_name":
+      return {
+        kind: "error",
+        fields: { name: API_KEY_MESSAGES.duplicateName },
+      };
+    case "cloudflare_exists":
+      return {
+        kind: "error",
+        fields: { type: API_KEY_MESSAGES.cloudflareExists },
+      };
+    case "cloudflare_invalid":
+      return {
+        kind: "error",
+        fields: { secret: API_KEY_MESSAGES.cloudflareInvalid },
+      };
+    case "cloudflare_unavailable":
+      return {
+        kind: "error",
+        message: API_KEY_MESSAGES.cloudflareUnavailable,
+        fields: {},
+      };
+    default: {
+      const never: never = e;
+      return never;
+    }
+  }
 };
 
-// AC-2, AC-3, AC-9.
+// AC-2, AC-3, AC-9, AC-12.
 export async function createApiKeyAction(
   _prev: AdminFormState,
   form: FormData,
@@ -188,13 +215,13 @@ export async function createApiKeyAction(
     parsed.data,
     user.id,
   );
-  if (!created.ok) return DUPLICATE_KEY;
+  if (!created.ok) return apiKeyError(created.error);
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
 }
 
-// AC-4, AC-5, AC-9. The page binds the row's id; a blank key keeps the
-// stored one.
+// AC-4, AC-5, AC-9, AC-12. The page binds the row's id; a blank key keeps
+// the stored one.
 export async function updateApiKeyAction(
   id: string,
   _prev: AdminFormState,
@@ -230,7 +257,15 @@ export async function updateApiKeyAction(
     }
     switch (e) {
       case "duplicate_name":
-        return DUPLICATE_KEY;
+      case "cloudflare_exists":
+      case "cloudflare_invalid":
+      case "cloudflare_unavailable":
+        return apiKeyError(e);
+      case "cloudflare_retype":
+        return {
+          kind: "error",
+          fields: { secret: API_KEY_MESSAGES.cloudflareRetype },
+        };
       case "not_found":
         revalidatePath("/admin", "layout");
         return { kind: "error", message: API_KEY_MESSAGES.gone, fields: {} };

@@ -11,6 +11,12 @@ export const API_KEY_MESSAGES = {
   notConfigured: "Encryption isn't configured.",
   notConfiguredPage:
     "Encryption isn't configured. Ask the owner to set up the keyring.",
+  // Spec 0006 AC-12, the CLOUDFLARE key.
+  cloudflareExists: "Only one Cloudflare key can exist. Edit the existing one.",
+  cloudflareInvalid: "Cloudflare didn't accept this token for this account.",
+  cloudflareUnavailable:
+    "Couldn't reach Cloudflare to check the token. Try again.",
+  cloudflareRetype: "Enter the key again to change its type or account.",
 } as const;
 
 // AC-5: an IDP key that testbeds use cannot become an AI key.

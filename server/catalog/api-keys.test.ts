@@ -25,13 +25,16 @@ import {
   makeUser,
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
+import type { CloudflareConfig } from "@/server/cloudflare/access";
 import {
+  cloudflareRevokeConfig,
   createApiKey,
   deleteApiKey,
   listApiKeys,
   listApiKeysQuery,
   listIdpKeyOptions,
   updateApiKey,
+  type ApiKeyDeps,
 } from "./api-keys";
 
 // Feature 8 (spec 0006): API keys with write only, row bound secrets. DB
@@ -626,4 +629,362 @@ describe.skipIf(!hasDb)("listIdpKeyOptions (spec 0007 AC-2)", () => {
       expect(mine).toEqual([a, b]);
       expect(JSON.stringify(mine)).not.toContain("v1:");
     }));
+});
+
+// Spec 0012 AC-11 and spec 0006 AC-12. Dev and prod share one database, so
+// the owner's real Cloudflare key may be live: each test soft deletes it
+// first, inside the rollback. A stub verifier stands in for Cloudflare.
+const CF_URL = `https://api.cloudflare.com/client/v4/accounts/${"a".repeat(32)}`;
+const CF_URL_2 = `https://api.cloudflare.com/client/v4/accounts/${"b".repeat(32)}`;
+
+const clearCloudflare = (trx: Kysely<DB>) =>
+  trx
+    .updateTable("api_keys")
+    .set({ deleted_at: new Date() })
+    .where("type", "=", "CLOUDFLARE")
+    .where("deleted_at", "is", null)
+    .execute();
+
+const stubVerifier = (answer: "ok" | "invalid" | "unavailable" = "ok") => {
+  const calls: CloudflareConfig[] = [];
+  const deps: ApiKeyDeps = {
+    verifyCloudflare: async (config) => {
+      calls.push(config);
+      return answer === "ok"
+        ? { ok: true, value: undefined }
+        : { ok: false, error: answer };
+    },
+  };
+  return { calls, deps };
+};
+
+const cfInput = (overrides: Partial<ApiKeyCreateInput> = {}) =>
+  input({
+    type: "CLOUDFLARE",
+    baseUrl: CF_URL,
+    secret: "cf-token",
+    ...overrides,
+  });
+
+// covers: spec 0006 AC-5, AC-12
+describe.skipIf(!hasDb)("a CLOUDFLARE key (spec 0006 AC-12)", () => {
+  const edit = (
+    fields: ApiKeyCreateInput,
+    changes: Partial<ApiKeyCreateInput> = {},
+  ) => ({
+    name: fields.name,
+    type: fields.type,
+    baseUrl: fields.baseUrl,
+    secret: "",
+    ...changes,
+  });
+
+  it("checks the typed token with Cloudflare, then saves it", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const { calls, deps } = stubVerifier();
+      const created = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfInput(),
+        actor.id,
+        deps,
+      );
+      if (!created.ok) throw new Error("expected a create");
+      expect(calls).toEqual([{ baseUrl: CF_URL, apiToken: "cf-token" }]);
+      const row = await stored(trx, created.value.id);
+      expect(row.type).toBe("CLOUDFLARE");
+      expect(row.secret_ciphertext).not.toContain("cf-token");
+    }));
+
+  it.each([
+    ["invalid", "cloudflare_invalid"],
+    ["unavailable", "cloudflare_unavailable"],
+  ] as const)("writes nothing when Cloudflare answers %s", (answer, error) =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const fields = cfInput();
+      expect(
+        await createApiKey(
+          asConn(trx),
+          KEYRING,
+          fields,
+          actor.id,
+          stubVerifier(answer).deps,
+        ),
+      ).toEqual({ ok: false, error });
+      const rows = await trx
+        .selectFrom("api_keys")
+        .select("id")
+        .where("name", "=", fields.name)
+        .execute();
+      expect(rows).toEqual([]);
+    }),
+  );
+
+  it("refuses a second live key on create and on a type change, not as a duplicate name", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const { deps } = stubVerifier();
+      const first = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfInput(),
+        actor.id,
+        deps,
+      );
+      expect(first.ok).toBe(true);
+      expect(
+        await createApiKey(asConn(trx), KEYRING, cfInput(), actor.id, deps),
+      ).toEqual({ ok: false, error: "cloudflare_exists" });
+
+      const idpFields = input();
+      const idp = await createApiKey(asConn(trx), KEYRING, idpFields, actor.id);
+      if (!idp.ok) throw new Error("expected a create");
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          idp.value.id,
+          edit(idpFields, { type: "CLOUDFLARE", baseUrl: CF_URL, secret: "t" }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: false, error: "cloudflare_exists" });
+      expect((await stored(trx, idp.value.id)).type).toBe("IDP");
+    }));
+
+  it("asks for the key again to change type to or from CLOUDFLARE, or its account", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const { calls, deps } = stubVerifier();
+      const cfFields = cfInput();
+      const cf = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfFields,
+        actor.id,
+        deps,
+      );
+      const idpFields = input();
+      const idp = await createApiKey(asConn(trx), KEYRING, idpFields, actor.id);
+      if (!cf.ok || !idp.ok) throw new Error("expected creates");
+      const before = await stored(trx, cf.value.id);
+      calls.length = 0;
+
+      for (const [id, changes] of [
+        [cf.value.id, { baseUrl: CF_URL_2 }],
+        [cf.value.id, { type: "AI", baseUrl: "https://ai.example" }],
+      ] as const)
+        expect(
+          await updateApiKey(
+            asConn(trx),
+            KEYRING,
+            id,
+            edit(cfFields, changes),
+            actor.id,
+            deps,
+          ),
+        ).toEqual({ ok: false, error: "cloudflare_retype" });
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          idp.value.id,
+          edit(idpFields, { type: "CLOUDFLARE", baseUrl: CF_URL_2 }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: false, error: "cloudflare_retype" });
+      expect(await stored(trx, cf.value.id)).toEqual(before);
+      expect(calls).toEqual([]);
+
+      // With the token typed, the account change is checked and saved.
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          cf.value.id,
+          edit(cfFields, { baseUrl: CF_URL_2, secret: "cf-token-2" }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(calls).toEqual([{ baseUrl: CF_URL_2, apiToken: "cf-token-2" }]);
+    }));
+
+  it("renames with the key blank and makes no Cloudflare call", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const { calls, deps } = stubVerifier();
+      const fields = cfInput();
+      const cf = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        fields,
+        actor.id,
+        deps,
+      );
+      if (!cf.ok) throw new Error("expected a create");
+      calls.length = 0;
+      const name = `Cloudflare ${unique()}`;
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          cf.value.id,
+          edit(fields, { name }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(calls).toEqual([]);
+      expect((await stored(trx, cf.value.id)).name).toBe(name);
+    }));
+
+  it("refuses IDP to CLOUDFLARE while a live testbed uses the key (AC-5)", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const fields = input();
+      const idp = await createApiKey(asConn(trx), KEYRING, fields, actor.id);
+      if (!idp.ok) throw new Error("expected a create");
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id, {
+        idp_api_key_id: idp.value.id,
+      });
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          idp.value.id,
+          edit(fields, { type: "CLOUDFLARE", baseUrl: CF_URL, secret: "t" }),
+          actor.id,
+          stubVerifier().deps,
+        ),
+      ).toEqual({
+        ok: false,
+        error: { kind: "type_in_use", names: [testbed.name] },
+      });
+    }));
+});
+
+// covers: spec 0012 AC-11
+describe.skipIf(!hasDb)("cloudflareRevokeConfig (spec 0012 AC-11)", () => {
+  const getter = (keyring: Keyring = KEYRING) => {
+    let reads = 0;
+    return {
+      get reads() {
+        return reads;
+      },
+      keyring: () => {
+        reads += 1;
+        return keyring;
+      },
+    };
+  };
+
+  it("is off with no live key and never reads the keyring", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const g = getter();
+      expect(await cloudflareRevokeConfig(asConn(trx), g.keyring)).toEqual({
+        kind: "off",
+      });
+      expect(g.reads).toBe(0);
+    }));
+
+  it("round trips a live key to its base URL and token", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfInput({ secret: "cf-live-token" }),
+        actor.id,
+        stubVerifier().deps,
+      );
+      expect(
+        await cloudflareRevokeConfig(asConn(trx), getter().keyring),
+      ).toEqual({
+        kind: "on",
+        config: { baseUrl: CF_URL, apiToken: "cf-live-token" },
+      });
+    }));
+
+  it("is off once the key is soft deleted", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const cf = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfInput(),
+        actor.id,
+        stubVerifier().deps,
+      );
+      if (!cf.ok) throw new Error("expected a create");
+      await deleteApiKey(asConn(trx), cf.value.id, actor.id);
+      expect(
+        await cloudflareRevokeConfig(asConn(trx), getter().keyring),
+      ).toEqual({
+        kind: "off",
+      });
+    }));
+
+  it("is broken, never a throw, when the keyring can't be read or lacks the key id", () =>
+    inRollback(async (trx) => {
+      await clearCloudflare(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      await createApiKey(
+        asConn(trx),
+        KEYRING,
+        cfInput(),
+        actor.id,
+        stubVerifier().deps,
+      );
+      const missing = () => {
+        throw new Error("Encryption env: APP_ENCRYPTION_KEYS is missing");
+      };
+      expect(await cloudflareRevokeConfig(asConn(trx), missing)).toEqual({
+        kind: "broken",
+      });
+      const other: Keyring = {
+        activeKeyId: "kother",
+        keys: new Map([["kother", randomBytes(32)]]),
+      };
+      expect(await cloudflareRevokeConfig(asConn(trx), () => other)).toEqual({
+        kind: "broken",
+      });
+    }));
+
+  it("is broken when the read itself fails", async () => {
+    const failing = new Kysely<DB>({
+      dialect: {
+        createAdapter: () => new PostgresAdapter(),
+        createDriver: () => ({
+          init: async () => undefined,
+          acquireConnection: async () => {
+            throw new Error("connection refused");
+          },
+          beginTransaction: async () => undefined,
+          commitTransaction: async () => undefined,
+          rollbackTransaction: async () => undefined,
+          releaseConnection: async () => undefined,
+          destroy: async () => undefined,
+        }),
+        createIntrospector: (k) => new PostgresIntrospector(k),
+        createQueryCompiler: () => new PostgresQueryCompiler(),
+      },
+    });
+    expect(await cloudflareRevokeConfig(failing, getter().keyring)).toEqual({
+      kind: "broken",
+    });
+  });
 });

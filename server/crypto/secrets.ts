@@ -68,7 +68,8 @@ const decodePart = (text: string): Buffer => {
 };
 
 // Throws for a changed byte, another binding, an unknown key id, or a
-// malformed value. No production caller yet (spec 0006).
+// malformed value. Its one production caller is cloudflareRevokeConfig in
+// server/catalog/api-keys.ts, in the worker (spec 0012 AC-11).
 export function decryptSecret(
   keyring: Keyring,
   value: string,

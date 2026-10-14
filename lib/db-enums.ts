@@ -16,7 +16,7 @@ export type DurationUnit = z.infer<typeof DurationUnit>;
 export const TestbedClientKind = z.enum(["wired", "wireless"]);
 export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 
-export const ApiKeyType = z.enum(["IDP", "AI"]);
+export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE"]);
 export type ApiKeyType = z.infer<typeof ApiKeyType>;
 
 export const BookingStatus = z.enum([

@@ -15,6 +15,9 @@ const ctx = vi.hoisted(() => ({
   authUserId: undefined as string | undefined,
   // The keyring the API key actions see; undefined means not configured.
   keyring: undefined as Keyring | undefined,
+  // What the stub Cloudflare token check answers, and how often it ran.
+  cloudflare: "ok" as "ok" | "invalid" | "unavailable",
+  cloudflareChecks: 0,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -45,6 +48,16 @@ vi.mock("@/server/env", async (importOriginal) => ({
     ctx.keyring
       ? { ok: true, value: { keyring: ctx.keyring } }
       : { ok: false, error: "Encryption env: APP_ENCRYPTION_KEYS is missing" },
+}));
+// Never the real Cloudflare (spec 0006 AC-12).
+vi.mock("@/server/cloudflare/access", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  verifyCloudflareToken: async () => {
+    ctx.cloudflareChecks += 1;
+    return ctx.cloudflare === "ok"
+      ? { ok: true, value: undefined }
+      : { ok: false, error: ctx.cloudflare };
+  },
 }));
 vi.mock("@/server/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/db")>();
@@ -633,6 +646,89 @@ describe.skipIf(!hasDb)("API key actions", () => {
         ok: true,
         value: [],
       });
+    }));
+
+  // covers: spec 0006 AC-12, spec 0012 AC-11
+  it("maps every Cloudflare key refusal to its field", () =>
+    as("admin", async (trx) => {
+      // The owner's real key may be live in the shared database.
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "CLOUDFLARE")
+        .where("deleted_at", "is", null)
+        .execute();
+      const account = `https://api.cloudflare.com/client/v4/accounts/${"c".repeat(32)}`;
+      const cfForm = (name: string, secret = "cf-token-canary") => {
+        const f = keyForm(name, secret);
+        f.set("type", "CLOUDFLARE");
+        f.set("baseUrl", account);
+        return f;
+      };
+      ctx.cloudflareChecks = 0;
+      try {
+        const badUrl = cfForm(newName());
+        badUrl.set("baseUrl", `${account}/`);
+        expect(await createApiKeyAction(IDLE, badUrl)).toEqual({
+          kind: "error",
+          fields: {
+            baseUrl:
+              "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.",
+          },
+        });
+        expect(ctx.cloudflareChecks).toBe(0);
+
+        ctx.cloudflare = "invalid";
+        const invalid = await createApiKeyAction(IDLE, cfForm(newName()));
+        expect(invalid).toEqual({
+          kind: "error",
+          fields: {
+            secret: "Cloudflare didn't accept this token for this account.",
+          },
+        });
+        ctx.cloudflare = "unavailable";
+        expect(await createApiKeyAction(IDLE, cfForm(newName()))).toEqual({
+          kind: "error",
+          message: "Couldn't reach Cloudflare to check the token. Try again.",
+          fields: {},
+        });
+
+        ctx.cloudflare = "ok";
+        const name = newName();
+        expect(await createApiKeyAction(IDLE, cfForm(name))).toEqual({
+          kind: "saved",
+          message: `Created ${name}.`,
+        });
+        expect(await createApiKeyAction(IDLE, cfForm(newName()))).toEqual({
+          kind: "error",
+          fields: {
+            type: "Only one Cloudflare key can exist. Edit the existing one.",
+          },
+        });
+
+        const [key] = await keysNamed(trx, name);
+        if (!key) throw new Error("expected the key");
+        const checks = ctx.cloudflareChecks;
+        const moved = cfForm(name, "");
+        moved.set(
+          "baseUrl",
+          `https://api.cloudflare.com/client/v4/accounts/${"d".repeat(32)}`,
+        );
+        expect(await updateApiKeyAction(key.id, IDLE, moved)).toEqual({
+          kind: "error",
+          fields: {
+            secret: "Enter the key again to change its type or account.",
+          },
+        });
+        const renamed = newName();
+        expect(
+          await updateApiKeyAction(key.id, IDLE, cfForm(renamed, "")),
+        ).toEqual({ kind: "saved", message: `Updated ${renamed}.` });
+        expect(ctx.cloudflareChecks).toBe(checks);
+        expect(JSON.stringify(invalid)).not.toContain("canary");
+      } finally {
+        ctx.cloudflare = "ok";
+      }
     }));
 });
 

@@ -16,6 +16,13 @@ export type CloudflareConfig = {
   readonly apiToken: string;
 };
 
+// Where a reconciler run gets its revoke from (AC-11): no live CLOUDFLARE
+// key (off), a key the worker can't read (broken), or a usable config (on).
+export type RevokeSource =
+  | { readonly kind: "off" }
+  | { readonly kind: "broken" }
+  | { readonly kind: "on"; readonly config: CloudflareConfig };
+
 export type RevokeError =
   | "unavailable" // 429, 5xx, timeout, network: worth another try
   | "config" // 401, 403: the token or account is wrong

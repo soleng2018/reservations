@@ -98,11 +98,34 @@ const ApiKeyBase = z.object({
   baseUrl: ApiKeyBaseUrl,
 });
 
+// Spec 0006 AC-12: a CLOUDFLARE key's base URL is exactly the account route
+// the revoke path extends (spec 0012 AC-11). No trailing slash.
+export const CLOUDFLARE_BASE_URL =
+  /^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[0-9a-f]{32}$/;
+
+// An object rule, since it needs the type. It runs on the trimmed URL, and
+// only once the type and the URL have no error of their own, so a bad URL
+// shows one message.
+const cloudflareBaseUrl = {
+  message: "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.",
+  path: ["baseUrl"],
+  when: (payload: z.core.ParsePayload) =>
+    payload.issues.every(
+      (i) => i.path?.[0] !== "type" && i.path?.[0] !== "baseUrl",
+    ),
+};
+const isCloudflareBaseUrl = (key: {
+  readonly type: ApiKeyType;
+  readonly baseUrl: string;
+}) => key.type !== "CLOUDFLARE" || CLOUDFLARE_BASE_URL.test(key.baseUrl);
+
 export const ApiKeyCreateInput = ApiKeyBase.extend({
   secret: ApiKeySecret.min(1, "Enter the key."),
-});
+}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
 export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInput>;
 
 // A blank secret keeps the stored one.
-export const ApiKeyUpdateInput = ApiKeyBase.extend({ secret: ApiKeySecret });
+export const ApiKeyUpdateInput = ApiKeyBase.extend({
+  secret: ApiKeySecret,
+}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
 export type ApiKeyUpdateInput = z.infer<typeof ApiKeyUpdateInput>;
