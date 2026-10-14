@@ -219,7 +219,7 @@ spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/b
   - [x] Reschedule polish: preview, Current slot, progress and failure routing, history, per user buckets (AC-7, 8, 10, 12, 14)
   - [x] Signed in `/book`, then guards and end to end: account summary, session override, `signed_out`, reconciler, Playwright journey, axe, screenshots (AC-3, 13, 15, 16, 18)
 - [ ] Verify it: `/check verify manage reservations`
-- [ ] Test it: `/test manage reservations`
+- [x] Test it: `/test manage reservations`
 spec [0011](../specs/0011-manage-reservations/index.md) · code in `app/reservations/`, `components/reservations/`, `server/booking/manage.ts`, `server/booking/account.ts`, `lib/manage-reservations.ts`, `lib/reschedule-flow.ts`, `lib/time-pick.ts`, `app/book/`, `components/book/`, `e2e/reservations.spec.ts`
 
 ### 14. Lab access & booking result screens · needs a decision
