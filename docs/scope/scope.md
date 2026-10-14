@@ -247,7 +247,7 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
 - [x] Design it (spec): `/architect email delivery & booking confirmations`
 - [ ] Build it: `/develop email delivery & booking confirmations`
-  - [ ] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` key on create with its save check, `google:connect`, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
+  - [ ] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
   - [ ] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
   - [ ] Calendar mirror and backfill (AC-19, 20)
   - [ ] Key edit and the console Emails section (AC-4, 21)
@@ -285,6 +285,7 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Learner timezone setting**: let a learner change their account timezone from the manage page (today it is fixed at first booking or by an admin) · from spec 0011
 - **Social card with headline text**: draw the landing headline into the link preview image (`opengraph-image.tsx` with a committed Inter font) if marketing wants text in previews · from spec 0009
 - **Secret rotation script**: `secrets:rotate` encrypts every stored secret again under the active keyring key in one transaction; needed once something decrypts them · from spec 0006
+- **Per mailbox Google grant**: replace the `GOOGLE` service account key (domain wide reach) with a refresh token for the HOL mailbox only · from spec 0013
 - **Email breaker alert**: tell someone (a console banner or a note to the Ops BCC) when Google has rejected the HOL mailbox key for over an hour · from spec 0013
 
 ## Legend

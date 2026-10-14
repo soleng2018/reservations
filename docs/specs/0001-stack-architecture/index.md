@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-04 (updated 2026-10-05 with spike 1 results)
 **Status**: Accepted
-**Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): Google credentials live on the API Keys screen as one `GOOGLE` key (a per mailbox OAuth refresh token from a Workspace Internal app); the service account driver and the `GOOGLE_*` and `HOL_OPS_BCC` env vars are dropped; the worker runs without `--conditions=react-server` so React Email can render.
+**Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): Google credentials live on the API Keys screen as one `GOOGLE` key (the service account JSON key with domain wide delegation, plus the sender mailbox and calendar fields); the dev OAuth driver and the `GOOGLE_*` and `HOL_OPS_BCC` env vars are dropped; the worker runs without `--conditions=react-server` so React Email can render.
 
 ## Summary
 
