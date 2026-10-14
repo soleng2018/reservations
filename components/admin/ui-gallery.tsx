@@ -11,6 +11,7 @@ import { Field } from "@/components/field";
 import { FormSelect } from "@/components/form-select";
 import { notifyError, notifySuccess } from "@/components/notify";
 import { CancelReservationButton } from "@/components/reservations/cancel-reservation-button";
+import { LabAccessCard } from "@/components/reservations/lab-access-card";
 import { ReservationCard } from "@/components/reservations/reservation-card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -23,6 +24,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BADGE_TONES } from "@/lib/badge-tones";
+import {
+  labAccessView,
+  labCardRows,
+  SUCCESS_NOTE,
+  type LabLinks,
+} from "@/lib/lab-access";
 import type {
   Blocker,
   DeleteCheck,
@@ -220,6 +227,24 @@ const fakeCancel = async () => {
 const SAMPLE_START = "Tue, Oct 13, 2026, 9:00 AM EDT";
 const SAMPLE_END = "Tue, Oct 13, 2026, 1:00 PM EDT";
 
+const SAMPLE_LINKS: LabLinks = {
+  portalUrl: "https://portal.example.test",
+  lmsUrl: "https://lms.example.test",
+  clients: [
+    { name: "Client 1", kind: "wired", url: "https://client1.example.test" },
+    { name: "Client 2", kind: "wireless", url: "https://client2.example.test" },
+  ],
+};
+
+const ViewAccess = () => (
+  <Link
+    href="#lab-access"
+    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+  >
+    View lab access
+  </Link>
+);
+
 function SampleActions({
   reschedule,
   current = false,
@@ -237,6 +262,7 @@ function SampleActions({
           Reschedule
         </Link>
       ) : null}
+      {current ? <ViewAccess /> : null}
       <CancelReservationButton
         testbed="Lab bench 03"
         start={SAMPLE_START}
@@ -461,8 +487,34 @@ export function UiGallery() {
             typeName="White Belt Series"
             start="Thu, Oct 1, 2026, 9:00 AM EDT"
             end="Thu, Oct 1, 2026, 1:00 PM EDT"
+            actions={<ViewAccess />}
           />
         </ul>
+      </Section>
+
+      <Section
+        title="Lab access"
+        description="The success screens' card, then the detail page's card while Current and once Past (Ended tags, no links)."
+      >
+        <div id="lab-access" className="flex max-w-140 flex-col gap-5">
+          <LabAccessCard
+            variant="success"
+            note={SUCCESS_NOTE}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Upcoming"))}
+          />
+          <LabAccessCard
+            variant="detail"
+            note={labAccessView("Current").note}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Current"))}
+            testbedName="Lab bench 03"
+          />
+          <LabAccessCard
+            variant="detail"
+            note={labAccessView("Past").note}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Past"))}
+            testbedName="Lab bench 01"
+          />
+        </div>
       </Section>
 
       <Section title="Toasts" description="One region, bottom center.">

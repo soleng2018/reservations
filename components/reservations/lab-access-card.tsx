@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { ExternalLinkIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { LabCardRows, LabRow } from "@/lib/lab-access";
@@ -7,7 +8,7 @@ import { cn } from "@/lib/utils";
 // small "Your lab access" card on the success screens, or the detail page's
 // "Lab access" card with the testbed row. An ended card shows a plain
 // "Ended" tag per row: no anchor, no URL, nothing focusable, never faded.
-// No hooks, so it renders inside the client flows and on the server page.
+// Only useId, so it renders inside the client flows and on the server page.
 export function LabAccessCard({
   variant,
   note,
@@ -19,6 +20,7 @@ export function LabAccessCard({
   readonly rows: LabCardRows;
   readonly testbedName?: string; // the detail page's "Testbed assigned" row
 }) {
+  const headingId = useId();
   const detail = variant === "detail";
   const row = cn(
     "flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1",
@@ -28,14 +30,14 @@ export function LabAccessCard({
 
   return (
     <section
-      aria-labelledby={`lab-access-${variant}`}
+      aria-labelledby={headingId}
       className={cn(
         "border bg-card shadow-xs",
         detail ? "rounded-2xl p-6" : "mb-3 rounded-[0.875rem] px-4.5 py-4",
       )}
     >
       <h2
-        id={`lab-access-${variant}`}
+        id={headingId}
         className={cn(
           "font-bold text-fg1",
           detail ? "mb-1 text-[0.9375rem]" : "mb-1 text-sm",
