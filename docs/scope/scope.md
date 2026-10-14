@@ -229,14 +229,15 @@ Access is enforced by Authentik: the learner is in the assigned testbed's group 
 **Done when:** access details reach only the booking's own verified learner; a learner can open the testbed's URLs only during their booking window, and an open lab session stops working right after the lab time is over; cancel, reschedule to another testbed, and booking end update the group membership; Upcoming bookings show no detail link, Current and Past do; Past details show the links greyed out and unclickable with the "access is no longer active" note; the success screen tells a new learner to set their password from the email.
 - [x] Design it (spec): `/architect lab access & booking result screens`
 - [ ] Build it: `/develop lab access & booking result screens`
-  - [ ] Spike 3 with the owner: Cloudflare Access revoke ends an open browser VM session (AC-10)
+  - [x] Spike 3 with the owner: Cloudflare Access revoke ends an open browser VM session; surfaced the HOL Labs app and the API key move (AC-9, 10)
   - [x] Tracer: `ownLabAccess`, the lab access card, the `/reservations/[id]` detail page, and View lab access on Current and Past cards (AC-1, 6, 7, 8)
   - [x] Success screens: lab access card on book and reschedule success, guest and new learner copy (AC-2, 3, 4, 5)
-  - [ ] Cloudflare revoke strand: env, revoker with retries and breaker, reconciler order and audit outcome (AC-9, 10, 11, 12)
+  - [ ] Cloudflare key and revoke strand: the `CLOUDFLARE` API key (migration, Access probe on save), the revoker reading it per run, reconciler order and audit outcome (AC-9, 10, 11, 12)
+  - [ ] HOL Labs in the setup script and its isolation checks: `authentik:setup` adopts the app, provider, flow, and policy (spec 0003 AC-19) (AC-9)
   - [x] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
 - [ ] Verify it: `/check verify lab access & booking result screens`
 - [ ] Test it: `/test lab access & booking result screens`
-spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/reservations/[id]/`, `components/reservations/lab-access-card.tsx`, `server/booking/lab-access.ts`, `lib/lab-access.ts`, `server/cloudflare/`, `app/book/`, `components/book/`, `e2e/lab-access.spec.ts`
+spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/reservations/[id]/`, `components/reservations/lab-access-card.tsx`, `server/booking/lab-access.ts`, `lib/lab-access.ts`, `server/cloudflare/`, `server/catalog/api-keys.ts`, `server/worker/`, `scripts/authentik-setup.ts`, `app/book/`, `components/book/`, `e2e/lab-access.spec.ts`
 
 ## Slice 4: Notifications
 

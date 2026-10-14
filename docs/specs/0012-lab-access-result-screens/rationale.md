@@ -71,7 +71,7 @@ Smaller calls made with the engineer, each with its runner up:
 - Past links: plain "Ended" text, not faded anchors, so the card passes the contrast guard and keyboard users can't reach dead links. Runner up: the mock's opacity with `aria-disabled` and an exception in the guard.
 - Cancel speed: keep the 30 second tick, which matches spec 0011's shipped copy ("within a minute"). Runner up: `LISTEN/NOTIFY` to wake the worker, which adds a second wake path on the lock connection.
 - Cloudflare client: plain `fetch` plus Zod for one endpoint. Runner up: the official `cloudflare` SDK, which is far more surface than one call needs.
-- Cloudflare config: optional (both or neither), so the worker isn't blocked on the owner's Access setup. Runner up: required, failing fast.
+- Cloudflare config: optional (both or neither), so the worker isn't blocked on the owner's Access setup. Runner up: required, failing fast. (Superseded on 2026-10-14: the config moved to a `CLOUDFLARE` API key, still optional, see below.)
 - Audit: the outcome folded into the existing `access.revoked` row. Runner up: a separate `access.vm_revoked` action, which leaves no row on failure.
 - Start delay: the card says links can take up to a minute. Runner up: the mock's copy alone.
 
@@ -80,6 +80,45 @@ Calls made while writing:
 - Logs name the user id, not the email, matching the reconciler's existing practice of logging Authentik pks.
 - `rel="noopener noreferrer"` on every lab link, so the booking id in the page URL never reaches a lab site as a Referer.
 
+Calls made on 2026-10-14, after spike 3:
+- VM sign in for learners: a dedicated Authentik app, HOL Labs (`hol-labs`, its own authorization flow `hol-lab-authorization`, the policy `hol-labs-access` bound to the app), added to Cloudflare as a second login method used only by the VM apps. Spike 3 found that spec 0003's learner isolation denies every learner on `cloudflare-integration`, the login all VM apps used, so no learner could ever reach a VM. Runners up: point `cloudflare-integration` at a learner friendly flow (edits an existing provider, outside the owner's write boundary, and opens every Cloudflare app on that login to learners), or loosen the isolation policy for `pod-*` members (lets booked learners into `leo` and `traefik-apps`, breaking spec 0003 AC-17). The engineer chose HOL Labs.
+- Group link: each VM's Cloudflare policy checks the app made `pod-<slug>`, set by the owner per testbed. The owner's hand made groups `nw1` to `nw4` retire. Runner up: let a testbed adopt an existing `nwN` group, which needs a migration, a wider write guard, and writes to Authentik objects the app did not create. The engineer chose `pod-*`.
+- Cloudflare credentials: an API key of a new type `CLOUDFLARE` on the admin API Keys page (spec 0006), asked for by the engineer, so the owner rotates the token without a redeploy and the worker reads it per run. Runner up: the env vars and token file built in task 4 (worker only, simpler, but rotation means a file copy and a restart).
+- Account id: carried in the key's base URL (`…/client/v4/accounts/<id>`), which the revoke path extends. No new column, and the field is already https checked, displayed, and audited (not secret). Runner up: an `account_id` column, a migration and a form field for one value.
+- One live Cloudflare key, enforced by a partial unique index, so the worker never has to choose. Runner up: pick the newest, which hides a stale duplicate.
+- A broken key (the worker can't read the keyring or decrypt) records `failed`, not `off`, because the owner meant revoke to be on. Runner up: `off`, which would silently look intended.
+- Save time check: `GET {baseUrl}/access/organizations` instead of Cloudflare's token verify, a cross check finding. One read proves the token is valid, belongs to that account, and can use Access, for user and account tokens alike; token verify proves only "active". Checked 2026-10-14 with the spike token: right account 200 (`auth_domain` `soleng2018.cloudflareaccess.com`), wrong account 403, malformed token 400. Runner up: `/user/tokens/verify` then the account route, which passes a token with the wrong permission.
+- The web process never decrypts the token: a save verifies only a token that was just typed, and changing a Cloudflare key's base URL asks for the token again. Runner up: decrypt the stored token to verify an account change, which widens where `decryptSecret` runs.
+
 ## Spike 3 evidence
 
-_To be filled by build task 1: the confirmed endpoint and token permission, whether an open browser rendered session ends after revoke (and how fast), a fresh sign in after revoke, the `groups` claim policy match, and the RDP GA status._
+Run on 2026-10-14 by the engineer and Claude, on `nw4-mac1.nile.global` (a QEMU macOS VM over browser rendered VNC), with `hol-test-learner@example.test` (path `hol/learners`) and the app's provisioning token for group changes. Cloudflare team domain `soleng2018.cloudflareaccess.com`; Authentik 2026.8.3.
+
+Starting state found:
+- Authentik already acts as Cloudflare's identity provider (`cloudflare-integration`, OAuth2 provider pk 7, on `default-provider-authorization-implicit-consent`), and the VM apps checked hand made groups `nw1` to `nw4` (attribute `pod: nwN`), not the app's `pod-*` groups. `pod-nile-hol-1` existed (made by the app for "Nile HOL 1") with no Cloudflare policy on it.
+- A learner opening the VM ended on Authentik's "Permission denied" before Cloudflare was asked: `hol-learner-isolation` is bound to that default flow (spec 0003 AC-17).
+
+What was set up during the spike:
+- Authentik (new objects only): the `hol-labs-access` expression policy, the `hol-lab-authorization` flow (no stages, no bindings, a copy of `hol-authorization`), the "HOL Labs" OAuth2 provider (pk 8, copied from pk 7: same signing key, `openid` `email` `profile` mappings, `sub_mode` hashed user id, issuer per provider, strict redirect `https://soleng2018.cloudflareaccess.com/cdn-cgi/access/callback`, grants `authorization_code` and `refresh_token` only), and the `hol-labs` application with the policy bound. The client secret was saved to `~/secrets/hol_labs_client_secret` (mode 600). The `profile` mapping already carries `groups: [group.name for group in request.user.groups.all()]`.
+- Cloudflare (by the owner): login method "Reservations HOL Labs"; `nw4-mac1` set to that method only, with an Allow policy on OIDC claim `groups` = `pod-nile-hol-1`.
+
+Results:
+
+| Check | Result |
+|---|---|
+| Cloudflare test of the HOL Labs login (owner's staff account) | succeeded; `oidc_fields.groups` present |
+| Learner in no `pod-*` group, through HOL Labs | refused by Authentik (`hol-labs-access`); policy test: learner false, `hol-test-admin` true |
+| Learner in `pod-nile-hol-1`, before the Cloudflare policy was right | Authentik passed, Cloudflare said "That account does not have access" (the policy still pointed at the old login method) |
+| Learner in `pod-nile-hol-1`, policy fixed | reached the VM (page "QEMU (macos)"); `get-identity` showed `groups: ["pod-nile-hol-1"]` and an OIDC identity provider |
+| Learner removed from the group, fresh sign in | refused by Authentik within about 7 seconds (no stale policy cache) |
+| Learner removed, open session, no revoke | still working: the VM URL answered 200 |
+| Token | a user API token, `GET /user/tokens/verify` → `active` (`/accounts/<id>/tokens/verify` → 401 for a user token); permission Account → Access: Organizations, Identity Providers, and Groups → Edit |
+| `POST /accounts/e6043d055ee10da55bd8e4b39758c681/access/organizations/revoke_user` `{ "email" }` | HTTP 200, `{ "success": true, "result": true }`, twice |
+| After the revoke, new requests | 302 to the Access login within about 5 seconds |
+| After the revoke, the open VNC websocket | kept streaming (about 13 frames every 5 seconds) for 37 seconds, then Cloudflare closed it; no frames after, mouse input ignored, a reload landed on the Access login |
+| Fresh sign in 1 to 2 minutes after a revoke (learner back in the group) | Cloudflare "Current authentication token is expired. Try again later." |
+| Fresh sign in about 2 minutes after a revoke | worked |
+
+Not covered: a Windows RDP session (expected to behave the same, since the cut is at the Access session; owner to confirm once, see Follow-up). The RDP GA status was not checked; the VMs already run browser rendered RDP and VNC in production use.
+
+Cleanup: `hol-test-learner` was removed from `pod-nile-hol-1` after each run; the group was left empty. The HOL Labs objects stay in place for the owner's VM setup.
