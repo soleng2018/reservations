@@ -1,3 +1,5 @@
+import type { GoogleAuthMethod } from "./db-enums";
+
 // API Keys copy shared by the page and the actions (spec 0006). Safe on
 // both sides.
 
@@ -56,6 +58,18 @@ export const API_KEY_MESSAGES = {
   signInSwitch: "Sign in with Google to switch to Google sign in.",
   fileSwitch: "Upload the key file to switch to Service account.",
 } as const;
+
+// Spec 0013 AC-32: the API Keys list's words for a GOOGLE key.
+export const GOOGLE_METHOD_LABEL = {
+  service_account: "Service account",
+  oauth: "Google sign in",
+} as const satisfies Record<GoogleAuthMethod, string>;
+
+export const GOOGLE_REJECTED_LINE = {
+  service_account:
+    "Google rejected the key. Check it and domain wide delegation.",
+  oauth: "Google sign in stopped working. Edit the key and sign in again.",
+} as const satisfies Record<GoogleAuthMethod, string>;
 
 // Spec 0013 AC-28 step 8: after a spent code, the AC-2 answers also say to
 // start over.

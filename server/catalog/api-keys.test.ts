@@ -245,6 +245,7 @@ describe.skipIf(!hasDb)("createApiKey and listApiKeys", () => {
         "calendarId",
         "devInbox",
         "googleAuth",
+        "googleRejectedAt",
         "id",
         "name",
         "opsBcc",
@@ -1556,6 +1557,27 @@ describe.skipIf(!hasDb)("a GOOGLE key (spec 0013)", () => {
         senderEmail: { from: "labs@nile.example", to: "hol.sender@gmail.com" },
       });
       expect(JSON.stringify(audits)).not.toContain("canary");
+    }));
+
+  it("lists a GOOGLE key's method and Needs attention date, never its secret (AC-32)", () =>
+    inRollback(async (trx) => {
+      const { id } = await setupSignIn(trx);
+      const at = new Date("2026-10-16T09:00:00.000Z");
+      await trx
+        .updateTable("api_keys")
+        .set({ google_rejected_at: at })
+        .where("id", "=", id)
+        .execute();
+      const row = (await listApiKeys(asConn(trx))).find((k) => k.id === id);
+      expect(row).toMatchObject({
+        googleAuth: "oauth",
+        googleRejectedAt: at,
+        senderEmail: "hol.sender@gmail.com",
+      });
+      expect(JSON.stringify(row)).not.toMatch(/canary|GOCSPX|v1:/);
+      expect(listApiKeysQuery(asConn(trx)).compile().sql).not.toContain(
+        "secret_ciphertext",
+      );
     }));
 
   it("googleMailConfig is null with no live key and never reads the keyring (AC-5)", () =>

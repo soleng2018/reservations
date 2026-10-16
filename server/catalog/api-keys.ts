@@ -59,6 +59,9 @@ export type ApiKeyRow = {
   readonly devInbox: string | null;
   readonly opsBcc: string | null;
   readonly googleAuth: GoogleAuthMethod | null;
+  // When the worker's breaker found Google no longer accepts the key
+  // (AC-31, AC-32); null while it works.
+  readonly googleRejectedAt: Date | null;
 };
 
 // Spec 0013 AC-1, AC-4, AC-28, AC-29: a GOOGLE save carries, by method, the
@@ -296,6 +299,7 @@ export const listApiKeysQuery = (conn: Kysely<DB>) =>
       "dev_inbox",
       "ops_bcc",
       "google_auth",
+      "google_rejected_at",
     ])
     .where("deleted_at", "is", null)
     .orderBy(sql`lower(name)`);
@@ -319,6 +323,7 @@ export async function listApiKeys(
     devInbox: r.dev_inbox,
     opsBcc: r.ops_bcc,
     googleAuth: googleAuthOf(r.google_auth),
+    googleRejectedAt: r.google_rejected_at,
   }));
 }
 

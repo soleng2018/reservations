@@ -1,7 +1,7 @@
 import "server-only";
 import { sql, type Kysely, type Transaction } from "kysely";
 import { z } from "zod";
-import { JobKind } from "@/lib/db-enums";
+import { JobKind, type GoogleAuthMethod } from "@/lib/db-enums";
 import { err, type Result } from "@/lib/result";
 import type { GoogleMailConfig } from "@/server/catalog/api-keys";
 import type { DB } from "@/server/db/types";
@@ -25,8 +25,34 @@ const BACKOFF = sql<Date>`now() + least(interval '1 minute' * power(2, attempts 
 export const JOB_BUDGET = 20;
 export const TIME_BUDGET_MS = 40_000;
 
-export const BREAKER_MESSAGE =
-  "Google rejected the service account key. Check the key and domain wide delegation, and upload a new key on API Keys if needed.";
+// AC-31: the worker's log line when the breaker trips, by method.
+export function breakerLogLine(method: GoogleAuthMethod): string {
+  switch (method) {
+    case "service_account":
+      return "jobs: Google rejected the service account key, jobs wait 5 minutes";
+    case "oauth":
+      return "jobs: Google rejected the Google sign in, jobs wait 5 minutes";
+    default: {
+      const never: never = method;
+      return never;
+    }
+  }
+}
+
+// AC-9, AC-31: what a waiting email says when Google rejects the
+// credential, by the key's sign in method.
+export function breakerMessage(method: GoogleAuthMethod): string {
+  switch (method) {
+    case "service_account":
+      return "Google rejected the service account key. Check the key and domain wide delegation, and upload a new key on API Keys if needed.";
+    case "oauth":
+      return "Google sign in stopped working (a password change, revoked access, about 6 months unused, more than 100 sign ins for this client, or a consent screen still in Testing, whose sign ins end after 7 days). Edit the Google key on API Keys and sign in with Google again.";
+    default: {
+      const never: never = method;
+      return never;
+    }
+  }
+}
 const LEASE_EXHAUSTED = "The worker stopped during the last attempt.";
 const UNEXPECTED = "The job failed unexpectedly.";
 
@@ -142,11 +168,13 @@ async function noteEmail(
 }
 
 // Records an outcome inside the job's transaction. Answers the job's new
-// status, so the caller can log a failure.
+// status, so the caller can log a failure. `method` is the GOOGLE key's,
+// for the breaker's message.
 export async function finishJob(
   trx: Kysely<DB>,
   job: ClaimedJob,
   outcome: JobOutcome,
+  method: GoogleAuthMethod,
 ): Promise<"done" | "pending" | "failed"> {
   const fail = async (reason: string) => {
     await trx
@@ -181,7 +209,8 @@ export async function finishJob(
       return "pending";
     case "final":
       return fail(outcome.error);
-    case "breaker":
+    case "breaker": {
+      const message = breakerMessage(method);
       await trx
         .updateTable("jobs")
         .set({
@@ -189,12 +218,13 @@ export async function finishJob(
           locked_until: null,
           attempts: sql<number>`attempts - 1`,
           run_at: BREAKER_WAIT,
-          last_error: BREAKER_MESSAGE,
+          last_error: message,
         })
         .where("id", "=", job.id)
         .execute();
-      await noteEmail(trx, job.id, BREAKER_MESSAGE);
+      await noteEmail(trx, job.id, message);
       return "pending";
+    }
     default: {
       const never: never = outcome;
       return never;
@@ -233,8 +263,12 @@ export async function sweepExhausted(
 }
 
 // AC-9: the token source wrapped so a 401 gets one fresh token and one
-// repeat; a credential Google still rejects trips the breaker.
-export function googleCaller(token: TokenSource): JobContext["google"] {
+// repeat; a credential Google still rejects trips the breaker. `onSuccess`
+// hears of every 2xx (AC-31).
+export function googleCaller(
+  token: TokenSource,
+  onSuccess: () => void = () => undefined,
+): JobContext["google"] {
   return async <T>(
     call: (token: string) => Promise<Result<T, GoogleCallError>>,
   ): Promise<Result<T, GoogleFailure>> => {
@@ -248,7 +282,10 @@ export function googleCaller(token: TokenSource): JobContext["google"] {
     const first = await once(false);
     const result =
       !first.ok && first.error === "rejected" ? await once(true) : first;
-    if (result.ok) return result;
+    if (result.ok) {
+      onSuccess();
+      return result;
+    }
     const e = result.error;
     // A second 401 in a row: the credential itself.
     return err(e === "rejected" ? "breaker" : e);
@@ -262,7 +299,59 @@ export type JobsStep =
       readonly ran: number;
       readonly breaker: boolean;
       readonly failed: readonly string[];
+      // The key's sign in method, for the breaker's log line (AC-31).
+      readonly method: GoogleAuthMethod;
     };
+
+// AC-31: the key Google stopped accepting, marked for the API Keys page.
+// One autocommit statement on the main connection; the secret_updated_at
+// guard keeps a breaker from an old secret off a secret saved since the
+// worker read its config. Postgres keeps microseconds and a JS Date
+// milliseconds, so the guard compares at millisecond precision.
+export async function markGoogleRejected(
+  conn: Kysely<DB>,
+  keyId: string,
+  secretUpdatedAt: Date,
+): Promise<void> {
+  await conn
+    .updateTable("api_keys")
+    .set({ google_rejected_at: sql<Date>`now()` })
+    .where("id", "=", keyId)
+    .where(
+      sql<boolean>`date_trunc('milliseconds', secret_updated_at) = ${secretUpdatedAt}`,
+    )
+    .where("google_rejected_at", "is", null)
+    .execute();
+}
+
+// AC-31: the first successful Google call of a step clears the marker, the
+// same way.
+export async function clearGoogleRejected(
+  conn: Kysely<DB>,
+  keyId: string,
+  secretUpdatedAt: Date,
+): Promise<void> {
+  await conn
+    .updateTable("api_keys")
+    .set({ google_rejected_at: null })
+    .where("id", "=", keyId)
+    .where(
+      sql<boolean>`date_trunc('milliseconds', secret_updated_at) = ${secretUpdatedAt}`,
+    )
+    .where("google_rejected_at", "is not", null)
+    .execute();
+}
+
+// A failed mark or clear is logged and never changes a job's outcome.
+const marking = async (what: string, write: () => Promise<void>) => {
+  try {
+    await write();
+  } catch {
+    console.error(
+      `jobs: couldn't ${what} the Google key's Needs attention marker`,
+    );
+  }
+};
 
 export type JobsDeps = {
   readonly handlers: Handlers;
@@ -273,10 +362,12 @@ export type JobsDeps = {
   readonly clock?: () => number;
 };
 
-// AC-8, AC-9: the step. The exhausted lease sweep runs first; with no live
-// GOOGLE key nothing is claimed and no attempt is spent. The budget is
-// checked before each claim, so a claimed job is never left to the step
-// timeout. A breaker stops the step for this tick.
+// AC-8, AC-9, AC-31: the step. The exhausted lease sweep runs first; with
+// no live GOOGLE key nothing is claimed and no attempt is spent. The budget
+// is checked before each claim, so a claimed job is never left to the step
+// timeout. A breaker marks the key and stops the step for this tick; the
+// step's first successful Google call clears the mark. Both run after the
+// job's transaction, on the main connection.
 export async function runJobs(
   conn: Kysely<DB>,
   deps: JobsDeps,
@@ -288,6 +379,9 @@ export async function runJobs(
   const clock = deps.clock ?? Date.now;
   const started = clock();
   const fetchFn = deps.fetch ?? fetch;
+  const method = cfg.credentials.method;
+  let googleAnswered = false;
+  let cleared = false;
   const ctx: JobContext = {
     cfg,
     fetch: fetchFn,
@@ -296,6 +390,9 @@ export async function runJobs(
         cfg,
         deps.mint ?? ((creds) => mintAccessToken(creds, fetchFn)),
       ),
+      () => {
+        googleAnswered = true;
+      },
     ),
   };
   const failed: string[] = [];
@@ -307,9 +404,20 @@ export async function runJobs(
     const handler = deps.handlers[job.kind];
     const outcome = await runOne(conn, job, handler, ctx);
     if (outcome.status === "failed") failed.push(`${job.kind} ${job.id}`);
-    if (outcome.breaker) return { kind: "ran", ran, breaker: true, failed };
+    if (googleAnswered && !cleared) {
+      cleared = true;
+      await marking("clear", () =>
+        clearGoogleRejected(conn, cfg.id, cfg.secretUpdatedAt),
+      );
+    }
+    if (outcome.breaker) {
+      await marking("set", () =>
+        markGoogleRejected(conn, cfg.id, cfg.secretUpdatedAt),
+      );
+      return { kind: "ran", ran, breaker: true, failed, method };
+    }
   }
-  return { kind: "ran", ran, breaker: false, failed };
+  return { kind: "ran", ran, breaker: false, failed, method };
 }
 
 async function runOne(
@@ -323,7 +431,12 @@ async function runOne(
       const outcome: JobOutcome = handler
         ? await handler(trx, job, ctx)
         : { kind: "final", error: UNEXPECTED };
-      const status = await finishJob(trx, job, outcome);
+      const status = await finishJob(
+        trx,
+        job,
+        outcome,
+        ctx.cfg.credentials.method,
+      );
       return { status, breaker: outcome.kind === "breaker" };
     });
   } catch (e) {
@@ -335,7 +448,12 @@ async function runOne(
     const status = await conn
       .transaction()
       .execute((trx: Transaction<DB>) =>
-        finishJob(trx, job, { kind: "retry", error: UNEXPECTED }),
+        finishJob(
+          trx,
+          job,
+          { kind: "retry", error: UNEXPECTED },
+          ctx.cfg.credentials.method,
+        ),
       );
     return { status, breaker: false };
   }

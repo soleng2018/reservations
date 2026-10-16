@@ -12,7 +12,12 @@ import { db } from "@/server/db";
 import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { renderBookingEmail } from "@/server/email/compose";
 import { SAMPLE_BOOKING_DETAILS } from "@/server/email/sample";
-import { purgeDoneJobs, runJobs, type Handlers } from "@/server/jobs/runner";
+import {
+  breakerLogLine,
+  purgeDoneJobs,
+  runJobs,
+  type Handlers,
+} from "@/server/jobs/runner";
 import { syncBookingEvent } from "@/server/jobs/calendar-sync";
 import { runSendEmail } from "@/server/jobs/send-email";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
@@ -126,10 +131,7 @@ async function main(): Promise<number> {
     }
     googleWaiting = false;
     for (const f of step.failed) console.error(`jobs: ${f} failed`);
-    if (step.breaker)
-      console.error(
-        "jobs: Google rejected the service account key, jobs wait 5 minutes",
-      );
+    if (step.breaker) console.error(breakerLogLine(step.method));
   };
   while (!stop.signal.aborted) {
     // A dead lock connection is noticed here even when idle.

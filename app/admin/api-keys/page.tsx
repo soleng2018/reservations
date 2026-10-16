@@ -15,7 +15,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { API_KEY_MESSAGES, SECRET_MASK } from "@/lib/api-keys";
+import {
+  API_KEY_MESSAGES,
+  GOOGLE_METHOD_LABEL,
+  GOOGLE_REJECTED_LINE,
+  SECRET_MASK,
+} from "@/lib/api-keys";
 import type { ApiKeyType } from "@/lib/db-enums";
 import { formatDay } from "@/lib/format-time";
 import { requireAdmin } from "@/server/auth/require";
@@ -61,12 +66,30 @@ export default async function ApiKeysPage() {
     return {
       id: k.id,
       label: k.name,
-      search: `${k.name} ${k.type} ${shownUrl}`,
+      search: `${k.name} ${k.type} ${shownUrl}${k.googleAuth ? ` ${GOOGLE_METHOD_LABEL[k.googleAuth]}` : ""}`,
       cells: {
         name: (
           <span className="text-cell font-semibold text-fg1">{k.name}</span>
         ),
-        type: <Badge tone={TYPE_TONE[k.type]}>{k.type}</Badge>,
+        type: (
+          <div className="flex flex-col items-start gap-1.5">
+            <Badge tone={TYPE_TONE[k.type]}>{k.type}</Badge>
+            {k.googleAuth ? (
+              <span className="text-xs text-fg3">
+                {GOOGLE_METHOD_LABEL[k.googleAuth]}
+              </span>
+            ) : null}
+            {k.googleAuth && k.googleRejectedAt ? (
+              <>
+                <Badge tone="accent">Needs attention</Badge>
+                <span className="max-w-56 text-xs text-fg2">
+                  Since {formatDay(k.googleRejectedAt, user.timezone)}:{" "}
+                  {GOOGLE_REJECTED_LINE[k.googleAuth]}
+                </span>
+              </>
+            ) : null}
+          </div>
+        ),
         baseUrl: (
           <span className="font-mono text-sm break-all text-fg2">
             {shownUrl}

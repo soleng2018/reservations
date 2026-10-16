@@ -26,7 +26,7 @@ import { appUrl } from "@/server/env";
 import type { GoogleFetch } from "@/server/google/http";
 import { queueBookingNotice } from "./booking-notice";
 import { queueCalendarBackfill, syncBookingEvent } from "./calendar-sync";
-import { BREAKER_MESSAGE, runJobs, type Handlers } from "./runner";
+import { breakerMessage, runJobs, type Handlers } from "./runner";
 import { runSendEmail } from "./send-email";
 
 // Spec 0013 AC-6 to AC-18: the tracer, from a confirmed booking to a sent
@@ -252,6 +252,7 @@ describe.skipIf(!hasDb)(
           ran: 1,
           breaker: false,
           failed: [],
+          method: "service_account",
         });
         expect(google.requests).toHaveLength(1);
         const [req] = google.requests;
@@ -542,6 +543,7 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
           ran: 1,
           breaker: true,
           failed: [],
+          method: "service_account",
         });
         const jobs = [
           ...(await jobsFor(trx, `email:${first.bookingId}`)),
@@ -551,7 +553,7 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
         const tripped = jobs.find((j) => j.last_error !== null);
         expect(tripped).toMatchObject({
           status: "pending",
-          last_error: BREAKER_MESSAGE,
+          last_error: breakerMessage("service_account"),
         });
         const emails = [
           ...(await emailsOf(trx, first.bookingId)),
@@ -559,7 +561,9 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
         ];
         expect(emails.map((e) => e.status)).toEqual(["queued", "queued"]);
         expect(
-          emails.filter((e) => e.last_error === BREAKER_MESSAGE),
+          emails.filter(
+            (e) => e.last_error === breakerMessage("service_account"),
+          ),
         ).toHaveLength(1);
         // AC-5: no token or key text in any stored error.
         expect(JSON.stringify([jobs, emails])).not.toMatch(
@@ -567,6 +571,132 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
         );
       }),
   );
+});
+
+// covers: spec 0013 AC-30, AC-31 (the breaker by method, and the marker)
+describe.skipIf(!hasDb)("the Needs attention marker (spec 0013 AC-31)", () => {
+  // A live GOOGLE key row, so the marker has something to mark. Any other
+  // live GOOGLE key is parked inside the rolled back transaction first.
+  const googleKey = async (trx: Kysely<DB>) => {
+    await trx
+      .updateTable("api_keys")
+      .set({ deleted_at: new Date() })
+      .where("type", "=", "GOOGLE")
+      .where("deleted_at", "is", null)
+      .execute();
+    return trx
+      .insertInto("api_keys")
+      .values({
+        name: `Google ${crypto.randomUUID().slice(0, 8)}`,
+        type: "GOOGLE",
+        base_url: "https://www.googleapis.com",
+        secret_ciphertext: "v1:test:placeholder",
+        google_auth: "service_account",
+        sender_email: "labs@nile.example",
+        calendar_id: "c_abc@group.calendar.google.com",
+      })
+      .returning(["id", "secret_updated_at"])
+      .executeTakeFirstOrThrow();
+  };
+
+  const rejectedAt = async (trx: Kysely<DB>, id: string) =>
+    (
+      await trx
+        .selectFrom("api_keys")
+        .select("google_rejected_at")
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow()
+    ).google_rejected_at;
+
+  it("marks the key when the breaker trips, and the next successful call clears it", () =>
+    inRollback(async (trx) => {
+      const key = await googleKey(trx);
+      const cfg = config({
+        id: key.id,
+        secretUpdatedAt: key.secret_updated_at,
+      });
+      await confirmedBooking(trx);
+      const tripped = await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () => cfg,
+        fetch: gmail(() => ({ status: 200, json: { id: "x" } })).fetch,
+        mint: minting(["invalid"]).mint,
+      });
+      expect(tripped).toMatchObject({ breaker: true });
+      expect(await rejectedAt(trx, key.id)).toBeInstanceOf(Date);
+
+      // The breaker's wait is over; the key works again.
+      await trx
+        .updateTable("jobs")
+        .set({ run_at: new Date(Date.now() - 60_000) })
+        .where("status", "=", "pending")
+        .execute();
+      const sent = await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () => ({ ...cfg, stamp: crypto.randomUUID() }),
+        fetch: accepted().fetch,
+        mint: minting().mint,
+      });
+      expect(sent).toMatchObject({ breaker: false, ran: 1 });
+      expect(await rejectedAt(trx, key.id)).toBeNull();
+    }));
+
+  it("never marks a secret saved after the worker read its config", () =>
+    inRollback(async (trx) => {
+      const key = await googleKey(trx);
+      await confirmedBooking(trx);
+      await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        // The config the worker read holds the secret before the save.
+        config: async () =>
+          config({
+            id: key.id,
+            secretUpdatedAt: new Date(key.secret_updated_at.getTime() - 60_000),
+          }),
+        fetch: gmail(() => ({ status: 200, json: { id: "x" } })).fetch,
+        mint: minting(["invalid"]).mint,
+      });
+      expect(await rejectedAt(trx, key.id)).toBeNull();
+    }));
+
+  it("names Google sign in in the breaker's message for a sign in key (AC-30, AC-31)", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx);
+      // The real refresh grant through the fake fetch: Google says the
+      // sign in is gone.
+      const google = gmail((req) =>
+        req.url === "https://oauth2.googleapis.com/token"
+          ? { status: 400, json: { error: "invalid_grant" } }
+          : { status: 200, json: { id: "x" } },
+      );
+      const step = await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () =>
+          config({
+            credentials: {
+              method: "oauth",
+              clientId: "1234-abc.apps.googleusercontent.com",
+              clientSecret: "GOCSPX-canary-secret",
+              refreshToken: "1//canary-refresh",
+            },
+          }),
+        fetch: google.fetch,
+      });
+      expect(step).toMatchObject({ breaker: true, method: "oauth" });
+      expect(google.requests.map((r) => r.url)).toEqual([
+        "https://oauth2.googleapis.com/token",
+      ]);
+      const [email] = await emailsOf(trx, bookingId);
+      expect(email).toMatchObject({
+        status: "queued",
+        last_error: breakerMessage("oauth"),
+      });
+      const jobs = await jobsFor(trx, `email:${bookingId}`);
+      expect(jobs).toEqual([
+        expect.objectContaining({ status: "pending", attempts: 0 }),
+      ]);
+      expect(JSON.stringify([jobs, email])).not.toMatch(/canary|GOCSPX/);
+    }));
 });
 
 describe.skipIf(!hasDb)(
