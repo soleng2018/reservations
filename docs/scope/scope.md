@@ -254,7 +254,7 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
   - [ ] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
 - [ ] Verify it: `/check verify email delivery & booking confirmations`
 - [ ] Test it: `/test email delivery & booking confirmations`
-spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md)
+spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `scripts/calendar-backfill.ts`
 
 ### 16. Set password / welcome email
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
