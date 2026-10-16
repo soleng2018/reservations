@@ -17,7 +17,29 @@ export const API_KEY_MESSAGES = {
   cloudflareUnavailable:
     "Couldn't reach Cloudflare to check the token. Try again.",
   cloudflareRetype: "Enter the key again to change its type or account.",
+  // Spec 0013 AC-1 to AC-4, the GOOGLE key.
+  googleExists: "Only one Google key can exist. Edit the existing one.",
+  keyFileMissing: "Choose the key file.",
+  keyFileTooLarge: "The key file is too large.",
+  keyFileInvalid: "This isn't a Google service account key file (.json).",
+  googleUnavailable: "Couldn't reach Google to check the key. Try again.",
+  googleFileRequired:
+    "Upload the key file again to change the sender, calendar, or type.",
+  keyRequired: "Enter the key again to change its type.",
 } as const;
+
+// Spec 0013 AC-1: the most a key file may be. Google's are about 2.4 KB.
+export const MAX_KEY_FILE_BYTES = 16 * 1024;
+
+// Spec 0013 AC-2, the save check's answers that name the sender.
+export const googleDelegationMessage = (sender: string, clientId: string) =>
+  `Google refused this key for ${sender}. In the Google Admin console, add client ID ${clientId} under domain wide delegation with the gmail.send and calendar.events scopes.`;
+
+export const googleInvalidMessage = (sender: string) =>
+  `Google didn't accept this key for ${sender}. Check that the key still exists in Google Cloud and that ${sender} is a user in your Workspace domain.`;
+
+export const googleCalendarMessage = (sender: string) =>
+  `${sender} can't open this calendar. Create it in that mailbox or share it with "Make changes to events".`;
 
 // AC-5: an IDP key that testbeds use cannot become an AI key.
 export const typeInUseMessage = (names: readonly string[]): string =>

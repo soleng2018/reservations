@@ -16,7 +16,7 @@ export type DurationUnit = z.infer<typeof DurationUnit>;
 export const TestbedClientKind = z.enum(["wired", "wireless"]);
 export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 
-export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE"]);
+export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE", "GOOGLE"]);
 export type ApiKeyType = z.infer<typeof ApiKeyType>;
 
 export const BookingStatus = z.enum([
@@ -40,6 +40,19 @@ export type JobKind = z.infer<typeof JobKind>;
 
 export const JobStatus = z.enum(["pending", "running", "done", "failed"]);
 export type JobStatus = z.infer<typeof JobStatus>;
+
+// Spec 0013: the email outbox.
+export const EmailKind = z.enum([
+  "welcome",
+  "booked",
+  "rescheduled",
+  "cancelled",
+  "reminder",
+]);
+export type EmailKind = z.infer<typeof EmailKind>;
+
+export const EmailStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
+export type EmailStatus = z.infer<typeof EmailStatus>;
 
 export const AuditTargetType = z.enum([
   "testbed_type",
@@ -68,5 +81,7 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "bookings.cancel_source": CancelSource.options,
   "jobs.kind": JobKind.options,
   "jobs.status": JobStatus.options,
+  "email_messages.kind": EmailKind.options,
+  "email_messages.status": EmailStatus.options,
   "audit_events.target_type": AuditTargetType.options,
 };

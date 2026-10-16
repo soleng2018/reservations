@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatDateTime, formatDay, formatTime } from "./format-time";
+import {
+  formatDateTime,
+  formatDay,
+  formatEmailDateTime,
+  formatTime,
+} from "./format-time";
 
 // Tuesday 2026-10-13, 13:00 UTC.
 const at = (iso: string) => new Date(iso);
@@ -31,6 +36,24 @@ describe("formatDateTime (AC-6)", () => {
   it("includes the year and a short zone name", () => {
     expect(formatDateTime(T, "America/New_York")).toBe(
       "Tue, Oct 13, 2026, 9:00 AM EDT",
+    );
+  });
+});
+
+// covers: spec 0013 AC-14
+describe("formatEmailDateTime (spec 0013 AC-14)", () => {
+  const start = new Date("2026-10-13T13:00:00Z");
+  it("matches the template for New York", () => {
+    expect(formatEmailDateTime(start, "America/New_York")).toBe(
+      "Tue, Oct 13, 2026, 9:00 AM ET",
+    );
+  });
+  it("uses a generic zone name elsewhere", () => {
+    expect(formatEmailDateTime(start, "Asia/Kolkata")).toBe(
+      "Tue, Oct 13, 2026, 6:30 PM India Time",
+    );
+    expect(formatEmailDateTime(start, "Europe/Berlin")).toBe(
+      "Tue, Oct 13, 2026, 3:00 PM Germany Time",
     );
   });
 });

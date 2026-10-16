@@ -32,15 +32,16 @@ import {
 export const metadata: Metadata = { title: "API Keys" };
 
 // The mock's blue for IDP, violet for AI; grey for the Cloudflare key
-// (spec 0006 AC-12).
+// (spec 0006 AC-12) and the Google key (spec 0013 AC-1).
 const TYPE_TONE = {
   IDP: "info",
   AI: "accent",
   CLOUDFLARE: "neutral",
+  GOOGLE: "neutral",
 } as const satisfies Record<ApiKeyType, "info" | "accent" | "neutral">;
 
-// Spec 0006: list, search, add, edit, and delete IDP, AI, and Cloudflare
-// credentials. The secret never leaves the server: rows carry no secret
+// Spec 0006: list, search, add, edit, and delete IDP, AI, Cloudflare, and
+// Google credentials. The secret never leaves the server: rows carry no secret
 // field, the Key value cell is a fixed mask, and there is no reveal or copy
 // anywhere (AC-1, AC-8).
 export default async function ApiKeysPage() {
@@ -55,10 +56,12 @@ export default async function ApiKeysPage() {
   const keys = await listApiKeys(db());
   const rows = keys.map((k) => {
     const changed = formatDay(k.secretUpdatedAt, user.timezone);
+    // A GOOGLE key's Base URL is a constant; its sender says more.
+    const shownUrl = k.senderEmail ?? k.baseUrl;
     return {
       id: k.id,
       label: k.name,
-      search: `${k.name} ${k.type} ${k.baseUrl}`,
+      search: `${k.name} ${k.type} ${shownUrl}`,
       cells: {
         name: (
           <span className="text-cell font-semibold text-fg1">{k.name}</span>
@@ -66,7 +69,7 @@ export default async function ApiKeysPage() {
         type: <Badge tone={TYPE_TONE[k.type]}>{k.type}</Badge>,
         baseUrl: (
           <span className="font-mono text-sm break-all text-fg2">
-            {k.baseUrl}
+            {shownUrl}
           </span>
         ),
         secret: (
@@ -95,7 +98,15 @@ export default async function ApiKeysPage() {
             action={updateApiKeyAction.bind(null, k.id)}
           >
             <ApiKeyFields
-              defaults={{ name: k.name, type: k.type, baseUrl: k.baseUrl }}
+              defaults={{
+                name: k.name,
+                type: k.type,
+                baseUrl: k.baseUrl,
+                senderEmail: k.senderEmail ?? "",
+                calendarId: k.calendarId ?? "",
+                devInbox: k.devInbox ?? "",
+                opsBcc: k.opsBcc ?? "",
+              }}
               lastChanged={changed}
             />
           </FormDialog>

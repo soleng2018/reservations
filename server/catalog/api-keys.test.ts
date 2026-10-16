@@ -8,7 +8,10 @@ import {
   type Transaction,
 } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
-import type { ApiKeyCreateInput } from "@/lib/catalog-input";
+import type {
+  StandardKeyCreate as ApiKeyCreateInput,
+  StandardKeyUpdate,
+} from "@/lib/catalog-input";
 import {
   decryptSecret,
   secretAad,
@@ -32,10 +35,19 @@ import {
   deleteApiKey,
   listApiKeys,
   listApiKeysQuery,
+  googleConfigured,
+  googleMailConfig,
   listIdpKeyOptions,
   updateApiKey,
   type ApiKeyDeps,
+  type GoogleKeyCreate,
+  type GoogleKeyUpdate,
 } from "./api-keys";
+import { fakeServiceAccountKey } from "@/server/google/testing";
+import type {
+  VerifyGoogleError,
+  VerifyGoogleInput,
+} from "@/server/google/verify";
 
 // Feature 8 (spec 0006): API keys with write only, row bound secrets. DB
 // tests run inside inRollback with an in memory keyring (no keyring file).
@@ -226,11 +238,16 @@ describe.skipIf(!hasDb)("createApiKey and listApiKeys", () => {
         `b ${tag}`,
         `c ${tag}`,
       ]);
+      // The Google settings (spec 0013) are not secret; null for this type.
       expect(Object.keys(mine[0]).sort()).toEqual([
         "baseUrl",
+        "calendarId",
+        "devInbox",
         "id",
         "name",
+        "opsBcc",
         "secretUpdatedAt",
+        "senderEmail",
         "type",
       ]);
       expect(mine[0].secretUpdatedAt).toBeInstanceOf(Date);
@@ -259,7 +276,7 @@ describe.skipIf(!hasDb)("updateApiKey (AC-4, AC-5)", () => {
   const edit = (
     fields: ApiKeyCreateInput,
     changes: Partial<ApiKeyCreateInput> = {},
-  ) => ({
+  ): StandardKeyUpdate => ({
     name: fields.name,
     type: fields.type,
     baseUrl: fields.baseUrl,
@@ -654,6 +671,9 @@ const stubVerifier = (answer: "ok" | "invalid" | "unavailable" = "ok") => {
         ? { ok: true, value: undefined }
         : { ok: false, error: answer };
     },
+    verifyGoogle: async () => {
+      throw new Error("no Google check expected");
+    },
   };
   return { calls, deps };
 };
@@ -671,7 +691,7 @@ describe.skipIf(!hasDb)("a CLOUDFLARE key (spec 0006 AC-12)", () => {
   const edit = (
     fields: ApiKeyCreateInput,
     changes: Partial<ApiKeyCreateInput> = {},
-  ) => ({
+  ): StandardKeyUpdate => ({
     name: fields.name,
     type: fields.type,
     baseUrl: fields.baseUrl,
@@ -987,4 +1007,350 @@ describe.skipIf(!hasDb)("cloudflareRevokeConfig (spec 0012 AC-11)", () => {
       kind: "broken",
     });
   });
+});
+
+// covers: spec 0013 AC-1 to AC-5 (the GOOGLE key)
+describe.skipIf(!hasDb)("a GOOGLE key (spec 0013)", () => {
+  const keyFile = fakeServiceAccountKey();
+
+  const clearGoogle = (trx: Kysely<DB>) =>
+    trx
+      .updateTable("api_keys")
+      .set({ deleted_at: new Date() })
+      .where("type", "=", "GOOGLE")
+      .where("deleted_at", "is", null)
+      .execute();
+
+  const googleInput = (
+    overrides: Partial<GoogleKeyCreate> = {},
+  ): GoogleKeyCreate => ({
+    name: `Google ${unique()}`,
+    type: "GOOGLE",
+    senderEmail: "labs@nile.example",
+    calendarId: "c_abc@group.calendar.google.com",
+    devInbox: "dev-inbox@nile.example",
+    opsBcc: null,
+    keyFile,
+    ...overrides,
+  });
+
+  const googleStub = (answer: "ok" | VerifyGoogleError = "ok") => {
+    const calls: VerifyGoogleInput[] = [];
+    const deps: ApiKeyDeps = {
+      verifyCloudflare: async () => {
+        throw new Error("no Cloudflare check expected");
+      },
+      verifyGoogle: async (input) => {
+        calls.push(input);
+        return answer === "ok"
+          ? { ok: true, value: undefined }
+          : { ok: false, error: answer };
+      },
+    };
+    return { calls, deps };
+  };
+
+  const setup = async (trx: Transaction<DB>) => {
+    await clearGoogle(trx);
+    const actor = await makeUser(trx, { role: "admin" });
+    const fields = googleInput();
+    const created = await createApiKey(
+      asConn(trx),
+      KEYRING,
+      fields,
+      actor.id,
+      googleStub().deps,
+    );
+    if (!created.ok) throw new Error("expected a create");
+    return { actor, id: created.value.id, fields };
+  };
+
+  const edit = (
+    fields: GoogleKeyCreate,
+    changes: Partial<GoogleKeyUpdate> = {},
+  ): GoogleKeyUpdate => ({ ...fields, keyFile: null, ...changes });
+
+  it("checks the key as the sender, then stores only three fields, encrypted", () =>
+    inRollback(async (trx) => {
+      const { calls, deps } = googleStub();
+      await clearGoogle(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const created = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        googleInput({ opsBcc: "ops@nile.example" }),
+        actor.id,
+        deps,
+      );
+      if (!created.ok) throw new Error("expected a create");
+      expect(calls).toEqual([
+        {
+          clientEmail: keyFile.client_email,
+          privateKey: keyFile.private_key,
+          privateKeyId: keyFile.private_key_id,
+          senderEmail: "labs@nile.example",
+          calendarId: "c_abc@group.calendar.google.com",
+        },
+      ]);
+      const row = await stored(trx, created.value.id);
+      expect(row).toMatchObject({
+        type: "GOOGLE",
+        base_url: "https://www.googleapis.com",
+        sender_email: "labs@nile.example",
+        calendar_id: "c_abc@group.calendar.google.com",
+        dev_inbox: "dev-inbox@nile.example",
+        ops_bcc: "ops@nile.example",
+      });
+      expect(row.secret_ciphertext).not.toContain("PRIVATE KEY");
+      const secret = JSON.parse(
+        decryptSecret(
+          KEYRING,
+          row.secret_ciphertext,
+          secretAad("api_keys", "secret_ciphertext", created.value.id),
+        ),
+      );
+      expect(secret).toEqual({
+        clientEmail: keyFile.client_email,
+        privateKey: keyFile.private_key,
+        privateKeyId: keyFile.private_key_id,
+      });
+      const [createdAudit] = await auditsFor(trx, created.value.id);
+      expect(createdAudit.metadata).toEqual({
+        type: "GOOGLE",
+        baseUrl: "https://www.googleapis.com",
+        senderEmail: "labs@nile.example",
+        calendarId: "c_abc@group.calendar.google.com",
+        devInbox: "dev-inbox@nile.example",
+        opsBcc: "ops@nile.example",
+      });
+      expect(JSON.stringify(createdAudit)).not.toContain("PRIVATE KEY");
+    }));
+
+  it.each<[VerifyGoogleError, string]>([
+    ["invalid", "google_invalid"],
+    ["delegation", "google_delegation"],
+    ["calendar", "google_calendar"],
+    ["unavailable", "google_unavailable"],
+  ])("writes nothing when the check answers %s", (answer, error) =>
+    inRollback(async (trx) => {
+      await clearGoogle(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const fields = googleInput();
+      expect(
+        await createApiKey(
+          asConn(trx),
+          KEYRING,
+          fields,
+          actor.id,
+          googleStub(answer).deps,
+        ),
+      ).toEqual({ ok: false, error });
+      const rows = await trx
+        .selectFrom("api_keys")
+        .select("id")
+        .where("name", "=", fields.name)
+        .execute();
+      expect(rows).toEqual([]);
+    }),
+  );
+
+  it("refuses a second live GOOGLE key", () =>
+    inRollback(async (trx) => {
+      const { actor } = await setup(trx);
+      expect(
+        await createApiKey(
+          asConn(trx),
+          KEYRING,
+          googleInput(),
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: false, error: "google_exists" });
+    }));
+
+  it("saves a name, dev inbox, or Ops BCC change with no file and no Google call (AC-4)", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const { calls, deps } = googleStub();
+      const before = await stored(trx, id);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, { devInbox: null, opsBcc: "ops@nile.example" }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(calls).toEqual([]);
+      const after = await stored(trx, id);
+      expect(after).toMatchObject({
+        dev_inbox: null,
+        ops_bcc: "ops@nile.example",
+      });
+      expect(after.secret_ciphertext).toBe(before.secret_ciphertext);
+      const audits = (await auditsFor(trx, id)).map((a) => a.action);
+      expect(audits).toEqual(["api_key.created", "api_key.updated"]);
+    }));
+
+  it.each([
+    ["the sender", { senderEmail: "other@nile.example" }],
+    ["the calendar", { calendarId: "c_other@group.calendar.google.com" }],
+  ])("needs the key file again to change %s (AC-4)", (_label, change) =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, change),
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: false, error: "google_file_required" });
+    }),
+  );
+
+  it("needs the key file to become GOOGLE, and a typed key to leave it (AC-4)", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          {
+            name: fields.name,
+            type: "AI",
+            baseUrl: "https://ai.example",
+            secret: "",
+          },
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: false, error: "key_required" });
+      const ai = await createApiKey(
+        asConn(trx),
+        KEYRING,
+        input({ type: "AI" }),
+        actor.id,
+      );
+      if (!ai.ok) throw new Error("expected a create");
+      await clearGoogle(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          ai.value.id,
+          { ...googleInput(), keyFile: null },
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: false, error: "google_file_required" });
+    }));
+
+  it("replaces the key with a new file, checking it first (AC-4)", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const { calls, deps } = googleStub();
+      const before = await stored(trx, id);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, {
+            senderEmail: "other@nile.example",
+            keyFile: fakeServiceAccountKey({ private_key_id: "new-key-id" }),
+          }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(calls).toHaveLength(1);
+      const after = await stored(trx, id);
+      expect(after.sender_email).toBe("other@nile.example");
+      expect(after.secret_ciphertext).not.toBe(before.secret_ciphertext);
+      const audits = await auditsFor(trx, id);
+      expect(audits.map((a) => a.action)).toEqual([
+        "api_key.created",
+        "api_key.updated",
+        "api_key.secret_replaced",
+      ]);
+      expect(audits[1].metadata).toEqual({
+        senderEmail: { from: "labs@nile.example", to: "other@nile.example" },
+      });
+    }));
+
+  it("moves a GOOGLE key to another type with a typed key, clearing its settings", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          {
+            name: fields.name,
+            type: "AI",
+            baseUrl: "https://ai.example",
+            secret: "ai-secret",
+          },
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(await stored(trx, id)).toMatchObject({
+        type: "AI",
+        base_url: "https://ai.example",
+        sender_email: null,
+        calendar_id: null,
+        dev_inbox: null,
+        ops_bcc: null,
+      });
+    }));
+
+  it("googleMailConfig is null with no live key and never reads the keyring (AC-5)", () =>
+    inRollback(async (trx) => {
+      await clearGoogle(trx);
+      let reads = 0;
+      expect(
+        await googleMailConfig(asConn(trx), () => {
+          reads += 1;
+          return KEYRING;
+        }),
+      ).toBeNull();
+      expect(reads).toBe(0);
+      expect(await googleConfigured(asConn(trx))).toBe(false);
+    }));
+
+  it("googleMailConfig round trips the live key and its settings (AC-5)", () =>
+    inRollback(async (trx) => {
+      const { id } = await setup(trx);
+      const row = await stored(trx, id);
+      expect(await googleMailConfig(asConn(trx), () => KEYRING)).toEqual({
+        clientEmail: keyFile.client_email,
+        privateKey: keyFile.private_key,
+        privateKeyId: keyFile.private_key_id,
+        senderEmail: "labs@nile.example",
+        calendarId: "c_abc@group.calendar.google.com",
+        devInbox: "dev-inbox@nile.example",
+        opsBcc: null,
+        stamp: row.updated_at.toISOString(),
+      });
+      expect(await googleConfigured(asConn(trx))).toBe(true);
+    }));
+
+  it("googleMailConfig throws one fixed message when the key can't be read", () =>
+    inRollback(async (trx) => {
+      await setup(trx);
+      const other: Keyring = {
+        activeKeyId: "kother",
+        keys: new Map([["kother", randomBytes(32)]]),
+      };
+      const e = await thrown(() => googleMailConfig(asConn(trx), () => other));
+      expect(e.message).toBe("the GOOGLE API key can't be read");
+    }));
 });

@@ -1,0 +1,393 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for Kolkata > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your Nile Hands-On Lab access</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your lab is reserved. Access links and session details inside.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your lab access is ready</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Arjun, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Starts</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 6:30 PM India Time</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Ends</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 10:30 PM India Time</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:24px 36px 4px"><h2 style="margin:0;font-size:18px;font-weight:600">Lab access</h2></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px"><tbody><tr><td style="padding:8px 36px 0px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Portal</p><a href="https://example.nile/portal" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the portal for this testbed</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">LMS course</p><a href="https://example.nile/lms" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the lab guide</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wireless client</p><a href="https://example.nile/client/wireless" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wireless client</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wired client</p><a href="https://example.nile/client/wired" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wired client</a></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 4px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border:1px solid #DCE3ED;border-radius:12px"><tbody><tr><td style="padding:16px 20px"><p style="font-size:14px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Set your password</p><p style="font-size:13px;line-height:1.5;margin:4px 0 0;color:#4D626C;margin-top:4px;margin-right:0;margin-bottom:0;margin-left:0">You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.</p></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/reservations" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Manage my reservation</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:14px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:16px 36px 32px">Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for Kolkata > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:1
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation.\\nLab type: Basic\\nTestbed:
+  Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 6:30 PM India Time\\nEnds: Tue\\, 
+ Oct 13\\, 2026\\, 10:30 PM India Time\\nManage your reservation: https://labs
+ .nile.example/reservations
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for Kolkata > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR LAB ACCESS IS READY
+
+Hi Arjun, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Starts  Tue, Oct 13, 2026, 6:30 PM India Time
+
+Ends  Tue, Oct 13, 2026, 10:30 PM India Time
+
+
+LAB ACCESS
+
+Nile Portal
+
+Open the portal for this testbed https://example.nile/portal
+
+LMS course
+
+Open the lab guide https://example.nile/lms
+
+Wireless client
+
+Open the wireless client https://example.nile/client/wireless
+
+Wired client
+
+Open the wired client https://example.nile/client/wired
+
+Set your password
+
+You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.
+
+Manage my reservation https://labs.nile.example/reservations
+
+Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for New York > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your Nile Hands-On Lab access</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your lab is reserved. Access links and session details inside.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your lab access is ready</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Priya, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Starts</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 9:00 AM ET</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Ends</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 1:00 PM ET</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:24px 36px 4px"><h2 style="margin:0;font-size:18px;font-weight:600">Lab access</h2></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px"><tbody><tr><td style="padding:8px 36px 0px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Portal</p><a href="https://example.nile/portal" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the portal for this testbed</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">LMS course</p><a href="https://example.nile/lms" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the lab guide</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wireless client</p><a href="https://example.nile/client/wireless" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wireless client</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wired client</p><a href="https://example.nile/client/wired" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wired client</a></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 4px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border:1px solid #DCE3ED;border-radius:12px"><tbody><tr><td style="padding:16px 20px"><p style="font-size:14px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Set your password</p><p style="font-size:13px;line-height:1.5;margin:4px 0 0;color:#4D626C;margin-top:4px;margin-right:0;margin-bottom:0;margin-left:0">You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.</p></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/reservations" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Manage my reservation</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:14px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:16px 36px 32px">Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for New York > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:1
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation.\\nLab type: Basic\\nTestbed:
+  Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 9:00 AM ET\\nEnds: Tue\\, Oct 13\\,
+  2026\\, 1:00 PM ET\\nManage your reservation: https://labs.nile.example/res
+ ervations
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders booked for New York > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR LAB ACCESS IS READY
+
+Hi Priya, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Starts  Tue, Oct 13, 2026, 9:00 AM ET
+
+Ends  Tue, Oct 13, 2026, 1:00 PM ET
+
+
+LAB ACCESS
+
+Nile Portal
+
+Open the portal for this testbed https://example.nile/portal
+
+LMS course
+
+Open the lab guide https://example.nile/lms
+
+Wireless client
+
+Open the wireless client https://example.nile/client/wireless
+
+Wired client
+
+Open the wired client https://example.nile/client/wired
+
+Set your password
+
+You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.
+
+Manage my reservation https://labs.nile.example/reservations
+
+Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for Kolkata > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your reservation was cancelled</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your reservation was cancelled.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your reservation was cancelled</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Arjun, your reservation has been cancelled and the testbed is released. The calendar event has been removed from your calendar and the lab access links no longer work.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Was scheduled</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 6:30 PM India Time</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Until</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 10:30 PM India Time</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:24px 36px 4px">You can book a new lab session at any time.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/book" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Reserve a new lab</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:16px 36px 32px"></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for Kolkata > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:3
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation was cancelled.\\nLab type: B
+ asic\\nTestbed: Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 6:30 PM India Time
+ \\nEnds: Tue\\, Oct 13\\, 2026\\, 10:30 PM India Time\\nReserve a new lab: http
+ s://labs.nile.example/book
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for Kolkata > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR RESERVATION WAS CANCELLED
+
+Hi Arjun, your reservation has been cancelled and the testbed is released. The calendar event has been removed from your calendar and the lab access links no longer work.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Was scheduled  Tue, Oct 13, 2026, 6:30 PM India Time
+
+Until  Tue, Oct 13, 2026, 10:30 PM India Time
+
+You can book a new lab session at any time.
+
+Reserve a new lab https://labs.nile.example/book
+
+
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for New York > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your reservation was cancelled</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your reservation was cancelled.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your reservation was cancelled</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Priya, your reservation has been cancelled and the testbed is released. The calendar event has been removed from your calendar and the lab access links no longer work.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Was scheduled</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 9:00 AM ET</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Until</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 1:00 PM ET</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:24px 36px 4px">You can book a new lab session at any time.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/book" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Reserve a new lab</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:16px 36px 32px"></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for New York > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:3
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation was cancelled.\\nLab type: B
+ asic\\nTestbed: Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 9:00 AM ET\\nEnds: 
+ Tue\\, Oct 13\\, 2026\\, 1:00 PM ET\\nReserve a new lab: https://labs.nile.exa
+ mple/book
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders cancelled for New York > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR RESERVATION WAS CANCELLED
+
+Hi Priya, your reservation has been cancelled and the testbed is released. The calendar event has been removed from your calendar and the lab access links no longer work.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Was scheduled  Tue, Oct 13, 2026, 9:00 AM ET
+
+Until  Tue, Oct 13, 2026, 1:00 PM ET
+
+You can book a new lab session at any time.
+
+Reserve a new lab https://labs.nile.example/book
+
+
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for Kolkata > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your Nile Hands-On Lab access</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your lab is reserved. Access links and session details inside.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your reservation was rescheduled</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Arjun, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Starts</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 6:30 PM India Time</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Ends</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 10:30 PM India Time</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:24px 36px 4px"><h2 style="margin:0;font-size:18px;font-weight:600">Lab access</h2></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px"><tbody><tr><td style="padding:8px 36px 0px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Portal</p><a href="https://example.nile/portal" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the portal for this testbed</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">LMS course</p><a href="https://example.nile/lms" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the lab guide</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wireless client</p><a href="https://example.nile/client/wireless" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wireless client</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wired client</p><a href="https://example.nile/client/wired" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wired client</a></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 4px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border:1px solid #DCE3ED;border-radius:12px"><tbody><tr><td style="padding:16px 20px"><p style="font-size:14px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Set your password</p><p style="font-size:13px;line-height:1.5;margin:4px 0 0;color:#4D626C;margin-top:4px;margin-right:0;margin-bottom:0;margin-left:0">You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.</p></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/reservations" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Manage my reservation</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:14px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:16px 36px 32px">Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for Kolkata > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:2
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation.\\nLab type: Basic\\nTestbed:
+  Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 6:30 PM India Time\\nEnds: Tue\\, 
+ Oct 13\\, 2026\\, 10:30 PM India Time\\nManage your reservation: https://labs
+ .nile.example/reservations
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for Kolkata > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR RESERVATION WAS RESCHEDULED
+
+Hi Arjun, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Starts  Tue, Oct 13, 2026, 6:30 PM India Time
+
+Ends  Tue, Oct 13, 2026, 10:30 PM India Time
+
+
+LAB ACCESS
+
+Nile Portal
+
+Open the portal for this testbed https://example.nile/portal
+
+LMS course
+
+Open the lab guide https://example.nile/lms
+
+Wireless client
+
+Open the wireless client https://example.nile/client/wireless
+
+Wired client
+
+Open the wired client https://example.nile/client/wired
+
+Set your password
+
+You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.
+
+Manage my reservation https://labs.nile.example/reservations
+
+Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for New York > html 1`] = `"<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html dir="ltr" lang="en"><head><meta content="text/html; charset=UTF-8" http-equiv="Content-Type"/><meta name="x-apple-disable-message-reformatting"/><title>Your Nile Hands-On Lab access</title></head><body dir="ltr" lang="en" style="background:#F6F8FB;margin:0;padding:0"><!--$--><!--html--><!--head--><!--body--><table border="0" width="100%" cellPadding="0" cellSpacing="0" role="presentation" align="center"><tbody><tr><td dir="ltr" lang="en" style="margin:0;padding:0;background:#F6F8FB;font-family:Inter,Arial,Helvetica,sans-serif;color:#001E2D"><div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0" data-skip-in-text="true">Your lab is reserved. Access links and session details inside.<div> ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿ ‌​‍‎‏﻿</div></div><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB"><tbody><tr><td style="padding:32px 12px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="max-width:600px;width:100%;background:#FFFFFF;border:1px solid #DCE3ED;border-radius:16px"><tbody><tr style="width:100%"><td><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 20px"><img alt="Nile" height="30" src="cid:nile-logo" style="display:block;outline:none;border:0;text-decoration:none;height:30px" width="61"/></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:0px 36px 0px"><div style="height:3px;background:linear-gradient(90deg,#0E4EAF,#EC394C,#FF6600);background-color:#0E4EAF;border-radius:2px"></div></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><p style="font-size:12px;line-height:24px;margin:0;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#0E4EAF;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Hands-On Labs</p><h1 style="margin:8px 0 12px;font-size:28px;line-height:1.2;font-weight:600;color:#001E2D">Your reservation was rescheduled</h1><p style="font-size:16px;line-height:1.6;margin:0;color:#4D626C;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Hi Priya, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.</p></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 8px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border:1px solid #DCE3ED;border-radius:12px;font-size:14.5px;line-height:1.5"><tbody><tr><td style="padding:18px 20px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Lab type</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Basic</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Testbed</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Testbed 1</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Starts</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 9:00 AM ET</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" class="details-row"><tbody style="width:100%"><tr style="width:100%"><td data-id="__react-email-column" style="padding:5px 0;color:#4D626C;width:110px">Ends</td><td data-id="__react-email-column" style="padding:5px 0;font-weight:600">Tue, Oct 13, 2026, 1:00 PM ET</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:24px 36px 4px"><h2 style="margin:0;font-size:18px;font-weight:600">Lab access</h2></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:15px"><tbody><tr><td style="padding:8px 36px 0px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Nile Portal</p><a href="https://example.nile/portal" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the portal for this testbed</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">LMS course</p><a href="https://example.nile/lms" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the lab guide</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border-bottom:1px solid #DCE3ED"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wireless client</p><a href="https://example.nile/client/wireless" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wireless client</a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:12px 0"><p style="font-size:15px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Wired client</p><a href="https://example.nile/client/wired" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none;font-size:14px" target="_blank">Open the wired client</a></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:20px 36px 4px"><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="border:1px solid #DCE3ED;border-radius:12px"><tbody><tr><td style="padding:16px 20px"><p style="font-size:14px;line-height:24px;margin:0;font-weight:600;margin-top:0;margin-bottom:0;margin-left:0;margin-right:0">Set your password</p><p style="font-size:13px;line-height:1.5;margin:4px 0 0;color:#4D626C;margin-top:4px;margin-right:0;margin-bottom:0;margin-left:0">You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.</p></td></tr></tbody></table></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation"><tbody><tr><td style="padding:28px 36px 8px"><a href="https://labs.nile.example/reservations" style="line-height:100%;text-decoration:none;display:inline-block;max-width:100%;mso-padding-alt:0px;padding:14px 28px;border-radius:999px;background:#FF6600;background-image:linear-gradient(90deg,#EC394C,#FF6600);color:#FFFFFF;font-size:15px;font-weight:700;padding-top:14px;padding-right:28px;padding-bottom:14px;padding-left:28px" target="_blank"><span><!--[if mso]><i style="mso-font-width:466.6666666666667%;mso-text-raise:21px" hidden>&#8202;&#8202;&#8202;</i><![endif]--></span><span style="max-width:100%;display:inline-block;line-height:120%;mso-padding-alt:0px;mso-text-raise:10.5px">Manage my reservation</span><span><!--[if mso]><i style="mso-font-width:466.6666666666667%" hidden>&#8202;&#8202;&#8202;&#8203;</i><![endif]--></span></a></td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="font-size:14px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:16px 36px 32px">Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.</td></tr></tbody></table><table align="center" width="100%" border="0" cellPadding="0" cellSpacing="0" role="presentation" style="background:#F6F8FB;border-top:1px solid #DCE3ED;border-radius:0 0 16px 16px;font-size:12.5px;line-height:1.6;color:#4D626C"><tbody><tr><td style="padding:20px 36px">Nile Hands-On Labs ·<!-- --> <a href="https://www.nilesecure.com" style="color:#0E4EAF;text-decoration-line:none;text-decoration:none" target="_blank">nilesecure.com</a><br/>Copyright © 2026 Nile. All rights reserved.</td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table></td></tr></tbody></table><!--/$--></body></html>"`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for New York > ics 1`] = `
+"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Nile//Hands-On Labs//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:22222222-2222-4222-8222-222222222222@nile-hol-reservations
+SEQUENCE:2
+DTSTAMP:20261012T100000Z
+DTSTART:20261013T130000Z
+DTEND:20261013T170000Z
+SUMMARY:Nile Hands-On Lab: Basic
+DESCRIPTION:Your Nile Hands-On Lab reservation.\\nLab type: Basic\\nTestbed:
+  Testbed 1\\nStarts: Tue\\, Oct 13\\, 2026\\, 9:00 AM ET\\nEnds: Tue\\, Oct 13\\,
+  2026\\, 1:00 PM ET\\nManage your reservation: https://labs.nile.example/res
+ ervations
+ORGANIZER;CN="Nile Hands-On Labs":mailto:labs@nile.example
+ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=FALSE:MAILTO:priy
+ a@acme.com
+END:VEVENT
+END:VCALENDAR"
+`;
+
+exports[`booking email render (spec 0013 AC-23) > renders rescheduled for New York > text 1`] = `
+"Nile Hands-On Labs
+
+
+YOUR RESERVATION WAS RESCHEDULED
+
+Hi Priya, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.
+
+Lab type  Basic
+
+Testbed  Testbed 1
+
+Starts  Tue, Oct 13, 2026, 9:00 AM ET
+
+Ends  Tue, Oct 13, 2026, 1:00 PM ET
+
+
+LAB ACCESS
+
+Nile Portal
+
+Open the portal for this testbed https://example.nile/portal
+
+LMS course
+
+Open the lab guide https://example.nile/lms
+
+Wireless client
+
+Open the wireless client https://example.nile/client/wireless
+
+Wired client
+
+Open the wired client https://example.nile/client/wired
+
+Set your password
+
+You will receive a separate email with a link to set your password. Use it with this email address to reschedule or cancel. Existing users sign in with their current credentials.
+
+Manage my reservation https://labs.nile.example/reservations
+
+Only one active reservation is allowed at a time. To change your time, reschedule from the link above before your session starts.
+
+Nile Hands-On Labs · nilesecure.com https://www.nilesecure.com
+Copyright © 2026 Nile. All rights reserved."
+`;

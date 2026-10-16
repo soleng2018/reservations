@@ -72,7 +72,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
       await recordAuthentikUser(trx, ref.userId, { pk: 41, created: true });
       expect(await confirmGuestBooking(trx, ref)).toEqual({
         ok: true,
-        value: undefined,
+        value: { version: 1 },
       });
       expect(await state(ref.userId)).toEqual({
         user: { authentik_user_pk: 41, authentik_pending_saga: false },

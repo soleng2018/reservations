@@ -2,6 +2,10 @@ import { randomBytes } from "node:crypto";
 import type { Kysely } from "kysely";
 import { describe, expect, it, vi } from "vitest";
 import type { Keyring } from "@/server/crypto/secrets";
+import {
+  fakeKeyFileText,
+  fakeServiceAccountKey,
+} from "@/server/google/testing";
 import type { DB } from "@/server/db/types";
 
 class Redirect extends Error {
@@ -18,6 +22,9 @@ const ctx = vi.hoisted(() => ({
   // What the stub Cloudflare token check answers, and how often it ran.
   cloudflare: "ok" as "ok" | "invalid" | "unavailable",
   cloudflareChecks: 0,
+  // The same for the Google key check (spec 0013 AC-2).
+  google: "ok" as "ok" | "invalid" | "delegation" | "calendar" | "unavailable",
+  googleChecks: 0,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -57,6 +64,16 @@ vi.mock("@/server/cloudflare/access", async (importOriginal) => ({
     return ctx.cloudflare === "ok"
       ? { ok: true, value: undefined }
       : { ok: false, error: ctx.cloudflare };
+  },
+}));
+// Never the real Google (spec 0013 AC-2).
+vi.mock("@/server/google/verify", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  verifyGoogleKey: async () => {
+    ctx.googleChecks += 1;
+    return ctx.google === "ok"
+      ? { ok: true, value: undefined }
+      : { ok: false, error: ctx.google };
   },
 }));
 vi.mock("@/server/db", async (importOriginal) => {
@@ -728,6 +745,131 @@ describe.skipIf(!hasDb)("API key actions", () => {
         expect(JSON.stringify(invalid)).not.toContain("canary");
       } finally {
         ctx.cloudflare = "ok";
+      }
+    }));
+
+  // covers: spec 0013 AC-1 to AC-4
+  it("reads, checks, and maps a GOOGLE key file, never echoing it", () =>
+    as("admin", async (trx) => {
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "GOOGLE")
+        .where("deleted_at", "is", null)
+        .execute();
+      const file = (text: string, name = "key.json") =>
+        new File([text], name, { type: "application/json" });
+      const googleForm = (name: string, keyFile: File | undefined) => {
+        const f = new FormData();
+        f.set("name", name);
+        f.set("type", "GOOGLE");
+        f.set("senderEmail", "labs@nile.example");
+        f.set("calendarId", "c_abc@group.calendar.google.com");
+        f.set("devInbox", "");
+        f.set("opsBcc", "");
+        // An empty file input posts a nameless, empty File.
+        f.set("keyFile", keyFile ?? new File([], ""));
+        return f;
+      };
+      const keyText = fakeKeyFileText(
+        fakeServiceAccountKey({ private_key_id: "canary-key-id" }),
+      );
+      ctx.googleChecks = 0;
+      try {
+        expect(
+          await createApiKeyAction(IDLE, googleForm(newName(), undefined)),
+        ).toEqual({
+          kind: "error",
+          fields: { keyFile: "Choose the key file." },
+        });
+        const bad = googleForm("", file("{not json"));
+        bad.set("senderEmail", "labs");
+        expect(await createApiKeyAction(IDLE, bad)).toEqual({
+          kind: "error",
+          fields: {
+            name: "Enter a name.",
+            senderEmail: "Enter an email address.",
+            keyFile: "This isn't a Google service account key file (.json).",
+          },
+        });
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            googleForm(newName(), file("x".repeat(16 * 1024 + 1))),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: { keyFile: "The key file is too large." },
+        });
+        expect(ctx.googleChecks).toBe(0);
+
+        ctx.google = "delegation";
+        const refused = await createApiKeyAction(
+          IDLE,
+          googleForm(newName(), file(keyText)),
+        );
+        expect(refused).toEqual({
+          kind: "error",
+          fields: {
+            keyFile:
+              "Google refused this key for labs@nile.example. In the Google Admin console, add client ID 104857600123456789012 under domain wide delegation with the gmail.send and calendar.events scopes.",
+          },
+        });
+        expect(JSON.stringify(refused)).not.toMatch(/canary|PRIVATE KEY/);
+        ctx.google = "calendar";
+        expect(
+          await createApiKeyAction(IDLE, googleForm(newName(), file(keyText))),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            calendarId:
+              'labs@nile.example can\'t open this calendar. Create it in that mailbox or share it with "Make changes to events".',
+          },
+        });
+        ctx.google = "unavailable";
+        expect(
+          await createApiKeyAction(IDLE, googleForm(newName(), file(keyText))),
+        ).toEqual({
+          kind: "error",
+          message: "Couldn't reach Google to check the key. Try again.",
+          fields: {},
+        });
+
+        ctx.google = "ok";
+        const name = newName();
+        expect(
+          await createApiKeyAction(IDLE, googleForm(name, file(keyText))),
+        ).toEqual({ kind: "saved", message: `Created ${name}.` });
+        expect(
+          await createApiKeyAction(IDLE, googleForm(newName(), file(keyText))),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            type: "Only one Google key can exist. Edit the existing one.",
+          },
+        });
+
+        const [key] = await keysNamed(trx, name);
+        if (!key) throw new Error("expected the key");
+        const checks = ctx.googleChecks;
+        const moved = googleForm(name, undefined);
+        moved.set("calendarId", "c_other@group.calendar.google.com");
+        expect(await updateApiKeyAction(key.id, IDLE, moved)).toEqual({
+          kind: "error",
+          fields: {
+            keyFile:
+              "Upload the key file again to change the sender, calendar, or type.",
+          },
+        });
+        const kept = googleForm(name, undefined);
+        kept.set("opsBcc", "ops@nile.example");
+        expect(await updateApiKeyAction(key.id, IDLE, kept)).toEqual({
+          kind: "saved",
+          message: `Updated ${name}.`,
+        });
+        expect(ctx.googleChecks).toBe(checks);
+      } finally {
+        ctx.google = "ok";
       }
     }));
 });

@@ -1,7 +1,7 @@
 # 0013. Email delivery and booking confirmations
 
 **Date**: 2026-10-14
-**Status**: Proposed
+**Status**: In Progress
 **Amends**: [spec 0001](../0001-stack-architecture/index.md) (Google credentials move from env files to the API Keys screen; the dev OAuth driver is dropped and the service account with domain wide delegation is the only driver), [spec 0002](../0002-data-model/index.md) (`integration_secrets` is dropped from the target; `api_keys` gains Google columns; `email_messages` is built), [spec 0006](../0006-admin-api-keys/index.md) (a fourth key type, `GOOGLE`)
 
 ## Summary
@@ -240,12 +240,12 @@ Domain functions (each returns a typed `Result`; Google calls take an injected `
 
 Tracer Bullet: the first two tasks prove one booked email from a real booking to a real inbox through every layer; the rest thicken it.
 
-1. Foundations: `worker/server-only-hook.mjs` and the `worker` script change, with its test; migration `0009_google_email.sql`, `db:codegen`, the enums in `lib/db-enums.ts` and `checkLists`, `mapConstraintError` for `api_keys_one_google_uq`; the `GOOGLE` type on create only (file field, sender field, `GoogleServiceAccountKey`, `verifyGoogleKey`, the field errors, the badge and sender cell); `googleMailConfig` and `googleConfigured`. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-22**, **AC-24**
-2. Tracer thread, booked: `BookingEmailDetails`, `queueBookingNotice` called from `confirmGuestBooking`; the runner (`claimJob`, `finishJob`, `runJobs`, backoff, attempt cap, the handled set, the step in `worker/index.ts`); `formatEmailDateTime`; `routeEmail`; the React Email `LabAccessEmail` with its shared parts and the resized logo; the `.ics`; `composeBookingEmail`; `googleAccessToken` and `sendRaw`; `runSendEmail`. Book as a `dev-` learner and see it arrive in the dev inbox. Satisfies **AC-6**, **AC-7**, **AC-8**, **AC-11**, **AC-12**, **AC-14**, **AC-15**, **AC-16**, **AC-17**
+1. [x] Foundations: `worker/server-only-hook.mjs` and the `worker` script change, with its test; migration `0009_google_email.sql`, `db:codegen`, the enums in `lib/db-enums.ts` and `checkLists`, `mapConstraintError` for `api_keys_one_google_uq`; the `GOOGLE` type on create only (file field, sender field, `GoogleServiceAccountKey`, `verifyGoogleKey`, the field errors, the badge and sender cell); `googleMailConfig` and `googleConfigured`. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-22**, **AC-24**
+2. [x] Tracer thread, booked: `BookingEmailDetails`, `queueBookingNotice` called from `confirmGuestBooking`; the runner (`claimJob`, `finishJob`, `runJobs`, backoff, attempt cap, the handled set, the step in `worker/index.ts`); `formatEmailDateTime`; `routeEmail`; the React Email `LabAccessEmail` with its shared parts and the resized logo; the `.ics`; `composeBookingEmail`; `googleAccessToken` and `sendRaw`; `runSendEmail`. Book as a `dev-` learner and see it arrive in the dev inbox. Satisfies **AC-6**, **AC-7**, **AC-8**, **AC-11**, **AC-12**, **AC-14**, **AC-15**, **AC-16**, **AC-17**
 3. Reschedule and cancel: `queueBookingNotice` in `rescheduleBooking` and `cancelBooking`; the rescheduled heading and subject; `CancellationEmail`; `METHOD:CANCEL`; the version order claim rule. Satisfies **AC-6**, **AC-10**, **AC-12**, **AC-13**, **AC-17**
-4. Failure strands: the no key wait with its one time log, the breaker with the attempt returned, the stale skip, the final 4xx mapping, the daily purge of old `done` jobs. Satisfies **AC-7**, **AC-8**, **AC-9**, **AC-18**
+4. [x] Failure strands: the no key wait with its one time log, the breaker with the attempt returned, the stale skip, the final 4xx mapping, the daily purge of old `done` jobs. Satisfies **AC-7**, **AC-8**, **AC-9**, **AC-18**
 5. Calendar mirror: `putEvent`, `insertEvent`, `deleteEvent`, `syncBookingEvent`, `calendar_event_id`; `npm run calendar:backfill`. Satisfies **AC-19**, **AC-20**
-6. Key edit: the `GOOGLE` edit dialog, the file required rules, the widened audit metadata and `changedFields` keys. Satisfies **AC-4**
+6. [x] Key edit: the `GOOGLE` edit dialog, the file required rules, the widened audit metadata and `changedFields` keys. Satisfies **AC-4**
 7. Console: `listUserEmails`, the Emails section, the not set up note. Satisfies **AC-21**
 8. Proof: template snapshots, the extended canary scan and source scans, Vitest DB tests in `inRollback` with fake Google calls, Playwright for the key and the Emails section, and the manual matrix in `verify.md`. Satisfies **AC-5**, **AC-23**
 

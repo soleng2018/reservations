@@ -2,7 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { API_KEY_MESSAGES, typeInUseMessage } from "@/lib/api-keys";
+import {
+  API_KEY_MESSAGES,
+  googleCalendarMessage,
+  googleDelegationMessage,
+  googleInvalidMessage,
+  MAX_KEY_FILE_BYTES,
+  typeInUseMessage,
+} from "@/lib/api-keys";
+import {
+  parseGoogleKeyFile,
+  type GoogleServiceAccountKey,
+} from "@/lib/booking-email";
 import {
   ApiKeyCreateInput,
   ApiKeyUpdateInput,
@@ -19,7 +30,9 @@ import {
   createApiKey,
   deleteApiKey,
   updateApiKey,
+  type ApiKeyCreate,
   type ApiKeyCreateError,
+  type ApiKeyUpdate,
 } from "@/server/catalog/api-keys";
 import {
   createTestbed,
@@ -153,21 +166,84 @@ export async function deleteTestbedTypeAction(
 
 // Feature 8 (spec 0006). The secret is read from the form, encrypted, and
 // never sent back: errors carry fixed messages, and the dialog keeps what
-// was typed on the client.
+// was typed on the client. A GOOGLE key's file is never echoed either; after
+// a failed save the admin picks it again (spec 0013 AC-3).
 const apiKeyFields = (form: FormData) => ({
   name: text(form, "name"),
   type: text(form, "type"),
   baseUrl: text(form, "baseUrl"),
   secret: text(form, "secret") ?? "",
+  senderEmail: text(form, "senderEmail"),
+  calendarId: text(form, "calendarId"),
+  devInbox: text(form, "devInbox"),
+  opsBcc: text(form, "opsBcc"),
 });
+
+// Spec 0013 AC-1, AC-3: the uploaded key file, or null when none was
+// chosen (an empty file input still posts a nameless, empty File). The size
+// is checked before reading; the contents never reach a message or a log.
+async function readKeyFile(
+  form: FormData,
+): Promise<Result<GoogleServiceAccountKey | null, string>> {
+  const file = form.get("keyFile");
+  if (!(file instanceof File) || (file.size === 0 && file.name === ""))
+    return ok(null);
+  if (file.size > MAX_KEY_FILE_BYTES)
+    return err(API_KEY_MESSAGES.keyFileTooLarge);
+  const parsed = parseGoogleKeyFile(await file.text());
+  return parsed.ok ? parsed : err(API_KEY_MESSAGES.keyFileInvalid);
+}
+
+// A GOOGLE save's key file, read only when the form says GOOGLE.
+const keyFileOf = (form: FormData) =>
+  text(form, "type") === "GOOGLE"
+    ? readKeyFile(form)
+    : Promise.resolve(ok(null));
+
+// The fields' errors and the key file's, reported together.
+const apiKeyFormError = (
+  parsed: { readonly success: boolean; readonly error?: z.ZodError },
+  keyFileError: string | undefined,
+): AdminFormState => ({
+  kind: "error",
+  fields: {
+    ...(parsed.error ? fieldErrors(parsed.error) : {}),
+    ...(keyFileError === undefined ? {} : { keyFile: keyFileError }),
+  },
+});
+
+// Undefined for a GOOGLE create with no file.
+const toCreate = (
+  data: ApiKeyCreateInput,
+  keyFile: GoogleServiceAccountKey | null,
+): ApiKeyCreate | undefined =>
+  data.type !== "GOOGLE" ? data : keyFile ? { ...data, keyFile } : undefined;
+
+const toUpdate = (
+  data: ApiKeyUpdateInput,
+  keyFile: GoogleServiceAccountKey | null,
+): ApiKeyUpdate => (data.type !== "GOOGLE" ? data : { ...data, keyFile });
 
 const NOT_CONFIGURED: AdminFormState = {
   kind: "error",
   message: API_KEY_MESSAGES.notConfigured,
   fields: {},
 };
-// The save errors create and update share (spec 0006 AC-3, AC-12).
-const apiKeyError = (e: ApiKeyCreateError): AdminFormState => {
+
+// Who an uploaded GOOGLE key acts as, for the save check's messages.
+type GoogleContext = { readonly sender: string; readonly clientId: string };
+
+const googleContext = (input: ApiKeyCreate | ApiKeyUpdate): GoogleContext =>
+  input.type === "GOOGLE" && input.keyFile
+    ? { sender: input.senderEmail, clientId: input.keyFile.client_id }
+    : { sender: "", clientId: "" };
+
+// The save errors create and update share (spec 0006 AC-3, AC-12, spec 0013
+// AC-1, AC-2).
+const apiKeyError = (
+  e: ApiKeyCreateError,
+  google: GoogleContext,
+): AdminFormState => {
   switch (e) {
     case "duplicate_name":
       return {
@@ -190,6 +266,34 @@ const apiKeyError = (e: ApiKeyCreateError): AdminFormState => {
         message: API_KEY_MESSAGES.cloudflareUnavailable,
         fields: {},
       };
+    case "google_exists":
+      return {
+        kind: "error",
+        fields: { type: API_KEY_MESSAGES.googleExists },
+      };
+    case "google_delegation":
+      return {
+        kind: "error",
+        fields: {
+          keyFile: googleDelegationMessage(google.sender, google.clientId),
+        },
+      };
+    case "google_invalid":
+      return {
+        kind: "error",
+        fields: { keyFile: googleInvalidMessage(google.sender) },
+      };
+    case "google_calendar":
+      return {
+        kind: "error",
+        fields: { calendarId: googleCalendarMessage(google.sender) },
+      };
+    case "google_unavailable":
+      return {
+        kind: "error",
+        message: API_KEY_MESSAGES.googleUnavailable,
+        fields: {},
+      };
     default: {
       const never: never = e;
       return never;
@@ -197,7 +301,7 @@ const apiKeyError = (e: ApiKeyCreateError): AdminFormState => {
   }
 };
 
-// AC-2, AC-3, AC-9, AC-12.
+// AC-2, AC-3, AC-9, AC-12 (spec 0013 AC-1 to AC-3).
 export async function createApiKeyAction(
   _prev: AdminFormState,
   form: FormData,
@@ -206,22 +310,32 @@ export async function createApiKeyAction(
   const encryption = assertEncryptionEnv();
   if (!encryption.ok) return NOT_CONFIGURED;
   const parsed = ApiKeyCreateInput.safeParse(apiKeyFields(form));
-  if (!parsed.success)
-    return { kind: "error", fields: fieldErrors(parsed.error) };
+  const file = await keyFileOf(form);
+  const input =
+    parsed.success && file.ok ? toCreate(parsed.data, file.value) : undefined;
+  if (!input)
+    return apiKeyFormError(
+      parsed,
+      !file.ok
+        ? file.error
+        : text(form, "type") === "GOOGLE" && file.value === null
+          ? API_KEY_MESSAGES.keyFileMissing
+          : undefined,
+    );
 
   const created = await createApiKey(
     db(),
     encryption.value.keyring,
-    parsed.data,
+    input,
     user.id,
   );
-  if (!created.ok) return apiKeyError(created.error);
+  if (!created.ok) return apiKeyError(created.error, googleContext(input));
   revalidatePath("/admin", "layout");
-  return { kind: "saved", message: `Created ${parsed.data.name}.` };
+  return { kind: "saved", message: `Created ${input.name}.` };
 }
 
-// AC-4, AC-5, AC-9, AC-12. The page binds the row's id; a blank key keeps
-// the stored one.
+// AC-4, AC-5, AC-9, AC-12 (spec 0013 AC-4). The page binds the row's id; a
+// blank key, or no key file, keeps the stored one.
 export async function updateApiKeyAction(
   id: string,
   _prev: AdminFormState,
@@ -231,8 +345,10 @@ export async function updateApiKeyAction(
   const encryption = assertEncryptionEnv();
   if (!encryption.ok) return NOT_CONFIGURED;
   const parsed = ApiKeyUpdateInput.safeParse(apiKeyFields(form));
-  if (!parsed.success)
-    return { kind: "error", fields: fieldErrors(parsed.error) };
+  const file = await keyFileOf(form);
+  if (!parsed.success || !file.ok)
+    return apiKeyFormError(parsed, file.ok ? undefined : file.error);
+  const input = toUpdate(parsed.data, file.value);
   if (!isId(id))
     return { kind: "error", message: API_KEY_MESSAGES.gone, fields: {} };
 
@@ -240,7 +356,7 @@ export async function updateApiKeyAction(
     db(),
     encryption.value.keyring,
     id,
-    parsed.data,
+    input,
     user.id,
   );
   if (!updated.ok) {
@@ -260,11 +376,26 @@ export async function updateApiKeyAction(
       case "cloudflare_exists":
       case "cloudflare_invalid":
       case "cloudflare_unavailable":
-        return apiKeyError(e);
+      case "google_exists":
+      case "google_invalid":
+      case "google_delegation":
+      case "google_calendar":
+      case "google_unavailable":
+        return apiKeyError(e, googleContext(input));
       case "cloudflare_retype":
         return {
           kind: "error",
           fields: { secret: API_KEY_MESSAGES.cloudflareRetype },
+        };
+      case "google_file_required":
+        return {
+          kind: "error",
+          fields: { keyFile: API_KEY_MESSAGES.googleFileRequired },
+        };
+      case "key_required":
+        return {
+          kind: "error",
+          fields: { secret: API_KEY_MESSAGES.keyRequired },
         };
       case "not_found":
         revalidatePath("/admin", "layout");
@@ -276,7 +407,7 @@ export async function updateApiKeyAction(
     }
   }
   revalidatePath("/admin", "layout");
-  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+  return { kind: "saved", message: `Updated ${input.name}.` };
 }
 
 // AC-6, the delete flow's check: the live testbeds using this key as their

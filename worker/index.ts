@@ -4,9 +4,16 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { revokeStateLine, type RevokeKind } from "@/lib/reconcile";
 import { authentik } from "@/server/authentik/client";
-import { cloudflareRevokeConfig } from "@/server/catalog/api-keys";
+import {
+  cloudflareRevokeConfig,
+  googleMailConfig,
+} from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
 import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
+import { renderBookingEmail } from "@/server/email/compose";
+import { SAMPLE_BOOKING_DETAILS } from "@/server/email/sample";
+import { purgeDoneJobs, runJobs, type Handlers } from "@/server/jobs/runner";
+import { runSendEmail } from "@/server/jobs/send-email";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
   purgeDue,
@@ -28,6 +35,10 @@ import { teardownDeletedTestbeds } from "@/server/worker/teardown";
 
 const PURGE = "purge rate limits";
 
+// Spec 0013 AC-8: the job kinds this worker runs. send_welcome waits for
+// feature 16.
+const HANDLERS: Handlers = { send_email: runSendEmail };
+
 const log = (line: string) =>
   console.log(`${new Date().toISOString()} ${line}`);
 
@@ -35,6 +46,17 @@ async function main(): Promise<number> {
   if (!workerEnv().WORKER_ENABLED) {
     log("worker: WORKER_ENABLED is not true, so the worker is not starting");
     return 0;
+  }
+
+  // Spec 0013 AC-22: the smoke check. Email needs react-dom/server, which
+  // only loads without the react-server condition (the server-only hook).
+  try {
+    await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
+  } catch (e) {
+    log(
+      `worker: the email renderer failed to load (${e instanceof Error ? e.message : String(e)}), exiting`,
+    );
+    return 1;
   }
 
   const lock = lockClient(dbEnv());
@@ -83,6 +105,27 @@ async function main(): Promise<number> {
     lastRevokeKind = source.kind;
     return source;
   };
+  // Spec 0013 AC-9: the "no Google key" wait is logged when it starts, not
+  // every tick.
+  let googleWaiting = false;
+  const jobs = async () => {
+    const step = await runJobs(conn, {
+      handlers: HANDLERS,
+      config: () => googleMailConfig(conn, () => encryptionEnv().keyring),
+    });
+    if (step.kind === "no_key") {
+      if (!googleWaiting)
+        log("jobs: no Google key, email and calendar jobs wait");
+      googleWaiting = true;
+      return;
+    }
+    googleWaiting = false;
+    for (const f of step.failed) console.error(`jobs: ${f} failed`);
+    if (step.breaker)
+      console.error(
+        "jobs: Google rejected the service account key, jobs wait 5 minutes",
+      );
+  };
   while (!stop.signal.aborted) {
     // A dead lock connection is noticed here even when idle.
     await lock.query("select 1").catch((e: Error) => lost(e.message));
@@ -106,8 +149,12 @@ async function main(): Promise<number> {
         name: "testbed teardown",
         run: () => teardownDeletedTestbeds(api, conn),
       },
+      { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
-        ? [{ name: PURGE, run: () => purgeRateLimits(conn) }]
+        ? [
+            { name: PURGE, run: () => purgeRateLimits(conn) },
+            { name: "purge done jobs", run: () => purgeDoneJobs(conn) },
+          ]
         : []),
     ];
     const outcomes = await runTick(steps, {

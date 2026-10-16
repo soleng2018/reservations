@@ -92,9 +92,12 @@ const ApiKeySecret = z
   .trim()
   .max(4096, "Use at most 4096 characters.");
 
+// Every type but GOOGLE: a base URL and a typed secret.
+const StandardKeyType = ApiKeyType.exclude(["GOOGLE"]);
+
 const ApiKeyBase = z.object({
   name: CatalogName,
-  type: z.enum(ApiKeyType.options, "Choose a type."),
+  type: StandardKeyType,
   baseUrl: ApiKeyBaseUrl,
 });
 
@@ -119,13 +122,63 @@ const isCloudflareBaseUrl = (key: {
   readonly baseUrl: string;
 }) => key.type !== "CLOUDFLARE" || CLOUDFLARE_BASE_URL.test(key.baseUrl);
 
-export const ApiKeyCreateInput = ApiKeyBase.extend({
+const StandardKeyCreate = ApiKeyBase.extend({
   secret: ApiKeySecret.min(1, "Enter the key."),
 }).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
-export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInput>;
+export type StandardKeyCreate = z.infer<typeof StandardKeyCreate>;
 
 // A blank secret keeps the stored one.
-export const ApiKeyUpdateInput = ApiKeyBase.extend({
+const StandardKeyUpdate = ApiKeyBase.extend({
   secret: ApiKeySecret,
 }).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
+export type StandardKeyUpdate = z.infer<typeof StandardKeyUpdate>;
+
+// Spec 0013 AC-1: a GOOGLE key's base URL is this constant, stored and never
+// shown in the form.
+export const GOOGLE_BASE_URL = "https://www.googleapis.com";
+
+const EMAIL_MESSAGE = "Enter an email address.";
+const CALENDAR_ID_MESSAGE =
+  "Enter the calendar ID from the calendar's settings.";
+
+const EmailAddress = z.string().trim().pipe(z.email(EMAIL_MESSAGE));
+// Blank becomes null.
+const OptionalEmail = z
+  .string()
+  .trim()
+  .optional()
+  .transform(emptyToNull)
+  .pipe(z.email(EMAIL_MESSAGE).nullable());
+
+// The key file is not here: the action reads it from the FormData and parses
+// it with parseGoogleKeyFile (lib/booking-email.ts).
+const GoogleKeyFields = z.object({
+  name: CatalogName,
+  type: z.literal("GOOGLE"),
+  senderEmail: EmailAddress,
+  calendarId: z
+    .string()
+    .trim()
+    .min(1, CALENDAR_ID_MESSAGE)
+    .max(255, CALENDAR_ID_MESSAGE)
+    .regex(/^[^\s/]+$/, CALENDAR_ID_MESSAGE),
+  devInbox: OptionalEmail,
+  opsBcc: OptionalEmail,
+});
+export type GoogleKeyFields = z.infer<typeof GoogleKeyFields>;
+
+const TYPE_MESSAGE = "Choose a type.";
+
+export const ApiKeyCreateInput = z.discriminatedUnion(
+  "type",
+  [StandardKeyCreate, GoogleKeyFields],
+  TYPE_MESSAGE,
+);
+export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInput>;
+
+export const ApiKeyUpdateInput = z.discriminatedUnion(
+  "type",
+  [StandardKeyUpdate, GoogleKeyFields],
+  TYPE_MESSAGE,
+);
 export type ApiKeyUpdateInput = z.infer<typeof ApiKeyUpdateInput>;

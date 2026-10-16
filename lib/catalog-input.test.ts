@@ -252,7 +252,7 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
         errorsOf(ApiKeyCreateInput.safeParse({ ...valid, secret: undefined })),
       ),
     ).toEqual({ secret: "Enter the key." });
-    expect(ApiKeyUpdateInput.parse(blank).secret).toBe("");
+    expect(ApiKeyUpdateInput.parse(blank)).toMatchObject({ secret: "" });
   });
 
   it("caps the key at 4096 characters on add and edit", () => {
@@ -262,8 +262,8 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
         secret: "Use at most 4096 characters.",
       });
     expect(
-      ApiKeyCreateInput.parse({ ...valid, secret: "x".repeat(4096) }).secret,
-    ).toHaveLength(4096);
+      ApiKeyCreateInput.parse({ ...valid, secret: "x".repeat(4096) }),
+    ).toMatchObject({ secret: "x".repeat(4096) });
   });
 
   it("never puts the key's value in an issue", () => {
@@ -311,7 +311,9 @@ describe("a CLOUDFLARE key's base URL", () => {
 
   it("accepts the account route, trimmed, on add and edit", () => {
     for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
-      expect(schema.parse(key(`  ${ROUTE}  `)).baseUrl).toBe(ROUTE);
+      expect(schema.parse(key(`  ${ROUTE}  `))).toMatchObject({
+        baseUrl: ROUTE,
+      });
   });
 
   it.each([
@@ -360,5 +362,66 @@ describe("HttpsUrl", () => {
     expect(HttpsUrl.safeParse("https://lms.example/course?id=7").success).toBe(
       true,
     );
+  });
+});
+
+// covers: spec 0013 AC-1, AC-4 (the GOOGLE key's fields)
+describe("a GOOGLE key's fields (spec 0013 AC-1)", () => {
+  const valid = {
+    name: "Google",
+    type: "GOOGLE",
+    senderEmail: "  labs@nile.example ",
+    calendarId: " c_abc123@group.calendar.google.com ",
+    devInbox: "",
+    opsBcc: "ops@nile.example",
+  };
+
+  it("trims, turns blanks into null, and drops Base URL and Key value", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(
+        schema.parse({ ...valid, baseUrl: "https://x.example", secret: "s" }),
+      ).toEqual({
+        name: "Google",
+        type: "GOOGLE",
+        senderEmail: "labs@nile.example",
+        calendarId: "c_abc123@group.calendar.google.com",
+        devInbox: null,
+        opsBcc: "ops@nile.example",
+      });
+  });
+
+  it("refuses bad addresses and calendar ids with the admin's messages", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({
+        ...valid,
+        senderEmail: "labs",
+        calendarId: "my calendar/1",
+        devInbox: "nope",
+        opsBcc: "also nope",
+      }),
+    );
+    expect(fieldErrors(e)).toEqual({
+      senderEmail: "Enter an email address.",
+      calendarId: "Enter the calendar ID from the calendar's settings.",
+      devInbox: "Enter an email address.",
+      opsBcc: "Enter an email address.",
+    });
+  });
+
+  it.each([
+    ["", "a blank id"],
+    ["x".repeat(256), "an id over 255 characters"],
+  ])("refuses %#: %s", (calendarId) => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, calendarId }));
+    expect(fieldErrors(e)).toEqual({
+      calendarId: "Enter the calendar ID from the calendar's settings.",
+    });
+  });
+
+  it("requires the sender mailbox", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({ ...valid, senderEmail: undefined }),
+    );
+    expect(Object.keys(fieldErrors(e))).toEqual(["senderEmail"]);
   });
 });

@@ -25,12 +25,16 @@ export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface ApiKeys {
   base_url: string;
+  calendar_id: string | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
+  dev_inbox: string | null;
   id: Generated<string>;
   name: string;
+  ops_bcc: string | null;
   secret_ciphertext: string;
   secret_updated_at: Generated<Timestamp>;
+  sender_email: string | null;
   type: string;
   updated_at: Generated<Timestamp>;
 }
@@ -61,6 +65,25 @@ export interface Bookings {
   updated_at: Generated<Timestamp>;
   user_id: string;
   version: Generated<number>;
+}
+
+export interface EmailMessages {
+  booking_id: string | null;
+  booking_version: number | null;
+  created_at: Generated<Timestamp>;
+  details: Json;
+  id: Generated<string>;
+  job_id: string | null;
+  kind: string;
+  last_error: string | null;
+  provider_message_id: string | null;
+  sent_at: Timestamp | null;
+  sent_to: string | null;
+  status: Generated<string>;
+  subject: string;
+  to_address: string;
+  updated_at: Generated<Timestamp>;
+  user_id: string;
 }
 
 export interface HolAuthAccount {
@@ -189,6 +212,7 @@ export interface DB {
   api_keys: ApiKeys;
   audit_events: AuditEvents;
   bookings: Bookings;
+  email_messages: EmailMessages;
   "hol_auth.account": HolAuthAccount;
   "hol_auth.session": HolAuthSession;
   "hol_auth.user": HolAuthUser;

@@ -247,7 +247,7 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
 - [x] Design it (spec): `/architect email delivery & booking confirmations`
 - [ ] Build it: `/develop email delivery & booking confirmations`
-  - [ ] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
+  - [x] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
   - [ ] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
   - [ ] Calendar mirror and backfill (AC-19, 20)
   - [ ] Key edit and the console Emails section (AC-4, 21)
