@@ -2,6 +2,7 @@ import "server-only";
 import { sql, type Kysely, type Selectable } from "kysely";
 import type { CancelSource } from "@/lib/db-enums";
 import { err, ok, type Result } from "@/lib/result";
+import { queueBookingNotice } from "@/server/jobs/booking-notice";
 import type { DB, Testbeds } from "./types";
 
 // Data rules for booking writes (spec 0002). Every function takes the caller's
@@ -105,7 +106,10 @@ export async function rescheduleBooking(
     .where("version", "=", r.expectedVersion)
     .returning("version")
     .executeTakeFirst();
-  return row ? ok(row) : err("stale");
+  if (!row) return err("stale");
+  // Spec 0013 AC-6: the rescheduled notice, in this transaction.
+  await queueBookingNotice(trx, r.id, row.version, "rescheduled");
+  return ok(row);
 }
 
 export type Cancel = Guard & {
@@ -114,7 +118,9 @@ export type Cancel = Guard & {
   readonly byUserId: string | null;
 };
 
-// Keeps ends_at: access ends because the status is no longer live.
+// Keeps ends_at: access ends because the status is no longer live. Every
+// cancel (learner, admin, deactivation) queues the learner's one
+// cancellation notice in this transaction (spec 0013 AC-6, AC-13).
 export async function cancelBooking(
   trx: Kysely<DB>,
   c: Cancel,
@@ -133,5 +139,7 @@ export async function cancelBooking(
     .where("version", "=", c.expectedVersion)
     .returning("version")
     .executeTakeFirst();
-  return row ? ok(row) : err("stale");
+  if (!row) return err("stale");
+  await queueBookingNotice(trx, c.id, row.version, "cancelled");
+  return ok(row);
 }

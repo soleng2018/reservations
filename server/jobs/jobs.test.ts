@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { err, ok } from "@/lib/result";
 import type { GoogleMailConfig } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
+import { cancelBooking, rescheduleBooking } from "@/server/db/bookings";
 import { confirmGuestBooking } from "@/server/db/guest-saga";
 import {
   asConn,
@@ -22,6 +23,7 @@ import {
 } from "@/server/google/testing";
 import type { MintError, MintToken } from "@/server/google/token";
 import { appUrl } from "@/server/env";
+import { queueBookingNotice } from "./booking-notice";
 import { BREAKER_MESSAGE, runJobs, type Handlers } from "./runner";
 import { runSendEmail } from "./send-email";
 
@@ -561,3 +563,121 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
       }),
   );
 });
+
+describe.skipIf(!hasDb)(
+  "reschedule and cancel (spec 0013 AC-6, AC-10, AC-13)",
+  () => {
+    it("sends booked, rescheduled, and cancelled in version order, even when the later jobs are due first", () =>
+      inRollback(async (trx) => {
+        const { type, testbed, bookingId } = await confirmedBooking(trx);
+        const moved = slot(30);
+        const rescheduled = await rescheduleBooking(trx, {
+          id: bookingId,
+          expectedVersion: 1,
+          testbedId: testbed.id,
+          testbedTypeId: type.id,
+          startsAt: moved,
+          endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+        });
+        expect(rescheduled).toEqual({ ok: true, value: { version: 2 } });
+        const cancelled = await cancelBooking(trx, {
+          id: bookingId,
+          expectedVersion: 2,
+          source: "learner",
+          byUserId: null,
+        });
+        expect(cancelled).toEqual({ ok: true, value: { version: 3 } });
+
+        const emails = await emailsOf(trx, bookingId);
+        expect(emails.map((e) => [e.kind, e.booking_version])).toEqual([
+          ["booked", 1],
+          ["rescheduled", 2],
+          ["cancelled", 3],
+        ]);
+        expect(emails[2]?.details).toMatchObject({ links: null });
+        expect(
+          (await jobsFor(trx, `calendar:${bookingId}`)).map((j) => j.kind),
+        ).toEqual(["calendar_upsert", "calendar_upsert", "calendar_delete"]);
+
+        // The later jobs are due first.
+        await trx
+          .updateTable("jobs")
+          .set({ run_at: sql<Date>`now() - interval '1 hour'` })
+          .where("idempotency_key", "in", [
+            `email:${bookingId}:cancelled:3`,
+            `email:${bookingId}:rescheduled:2`,
+          ])
+          .execute();
+        const google = accepted();
+        await runJobs(asConn(trx), {
+          handlers: HANDLERS,
+          config: async () => config(),
+          fetch: google.fetch,
+          mint: minting().mint,
+        });
+        const sent = google.requests.map((r) => decoded(r));
+        expect(sent.map((m) => m.match(/^Subject: (\S+)/m)?.[1])).toEqual([
+          "Your",
+          "Updated:",
+          "Cancelled:",
+        ]);
+        expect(sent[1]).toContain("SEQUENCE:2");
+        expect(sent[2]).toContain("method=CANCEL");
+        expect(sent[2]).toContain("SEQUENCE:3");
+        expect((await emailsOf(trx, bookingId)).map((e) => e.status)).toEqual([
+          "sent",
+          "sent",
+          "sent",
+        ]);
+      }));
+
+    it("lets a later email go once an older one has failed for good (AC-8, AC-10)", () =>
+      inRollback(async (trx) => {
+        const { bookingId } = await confirmedBooking(trx);
+        await cancelBooking(trx, {
+          id: bookingId,
+          expectedVersion: 1,
+          source: "admin",
+          byUserId: null,
+        });
+        const google = gmail((req) =>
+          decoded(req).includes("Subject: Your Nile")
+            ? { status: 400 }
+            : { status: 200, json: { id: "gmail-cancel" } },
+        );
+        await runJobs(asConn(trx), {
+          handlers: HANDLERS,
+          config: async () => config(),
+          fetch: google.fetch,
+          mint: minting().mint,
+        });
+        expect((await emailsOf(trx, bookingId)).map((e) => e.status)).toEqual([
+          "failed",
+          "sent",
+        ]);
+      }));
+
+    it("queues one notice per change: a repeat of the same version adds nothing", () =>
+      inRollback(async (trx) => {
+        const { bookingId } = await confirmedBooking(trx);
+        await queueBookingNotice(trx, bookingId, 1, "booked");
+        expect(await emailsOf(trx, bookingId)).toHaveLength(1);
+        expect(await jobsFor(trx, `email:${bookingId}`)).toHaveLength(1);
+        expect(await jobsFor(trx, `calendar:${bookingId}`)).toHaveLength(1);
+      }));
+
+    it("queues nothing for a stale cancel", () =>
+      inRollback(async (trx) => {
+        const { bookingId } = await confirmedBooking(trx);
+        expect(
+          await cancelBooking(trx, {
+            id: bookingId,
+            expectedVersion: 7,
+            source: "learner",
+            byUserId: null,
+          }),
+        ).toEqual({ ok: false, error: "stale" });
+        expect(await emailsOf(trx, bookingId)).toHaveLength(1);
+      }));
+  },
+);
