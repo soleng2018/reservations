@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ApiKeyType, DurationUnit, TestbedClientKind } from "./db-enums";
+import {
+  ApiKeyType,
+  DurationUnit,
+  GoogleAuthMethod,
+  TestbedClientKind,
+} from "./db-enums";
 
 // Admin catalog form input (spec 0004 AC-1, AC-2). Parsed on the server.
 
@@ -150,12 +155,13 @@ const OptionalEmail = z
   .transform(emptyToNull)
   .pipe(z.email(EMAIL_MESSAGE).nullable());
 
-// The key file is not here: the action reads it from the FormData and parses
-// it with parseGoogleKeyFile (lib/booking-email.ts).
-const GoogleKeyFields = z.object({
+// The files are not here: the action reads them from the FormData and parses
+// them with parseGoogleKeyFile (lib/booking-email.ts) and
+// parseGoogleClientFile (lib/google-sign-in.ts). The pasted sign in address
+// is parsed there too, after these fields (spec 0013 AC-28).
+const googleCommon = {
   name: CatalogName,
   type: z.literal("GOOGLE"),
-  senderEmail: EmailAddress,
   calendarId: z
     .string()
     .trim()
@@ -164,7 +170,31 @@ const GoogleKeyFields = z.object({
     .regex(/^[^\s/]+$/, CALENDAR_ID_MESSAGE),
   devInbox: OptionalEmail,
   opsBcc: OptionalEmail,
+};
+
+// Spec 0013 AC-1: the service account acts as the typed sender mailbox.
+const GoogleServiceAccountFields = z.object({
+  ...googleCommon,
+  googleAuth: z.literal(GoogleAuthMethod.enum.service_account),
+  senderEmail: EmailAddress,
 });
+export type GoogleServiceAccountFields = z.infer<
+  typeof GoogleServiceAccountFields
+>;
+
+// Spec 0013 AC-25: no sender field; the sender is the account that signed
+// in (AC-28).
+const GoogleSignInFields = z.object({
+  ...googleCommon,
+  googleAuth: z.literal(GoogleAuthMethod.enum.oauth),
+});
+export type GoogleSignInFields = z.infer<typeof GoogleSignInFields>;
+
+const GoogleKeyFields = z.discriminatedUnion(
+  "googleAuth",
+  [GoogleServiceAccountFields, GoogleSignInFields],
+  "Choose a sign in method.",
+);
 export type GoogleKeyFields = z.infer<typeof GoogleKeyFields>;
 
 const TYPE_MESSAGE = "Choose a type.";

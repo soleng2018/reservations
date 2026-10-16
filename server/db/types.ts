@@ -29,6 +29,8 @@ export interface ApiKeys {
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   dev_inbox: string | null;
+  google_auth: string | null;
+  google_rejected_at: Timestamp | null;
   id: Generated<string>;
   name: string;
   ops_bcc: string | null;

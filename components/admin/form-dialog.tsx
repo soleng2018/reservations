@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -32,7 +34,31 @@ export type AdminFormAction = (
 ) => Promise<AdminFormState>;
 
 const IDLE: AdminFormState = { kind: "idle" };
-const GENERIC = "Something went wrong. Try again.";
+export const GENERIC = "Something went wrong. Try again.";
+
+// What a form's fields may do besides being saved (spec 0013 AC-27): run a
+// side request in its own transition (Save stays off and the dialog stays
+// open meanwhile), and show its answer through the same error display as a
+// save (IDLE clears it). `saves` counts save answers, and `restartAt` is the
+// count at the last one that spent a Google sign in, so a field can tell
+// whether what it started is older than that (AC-28).
+export type FormDialogControls = {
+  readonly startAside: TransitionStartFunction;
+  readonly asidePending: boolean;
+  readonly onFieldErrors: (state: AdminFormState) => void;
+  readonly saves: number;
+  readonly restartAt: number | undefined;
+};
+
+const FormDialogContext = createContext<FormDialogControls | undefined>(
+  undefined,
+);
+
+export function useFormDialog(): FormDialogControls {
+  const controls = useContext(FormDialogContext);
+  if (!controls) throw new Error("useFormDialog outside a FormDialog");
+  return controls;
+}
 
 // The form modal (spec 0005 AC-7). Centered and 520px wide from the nav
 // breakpoint up, a bottom sheet below it. The form lives inside the popup,
@@ -60,13 +86,14 @@ export function FormDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [asidePending, startAside] = useTransition();
   const popup = useRef<HTMLDivElement>(null);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next && pending) return;
+        if (!next && (pending || asidePending)) return;
         setOpen(next);
         if (next) onOpen?.();
       }}
@@ -89,6 +116,8 @@ export function FormDialog({
           canSave={canSave}
           pending={pending}
           startTransition={startTransition}
+          asidePending={asidePending}
+          startAside={startAside}
           onSaved={(message) => {
             setOpen(false);
             notifySuccess(message);
@@ -107,6 +136,8 @@ function FormBody({
   canSave,
   pending,
   startTransition,
+  asidePending,
+  startAside,
   onSaved,
   children,
 }: {
@@ -115,28 +146,36 @@ function FormBody({
   readonly canSave: boolean;
   readonly pending: boolean;
   readonly startTransition: TransitionStartFunction;
+  readonly asidePending: boolean;
+  readonly startAside: TransitionStartFunction;
   readonly onSaved: (message: string) => void;
   readonly children: ReactNode;
 }) {
   const [state, setState] = useState<AdminFormState>(IDLE);
+  const [saves, setSaves] = useState(0);
+  const [restartAt, setRestartAt] = useState<number | undefined>(undefined);
   const form = useRef<HTMLFormElement>(null);
   const errors =
     state.kind === "error"
       ? { fields: state.fields, message: state.message }
       : { fields: {} };
 
-  // After an error, focus the first invalid field in DOM order.
+  // After an error, focus the first invalid field in DOM order, or a control
+  // that stands in for a field not shown yet (data-error-anchor).
   useEffect(() => {
     if (state.kind !== "error") return;
-    form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    form.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"], [data-error-anchor]')
+      ?.focus();
   }, [state]);
 
   // Submitted from onSubmit, not the form action, so React does not reset
   // the fields when the server returns an error.
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!canSave) return;
+    if (!canSave || asidePending) return;
     const data = new FormData(e.currentTarget);
+    const attempt = saves + 1;
     startTransition(async () => {
       const next = await action(state, data).catch((): AdminFormState => ({
         kind: "error",
@@ -144,8 +183,18 @@ function FormBody({
         fields: {},
       }));
       setState(next);
+      setSaves(attempt);
+      if (next.kind === "error" && next.restart) setRestartAt(attempt);
       if (next.kind === "saved") onSaved(next.message);
     });
+  };
+
+  const controls: FormDialogControls = {
+    startAside,
+    asidePending,
+    onFieldErrors: setState,
+    saves,
+    restartAt,
   };
 
   return (
@@ -158,7 +207,7 @@ function FormBody({
       <div className="flex items-center justify-between gap-4 border-b px-6 py-5">
         <DialogTitle>{title}</DialogTitle>
         <DialogClose
-          disabled={pending}
+          disabled={pending || asidePending}
           aria-label="Close"
           render={
             <Button
@@ -174,7 +223,7 @@ function FormBody({
 
       <FormErrorsContext value={errors}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5.5">
-          {children}
+          <FormDialogContext value={controls}>{children}</FormDialogContext>
           {state.kind === "error" && state.link ? (
             <Link
               href={state.link.href}
@@ -194,12 +243,12 @@ function FormBody({
 
       <div className="flex justify-end gap-2.5 border-t px-6 py-4.5">
         <DialogClose
-          disabled={pending}
+          disabled={pending || asidePending}
           render={<Button type="button" variant="outline" />}
         >
           Cancel
         </DialogClose>
-        <Button type="submit" disabled={pending || !canSave}>
+        <Button type="submit" disabled={pending || asidePending || !canSave}>
           {pending ? <Spinner data-icon="inline-start" /> : null}
           Save
         </Button>

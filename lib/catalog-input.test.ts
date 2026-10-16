@@ -366,10 +366,11 @@ describe("HttpsUrl", () => {
 });
 
 // covers: spec 0013 AC-1, AC-4 (the GOOGLE key's fields)
-describe("a GOOGLE key's fields (spec 0013 AC-1)", () => {
+describe("a GOOGLE key's fields (spec 0013 AC-1, AC-25)", () => {
   const valid = {
     name: "Google",
     type: "GOOGLE",
+    googleAuth: "service_account",
     senderEmail: "  labs@nile.example ",
     calendarId: " c_abc123@group.calendar.google.com ",
     devInbox: "",
@@ -383,6 +384,7 @@ describe("a GOOGLE key's fields (spec 0013 AC-1)", () => {
       ).toEqual({
         name: "Google",
         type: "GOOGLE",
+        googleAuth: "service_account",
         senderEmail: "labs@nile.example",
         calendarId: "c_abc123@group.calendar.google.com",
         devInbox: null,
@@ -424,4 +426,26 @@ describe("a GOOGLE key's fields (spec 0013 AC-1)", () => {
     );
     expect(Object.keys(fieldErrors(e))).toEqual(["senderEmail"]);
   });
+
+  it("takes no sender under Google sign in, since the account is the sender (AC-25)", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(schema.parse({ ...valid, googleAuth: "oauth" })).toEqual({
+        name: "Google",
+        type: "GOOGLE",
+        googleAuth: "oauth",
+        calendarId: "c_abc123@group.calendar.google.com",
+        devInbox: null,
+        opsBcc: "ops@nile.example",
+      });
+  });
+
+  it.each([undefined, "", "magic"])(
+    "asks for a sign in method when it is %j (AC-25)",
+    (googleAuth) => {
+      const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, googleAuth }));
+      expect(fieldErrors(e)).toEqual({
+        googleAuth: "Choose a sign in method.",
+      });
+    },
+  );
 });

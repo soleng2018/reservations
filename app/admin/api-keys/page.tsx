@@ -102,6 +102,7 @@ export default async function ApiKeysPage() {
                 name: k.name,
                 type: k.type,
                 baseUrl: k.baseUrl,
+                googleAuth: k.googleAuth ?? "service_account",
                 senderEmail: k.senderEmail ?? "",
                 calendarId: k.calendarId ?? "",
                 devInbox: k.devInbox ?? "",

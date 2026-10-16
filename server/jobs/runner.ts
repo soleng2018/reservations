@@ -287,10 +287,16 @@ export async function runJobs(
   if (cfg === null) return { kind: "no_key" };
   const clock = deps.clock ?? Date.now;
   const started = clock();
+  const fetchFn = deps.fetch ?? fetch;
   const ctx: JobContext = {
     cfg,
-    fetch: deps.fetch ?? fetch,
-    google: googleCaller(googleAccessToken(cfg, deps.mint ?? mintAccessToken)),
+    fetch: fetchFn,
+    google: googleCaller(
+      googleAccessToken(
+        cfg,
+        deps.mint ?? ((creds) => mintAccessToken(creds, fetchFn)),
+      ),
+    ),
   };
   const failed: string[] = [];
   let ran = 0;

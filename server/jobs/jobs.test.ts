@@ -17,7 +17,7 @@ import {
 import type { DB } from "@/server/db/types";
 import {
   fakeGoogleFetch,
-  fakeServiceAccountKey,
+  serviceAccountCredentials,
   type FakeAnswer,
   type RecordedRequest,
 } from "@/server/google/testing";
@@ -33,11 +33,10 @@ import { runSendEmail } from "./send-email";
 // message, with fake Google calls. Dev and prod share one database, so every
 // test parks the real queue inside its rolled back transaction first.
 
-const key = fakeServiceAccountKey();
 const config = (over: Partial<GoogleMailConfig> = {}): GoogleMailConfig => ({
-  clientEmail: key.client_email,
-  privateKey: key.private_key,
-  privateKeyId: key.private_key_id,
+  id: crypto.randomUUID(),
+  credentials: serviceAccountCredentials(),
+  secretUpdatedAt: new Date("2026-10-15T00:00:00.000Z"),
   senderEmail: "labs@nile.example",
   calendarId: "c_abc@group.calendar.google.com",
   devInbox: "dev-inbox@nile.example",

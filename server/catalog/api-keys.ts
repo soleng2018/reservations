@@ -4,12 +4,13 @@ import { z } from "zod";
 import type { GoogleServiceAccountKey } from "@/lib/booking-email";
 import {
   GOOGLE_BASE_URL,
-  type GoogleKeyFields,
+  type GoogleServiceAccountFields,
+  type GoogleSignInFields,
   type StandardKeyCreate,
   type StandardKeyUpdate,
 } from "@/lib/catalog-input";
 import { changedFields } from "@/lib/changed-fields";
-import { ApiKeyType } from "@/lib/db-enums";
+import { ApiKeyType, GoogleAuthMethod } from "@/lib/db-enums";
 import type { Blocker } from "@/lib/delete-flow";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
@@ -28,8 +29,14 @@ import {
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import { apiKeyBlockers, lockForDelete } from "@/server/db/delete-blockers";
 import type { DB } from "@/server/db/types";
+import type {
+  MailCredentials,
+  OAuthCredentials,
+  ServiceAccountCredentials,
+} from "@/server/google/token";
 import {
   verifyGoogleKey,
+  type GoogleSignIn,
   type VerifyGoogleError,
   type VerifyGoogleInput,
 } from "@/server/google/verify";
@@ -38,7 +45,7 @@ import {
 // encrypted before the insert, and never returned to a browser, logged, or
 // audited. This is the only app file that names its column, and the only
 // place one is decrypted, for the worker only: the CLOUDFLARE token (spec
-// 0012 AC-11) and the GOOGLE service account key (spec 0013 AC-5).
+// 0012 AC-11) and the GOOGLE credential (spec 0013 AC-5, AC-30).
 
 export type ApiKeyRow = {
   readonly id: string;
@@ -46,21 +53,25 @@ export type ApiKeyRow = {
   readonly type: ApiKeyType;
   readonly baseUrl: string;
   readonly secretUpdatedAt: Date;
-  // GOOGLE only (spec 0013 AC-1); null for every other type.
+  // GOOGLE only (spec 0013 AC-1, AC-25); null for every other type.
   readonly senderEmail: string | null;
   readonly calendarId: string | null;
   readonly devInbox: string | null;
   readonly opsBcc: string | null;
+  readonly googleAuth: GoogleAuthMethod | null;
 };
 
-// Spec 0013 AC-1, AC-4: a GOOGLE save carries the parsed key file, or null
-// on an edit that keeps the stored key.
-export type GoogleKeyCreate = GoogleKeyFields & {
-  readonly keyFile: GoogleServiceAccountKey;
-};
-export type GoogleKeyUpdate = GoogleKeyFields & {
-  readonly keyFile: GoogleServiceAccountKey | null;
-};
+// Spec 0013 AC-1, AC-4, AC-28, AC-29: a GOOGLE save carries, by method, the
+// parsed key file or a finished Google sign in (the action ran AC-28 steps 3
+// to 8), or null on an edit that keeps the stored credential.
+export type GoogleKeyCreate =
+  | (GoogleServiceAccountFields & { readonly keyFile: GoogleServiceAccountKey })
+  | (GoogleSignInFields & { readonly signIn: GoogleSignIn });
+export type GoogleKeyUpdate =
+  | (GoogleServiceAccountFields & {
+      readonly keyFile: GoogleServiceAccountKey | null;
+    })
+  | (GoogleSignInFields & { readonly signIn: GoogleSignIn | null });
 export type ApiKeyCreate = StandardKeyCreate | GoogleKeyCreate;
 export type ApiKeyUpdate = StandardKeyUpdate | GoogleKeyUpdate;
 
@@ -100,18 +111,42 @@ type Stored = {
   readonly calendarId: string | null;
   readonly devInbox: string | null;
   readonly opsBcc: string | null;
+  readonly googleAuth: GoogleAuthMethod | null;
 };
 
-const storedFields = (input: ApiKeyCreate | ApiKeyUpdate): Stored =>
+// The sender by method: typed for a service account, the signed in account
+// for Google sign in. An edit with no new sign in posts no sender, so the
+// stored one is carried over (spec 0013 AC-29).
+const googleSender = (
+  input: GoogleKeyCreate | GoogleKeyUpdate,
+  storedSender: string | null,
+): string | null => {
+  switch (input.googleAuth) {
+    case "service_account":
+      return input.senderEmail;
+    case "oauth":
+      return input.signIn ? input.signIn.senderEmail : storedSender;
+    default: {
+      const never: never = input;
+      return never;
+    }
+  }
+};
+
+const storedFields = (
+  input: ApiKeyCreate | ApiKeyUpdate,
+  storedSender: string | null = null,
+): Stored =>
   input.type === "GOOGLE"
     ? {
         name: input.name,
         type: input.type,
         baseUrl: GOOGLE_BASE_URL,
-        senderEmail: input.senderEmail,
+        senderEmail: googleSender(input, storedSender),
         calendarId: input.calendarId,
         devInbox: input.devInbox,
         opsBcc: input.opsBcc,
+        googleAuth: input.googleAuth,
       }
     : {
         name: input.name,
@@ -121,25 +156,49 @@ const storedFields = (input: ApiKeyCreate | ApiKeyUpdate): Stored =>
         calendarId: null,
         devInbox: null,
         opsBcc: null,
+        googleAuth: null,
       };
 
-// Spec 0013 AC-3: only these three fields of the key file are stored.
+// Spec 0013 AC-3: only these three fields of a service account key file are
+// stored. AC-28: a Google sign in stores its client and refresh token. The
+// stored JSON carries no method; the google_auth column names the schema.
 const GoogleSecret = z.object({
   clientEmail: z.string(),
   privateKey: z.string(),
   privateKeyId: z.string(),
+});
+const GoogleOAuthSecret = z.object({
+  clientId: z.string(),
+  clientSecret: z.string(),
+  refreshToken: z.string(),
 });
 
 // The plain text to encrypt, or undefined to keep the stored secret.
 const newSecret = (input: ApiKeyCreate | ApiKeyUpdate): string | undefined => {
   if (input.type !== "GOOGLE")
     return input.secret === "" ? undefined : input.secret;
-  if (!input.keyFile) return undefined;
-  return JSON.stringify({
-    clientEmail: input.keyFile.client_email,
-    privateKey: input.keyFile.private_key,
-    privateKeyId: input.keyFile.private_key_id,
-  } satisfies z.infer<typeof GoogleSecret>);
+  switch (input.googleAuth) {
+    case "service_account":
+      return input.keyFile
+        ? JSON.stringify({
+            clientEmail: input.keyFile.client_email,
+            privateKey: input.keyFile.private_key,
+            privateKeyId: input.keyFile.private_key_id,
+          } satisfies z.infer<typeof GoogleSecret>)
+        : undefined;
+    case "oauth":
+      return input.signIn
+        ? JSON.stringify({
+            clientId: input.signIn.clientId,
+            clientSecret: input.signIn.clientSecret,
+            refreshToken: input.signIn.refreshToken,
+          } satisfies z.infer<typeof GoogleOAuthSecret>)
+        : undefined;
+    default: {
+      const never: never = input;
+      return never;
+    }
+  }
 };
 
 // Spec 0006 AC-12: the save time check of a typed CLOUDFLARE token.
@@ -168,18 +227,22 @@ const LIVE_DEPS: ApiKeyDeps = {
 };
 
 // Runs outside any transaction, before the write, and only when a new
-// credential was given: a typed CLOUDFLARE token, or a GOOGLE key file. The
-// result is not audited.
+// credential was given: a typed CLOUDFLARE token, or a GOOGLE key file. A
+// Google sign in arrives already checked (the action ran AC-28), so it is
+// skipped here. The result is not audited.
 async function checkCredential(
   deps: ApiKeyDeps,
   input: ApiKeyCreate | ApiKeyUpdate,
 ): Promise<Result<void, CloudflareCheckError | GoogleCheckError>> {
   if (input.type === "GOOGLE") {
-    if (!input.keyFile) return ok(undefined);
+    if (input.googleAuth === "oauth" || !input.keyFile) return ok(undefined);
     const checked = await deps.verifyGoogle({
-      clientEmail: input.keyFile.client_email,
-      privateKey: input.keyFile.private_key,
-      privateKeyId: input.keyFile.private_key_id,
+      credentials: {
+        method: "service_account",
+        clientEmail: input.keyFile.client_email,
+        privateKey: input.keyFile.private_key,
+        privateKeyId: input.keyFile.private_key_id,
+      },
       senderEmail: input.senderEmail,
       calendarId: input.calendarId,
     });
@@ -232,9 +295,13 @@ export const listApiKeysQuery = (conn: Kysely<DB>) =>
       "calendar_id",
       "dev_inbox",
       "ops_bcc",
+      "google_auth",
     ])
     .where("deleted_at", "is", null)
     .orderBy(sql`lower(name)`);
+
+const googleAuthOf = (v: string | null): GoogleAuthMethod | null =>
+  v === null ? null : GoogleAuthMethod.parse(v);
 
 // AC-1. Live keys by name, without their secrets.
 export async function listApiKeys(
@@ -251,6 +318,7 @@ export async function listApiKeys(
     calendarId: r.calendar_id,
     devInbox: r.dev_inbox,
     opsBcc: r.ops_bcc,
+    googleAuth: googleAuthOf(r.google_auth),
   }));
 }
 
@@ -270,6 +338,7 @@ export async function listIdpKeyOptions(
 const googleAuditFields = (s: Stored) =>
   s.type === "GOOGLE"
     ? {
+        googleAuth: s.googleAuth,
         senderEmail: s.senderEmail,
         calendarId: s.calendarId,
         devInbox: s.devInbox,
@@ -314,6 +383,7 @@ export async function createApiKey(
           calendar_id: fields.calendarId,
           dev_inbox: fields.devInbox,
           ops_bcc: fields.opsBcc,
+          google_auth: fields.googleAuth,
         })
         .onConflict((oc) =>
           oc
@@ -353,28 +423,61 @@ export type ApiKeyUpdateError =
   // Spec 0006 AC-12: the web process never decrypts a stored token, so a
   // change that moves a token to another type or account needs it typed.
   | "cloudflare_retype"
-  // Spec 0013 AC-4: a sender, calendar, or type change to GOOGLE needs the
-  // key file again; a type change away from GOOGLE needs the new key typed.
-  | "google_file_required"
+  // Spec 0013 AC-4, AC-29: a sender, calendar, or type change to a GOOGLE
+  // service account needs the key file again, and so does a switch to it; a
+  // calendar change on Google sign in, or a switch to it, needs a new sign
+  // in. A type change away from GOOGLE needs the new key typed.
+  | GoogleCredentialNeeded
   | "key_required"
   | { readonly kind: "type_in_use"; readonly names: readonly string[] };
+
+type GoogleCredentialNeeded =
+  | "google_file_required"
+  | "google_file_switch"
+  | "google_sign_in_required"
+  | "google_sign_in_switch";
 
 // A type change to or from CLOUDFLARE, or a CLOUDFLARE key moving account.
 const needsCloudflareToken = (before: Stored, after: Stored): boolean =>
   (before.type === "CLOUDFLARE") !== (after.type === "CLOUDFLARE") ||
   (before.type === "CLOUDFLARE" && before.baseUrl !== after.baseUrl);
 
-// A key becoming GOOGLE, or a GOOGLE key changing who it acts as or where.
-const needsGoogleFile = (before: Stored, after: Stored): boolean =>
-  after.type === "GOOGLE" &&
-  (before.type !== "GOOGLE" ||
-    before.senderEmail !== after.senderEmail ||
-    before.calendarId !== after.calendarId);
+// Spec 0013 AC-29: what a GOOGLE save with no new credential is missing, by
+// method, or undefined when the stored one still fits.
+const needsGoogleCredential = (
+  before: Stored,
+  after: Stored,
+): GoogleCredentialNeeded | undefined => {
+  // api_keys_google_fields_check: a GOOGLE key always has a method.
+  if (after.type !== "GOOGLE" || after.googleAuth === null) return undefined;
+  const wasGoogle = before.type === "GOOGLE";
+  switch (after.googleAuth) {
+    case "service_account":
+      if (!wasGoogle) return "google_file_required";
+      if (before.googleAuth !== "service_account") return "google_file_switch";
+      return before.senderEmail !== after.senderEmail ||
+        before.calendarId !== after.calendarId
+        ? "google_file_required"
+        : undefined;
+    case "oauth":
+      if (!wasGoogle || before.googleAuth !== "oauth")
+        return "google_sign_in_switch";
+      return before.calendarId !== after.calendarId
+        ? "google_sign_in_required"
+        : undefined;
+    default: {
+      const never: never = after.googleAuth;
+      return never;
+    }
+  }
+};
 
+// google_rejected_at is not audited (AC-29).
 const AUDITED_FIELDS = [
   "name",
   "type",
   "baseUrl",
+  "googleAuth",
   "senderEmail",
   "calendarId",
   "devInbox",
@@ -385,18 +488,21 @@ const COLUMN = {
   name: "name",
   type: "type",
   baseUrl: "base_url",
+  googleAuth: "google_auth",
   senderEmail: "sender_email",
   calendarId: "calendar_id",
   devInbox: "dev_inbox",
   opsBcc: "ops_bcc",
 } as const satisfies Record<(typeof AUDITED_FIELDS)[number], string>;
 
-// AC-4, AC-5, AC-12 (spec 0013 AC-4). The row lock serializes concurrent
-// saves (the last one wins) and holds the key while the type change checks
-// run. A blank secret (or no key file) keeps the stored one; a new one is
-// stored fresh (new IV) and bumps secret_updated_at. A save that changes
-// nothing writes nothing. A new CLOUDFLARE token or GOOGLE key file is
-// checked first, outside the transaction. A duplicate name or a second
+// AC-4, AC-5, AC-12 (spec 0013 AC-4, AC-29). The row lock serializes
+// concurrent saves (the last one wins) and holds the key while the type
+// change checks run. A blank secret (or no key file or sign in) keeps the
+// stored one; a new one is stored fresh (new IV), bumps secret_updated_at,
+// and clears google_rejected_at (AC-31). A save that changes nothing writes
+// nothing. A new CLOUDFLARE token or GOOGLE key file is checked first,
+// outside the transaction. A switch of sign in method replaces the secret,
+// google_auth, and sender_email in one update. A duplicate name or a second
 // CLOUDFLARE or GOOGLE key aborts the transaction, so it is mapped outside.
 export async function updateApiKey(
   conn: Kysely<DB>,
@@ -411,7 +517,6 @@ export async function updateApiKey(
   const secret = newSecret(input);
   const ciphertext =
     secret === undefined ? undefined : encryptSecret(keyring, secret, aad(id));
-  const after = storedFields(input);
   try {
     return await conn.transaction().execute(async (trx) => {
       const row = await trx
@@ -424,6 +529,7 @@ export async function updateApiKey(
           "calendar_id",
           "dev_inbox",
           "ops_bcc",
+          "google_auth",
         ])
         .where("id", "=", id)
         .where("deleted_at", "is", null)
@@ -438,13 +544,16 @@ export async function updateApiKey(
         calendarId: row.calendar_id,
         devInbox: row.dev_inbox,
         opsBcc: row.ops_bcc,
+        googleAuth: googleAuthOf(row.google_auth),
       };
+      const after = storedFields(input, before.senderEmail);
       const changed = changedFields(AUDITED_FIELDS, before, after);
       const fieldsChanged = Object.keys(changed).length > 0;
       if (!fieldsChanged && ciphertext === undefined) return ok(undefined);
 
       if (ciphertext === undefined) {
-        if (needsGoogleFile(before, after)) return err("google_file_required");
+        const needed = needsGoogleCredential(before, after);
+        if (needed) return err(needed);
         if (before.type === "GOOGLE" && after.type !== "GOOGLE")
           return err("key_required");
         if (needsCloudflareToken(before, after))
@@ -475,6 +584,11 @@ export async function updateApiKey(
                 secret_ciphertext: ciphertext,
                 secret_updated_at: sql<Date>`now()`,
               }),
+          // A new secret earns a fresh start, and only a GOOGLE key may hold
+          // the marker (api_keys_google_fields_check).
+          ...(ciphertext !== undefined || after.type !== "GOOGLE"
+            ? { google_rejected_at: null }
+            : {}),
         })
         .where("id", "=", id)
         .execute();
@@ -571,22 +685,39 @@ export async function cloudflareRevokeConfig(
   }
 }
 
-export type GoogleMailConfig = {
-  readonly clientEmail: string;
-  readonly privateKey: string;
-  readonly privateKeyId: string;
-  readonly senderEmail: string;
+export type GoogleMailConfig = MailCredentials & {
+  readonly id: string;
   readonly calendarId: string;
   readonly devInbox: string | null;
   readonly opsBcc: string | null;
-  // The key's updated_at as ISO: any save makes a new token cache entry.
-  readonly stamp: string;
+  // The guard for the worker's own marker writes (AC-31); `stamp` is the
+  // same instant as ISO.
+  readonly secretUpdatedAt: Date;
 };
 
-// Spec 0013 AC-5, AC-9: the worker's Google settings, read at the start of
-// each jobs step, or null when no live GOOGLE key exists. The keyring is
-// read only when one does. A key that cannot be read throws one fixed
-// message, never the key or its decrypt error.
+// AC-30: the decrypted secret, parsed with the schema its column names,
+// never by guessing from its shape.
+const googleCredentials = (
+  method: GoogleAuthMethod,
+  plaintext: string,
+): ServiceAccountCredentials | OAuthCredentials => {
+  const json: unknown = JSON.parse(plaintext);
+  switch (method) {
+    case "service_account":
+      return { method, ...GoogleSecret.parse(json) };
+    case "oauth":
+      return { method, ...GoogleOAuthSecret.parse(json) };
+    default: {
+      const never: never = method;
+      return never;
+    }
+  }
+};
+
+// Spec 0013 AC-5, AC-9, AC-30: the worker's Google settings, read at the
+// start of each jobs step, or null when no live GOOGLE key exists. The
+// keyring is read only when one does. A key that cannot be read throws one
+// fixed message, never the key or its decrypt error.
 export async function googleMailConfig(
   conn: Kysely<DB>,
   keyring: () => Keyring,
@@ -596,30 +727,38 @@ export async function googleMailConfig(
     .select([
       "id",
       "secret_ciphertext",
+      "secret_updated_at",
+      "google_auth",
       "sender_email",
       "calendar_id",
       "dev_inbox",
       "ops_bcc",
-      "updated_at",
     ])
     .where("type", "=", "GOOGLE")
     .where("deleted_at", "is", null)
     .executeTakeFirst();
   if (!row) return null;
   try {
-    const secret = GoogleSecret.parse(
-      JSON.parse(decryptSecret(keyring(), row.secret_ciphertext, aad(row.id))),
-    );
     // api_keys_google_fields_check makes these non null for GOOGLE.
-    if (row.sender_email === null || row.calendar_id === null)
+    if (
+      row.sender_email === null ||
+      row.calendar_id === null ||
+      row.google_auth === null
+    )
       throw new Error("google fields missing");
+    const credentials = googleCredentials(
+      GoogleAuthMethod.parse(row.google_auth),
+      decryptSecret(keyring(), row.secret_ciphertext, aad(row.id)),
+    );
     return {
-      ...secret,
+      id: row.id,
+      credentials,
       senderEmail: row.sender_email,
       calendarId: row.calendar_id,
       devInbox: row.dev_inbox,
       opsBcc: row.ops_bcc,
-      stamp: row.updated_at.toISOString(),
+      secretUpdatedAt: row.secret_updated_at,
+      stamp: row.secret_updated_at.toISOString(),
     };
   } catch {
     throw new Error("the GOOGLE API key can't be read");

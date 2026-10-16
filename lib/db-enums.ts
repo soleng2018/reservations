@@ -19,6 +19,12 @@ export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE", "GOOGLE"]);
 export type ApiKeyType = z.infer<typeof ApiKeyType>;
 
+// Spec 0013 AC-25, AC-34: how a GOOGLE key signs in.
+export const GoogleAuthMethod = z.enum(["service_account", "oauth"], {
+  error: "Choose a sign in method.",
+});
+export type GoogleAuthMethod = z.infer<typeof GoogleAuthMethod>;
+
 export const BookingStatus = z.enum([
   "provisioning",
   "confirmed",
@@ -77,6 +83,7 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "testbed_types.duration_unit": DurationUnit.options,
   "testbed_clients.kind": TestbedClientKind.options,
   "api_keys.type": ApiKeyType.options,
+  "api_keys.google_auth": GoogleAuthMethod.options,
   "bookings.status": BookingStatus.options,
   "bookings.cancel_source": CancelSource.options,
   "jobs.kind": JobKind.options,

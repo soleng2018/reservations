@@ -4,29 +4,40 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { JWT } from "google-auth-library";
 import { z } from "zod";
 import { err, ok, type Result } from "@/lib/result";
-import { GOOGLE_TIMEOUT_MS } from "./http";
+import { GOOGLE_TIMEOUT_MS, type GoogleFetch } from "./http";
+import { refreshAccessToken, type OAuthClientCredentials } from "./oauth";
 
-// Spec 0013 AC-2, AC-9. An access token for the service account acting as
-// the sender mailbox (domain wide delegation). Nothing here logs, and no
-// error carries the key or a token.
+// Spec 0013 AC-2, AC-9, AC-30. An access token acting as the sender mailbox:
+// for a service account through domain wide delegation, for Google sign in
+// through its refresh token. Nothing here logs, and no error carries the
+// key or a token.
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/calendar.events",
 ] as const;
 
-export type GoogleCredentials = {
+// The decrypted GOOGLE secret, tagged by the key's google_auth column.
+export type ServiceAccountCredentials = {
+  readonly method: "service_account";
   readonly clientEmail: string;
   readonly privateKey: string;
   readonly privateKeyId: string;
+};
+export type OAuthCredentials = OAuthClientCredentials & {
+  readonly method: "oauth";
+};
+
+export type GoogleCredentials = {
+  readonly credentials: ServiceAccountCredentials | OAuthCredentials;
   readonly senderEmail: string;
 };
 
-// "delegation": Google's unauthorized_client, the client ID has no domain
-// wide delegation entry for both scopes. "invalid": invalid_grant or
-// invalid_client (a deleted key, a sender outside the domain) or a private
-// key that does not parse. "unavailable": a timeout, network error, 429, or
-// 5xx.
+// "delegation": Google's unauthorized_client for a service account, the
+// client ID has no domain wide delegation entry for both scopes. "invalid":
+// invalid_grant or invalid_client (a deleted key, a sender outside the
+// domain, a revoked or expired sign in) or a private key that does not
+// parse. "unavailable": a timeout, network error, 429, or 5xx.
 export type MintError = "delegation" | "invalid" | "unavailable";
 
 export type MintedToken = {
@@ -65,7 +76,10 @@ const TIMED_OUT = Symbol("timed out");
 
 // The library retries the token POST itself, so the whole mint is raced
 // against the timeout as well as each request.
-export const mintAccessToken: MintToken = async (creds) => {
+async function mintServiceAccount(
+  creds: ServiceAccountCredentials,
+  senderEmail: string,
+): Promise<Result<MintedToken, MintError>> {
   try {
     createPrivateKey(creds.privateKey);
   } catch {
@@ -75,7 +89,7 @@ export const mintAccessToken: MintToken = async (creds) => {
     email: creds.clientEmail,
     key: creds.privateKey,
     keyId: creds.privateKeyId,
-    subject: creds.senderEmail,
+    subject: senderEmail,
     scopes: [...GOOGLE_SCOPES],
     transporterOptions: { timeout: GOOGLE_TIMEOUT_MS },
   });
@@ -97,13 +111,34 @@ export const mintAccessToken: MintToken = async (creds) => {
   } finally {
     timer.abort();
   }
-};
+}
+
+// AC-30: by method. A Google sign in has no delegation to blame, so every
+// refusal is "invalid"; the fetch is injected so tests use a fake.
+export function mintAccessToken(
+  creds: GoogleCredentials,
+  fetchFn: GoogleFetch = fetch,
+): Promise<Result<MintedToken, MintError>> {
+  const { credentials } = creds;
+  switch (credentials.method) {
+    case "service_account":
+      return mintServiceAccount(credentials, creds.senderEmail);
+    case "oauth":
+      return refreshAccessToken(fetchFn, credentials);
+    default: {
+      const never: never = credentials;
+      return never;
+    }
+  }
+}
 
 // A token is replaced this long before Google's expiry.
 const EXPIRY_MARGIN_MS = 5 * 60_000;
 
 export type MailCredentials = GoogleCredentials & {
-  // The GOOGLE key's updated_at: a new key (or sender) means a new token.
+  // The GOOGLE key's secret_updated_at: only a new secret (which also comes
+  // with any change of sender) means a new token, so the worker's own marker
+  // writes never drop it (AC-30).
   readonly stamp: string;
 };
 
@@ -121,7 +156,7 @@ let cached:
 
 export function googleAccessToken(
   cfg: MailCredentials,
-  mint: MintToken = mintAccessToken,
+  mint: MintToken = (creds) => mintAccessToken(creds),
 ): TokenSource {
   return async ({ fresh = false } = {}) => {
     const hit =

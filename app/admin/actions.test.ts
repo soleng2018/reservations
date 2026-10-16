@@ -1,12 +1,22 @@
 import { randomBytes } from "node:crypto";
 import type { Kysely } from "kysely";
 import { describe, expect, it, vi } from "vitest";
-import type { Keyring } from "@/server/crypto/secrets";
 import {
+  encryptSecret,
+  secretAad,
+  type Keyring,
+} from "@/server/crypto/secrets";
+import {
+  FAKE_CLIENT_ID,
   fakeKeyFileText,
+  fakeOAuthClientText,
   fakeServiceAccountKey,
 } from "@/server/google/testing";
 import type { DB } from "@/server/db/types";
+import type {
+  VerifySignInError,
+  VerifySignInInput,
+} from "@/server/google/verify";
 
 class Redirect extends Error {
   constructor(readonly to: string) {
@@ -25,6 +35,14 @@ const ctx = vi.hoisted(() => ({
   // The same for the Google key check (spec 0013 AC-2).
   google: "ok" as "ok" | "invalid" | "delegation" | "calendar" | "unavailable",
   googleChecks: 0,
+  // The stub Google sign in check (spec 0013 AC-28 steps 5 to 8): what it
+  // answers, and what each call was given.
+  signIn: { ok: true } as
+    | { readonly ok: true }
+    | { readonly ok: false; readonly error: VerifySignInError },
+  signInCalls: [] as VerifySignInInput[],
+  // The response cookies a Server Action set, by name.
+  cookies: new Map<string, { value: string; options: unknown }>(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -33,7 +51,21 @@ vi.mock("next/navigation", () => ({
     throw new Redirect(to);
   },
 }));
-vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(),
+  cookies: async () => ({
+    get: (name: string) => {
+      const c = ctx.cookies.get(name);
+      return c ? { name, value: c.value } : undefined;
+    },
+    set: (name: string, value: string, options: unknown) => {
+      ctx.cookies.set(name, { value, options });
+    },
+    delete: (opts: { readonly name: string; readonly path: string }) => {
+      ctx.cookies.delete(opts.name);
+    },
+  }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/server/auth", () => ({
   auth: () => ({
@@ -75,6 +107,20 @@ vi.mock("@/server/google/verify", async (importOriginal) => ({
       ? { ok: true, value: undefined }
       : { ok: false, error: ctx.google };
   },
+  verifyGoogleSignIn: async (input: VerifySignInInput) => {
+    ctx.signInCalls.push(input);
+    return ctx.signIn.ok
+      ? {
+          ok: true,
+          value: {
+            clientId: input.clientId,
+            clientSecret: input.clientSecret,
+            refreshToken: "1//canary-refresh-token",
+            senderEmail: "hol.sender@gmail.com",
+          },
+        }
+      : ctx.signIn;
+  },
 }));
 vi.mock("@/server/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/db")>();
@@ -87,6 +133,7 @@ const {
   checkTestbedTypeDelete,
   createApiKeyAction,
   deleteApiKeyAction,
+  startGoogleSignInAction,
   deleteTestbedAction,
   updateApiKeyAction,
   createTestbedAction,
@@ -106,6 +153,7 @@ const {
   makeUser,
   slot,
 } = await import("@/server/db/testing");
+const { dbNow } = await import("@/server/db/bookings");
 
 const IDLE = { kind: "idle" } as const;
 
@@ -763,6 +811,7 @@ describe.skipIf(!hasDb)("API key actions", () => {
         const f = new FormData();
         f.set("name", name);
         f.set("type", "GOOGLE");
+        f.set("googleAuth", "service_account");
         f.set("senderEmail", "labs@nile.example");
         f.set("calendarId", "c_abc@group.calendar.google.com");
         f.set("devInbox", "");
@@ -872,6 +921,558 @@ describe.skipIf(!hasDb)("API key actions", () => {
         ctx.google = "ok";
       }
     }));
+
+  // covers: spec 0013 AC-25 to AC-29 (Google sign in), with the Google
+  // checks stubbed and the response cookies held in memory.
+  describe("Google sign in", () => {
+    const COOKIE = "hol_google_sign_in";
+    const file = (text: string) =>
+      new File([text], "client.json", { type: "application/json" });
+    const clientForm = (client: File | undefined) => {
+      const f = new FormData();
+      f.set("clientFile", client ?? new File([], ""));
+      return f;
+    };
+    const signInForm = (
+      name: string,
+      fields: {
+        readonly client?: File;
+        readonly returnUrl?: string;
+        readonly calendarId?: string;
+        readonly devInbox?: string;
+      } = {},
+    ) => {
+      const f = new FormData();
+      f.set("name", name);
+      f.set("type", "GOOGLE");
+      f.set("googleAuth", "oauth");
+      f.set(
+        "calendarId",
+        fields.calendarId ?? "c_gmail@group.calendar.google.com",
+      );
+      f.set("devInbox", fields.devInbox ?? "");
+      f.set("opsBcc", "");
+      f.set("clientFile", fields.client ?? new File([], ""));
+      f.set("returnUrl", fields.returnUrl ?? "");
+      // A key file chosen too is ignored under Google sign in (AC-29).
+      f.set("keyFile", file("{not json"));
+      return f;
+    };
+    const returned = (state: string, code = "4/0canary-auth-code") =>
+      `http://127.0.0.1:47613/?state=${encodeURIComponent(state)}&code=${encodeURIComponent(code)}&scope=email`;
+
+    const clearGoogle = (trx: Kysely<DB>) =>
+      trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "GOOGLE")
+        .where("deleted_at", "is", null)
+        .execute();
+
+    // Starts a sign in through the action and answers its state.
+    const start = async (): Promise<string> => {
+      const started = await startGoogleSignInAction(
+        clientForm(file(fakeOAuthClientText())),
+      );
+      if (started.kind !== "started") throw new Error("expected a start");
+      const state = new URL(started.url).searchParams.get("state");
+      if (!state) throw new Error("expected a state");
+      return state;
+    };
+
+    // The admin's users.id, which the cookie is bound to.
+    const adminId = async (trx: Kysely<DB>) =>
+      (
+        await trx
+          .selectFrom("users")
+          .select("id")
+          .where("auth_user_id", "=", ctx.authUserId ?? "")
+          .executeTakeFirstOrThrow()
+      ).id;
+
+    // Set by the "another client's file" case below.
+    let otherClient = false;
+
+    // A live service account GOOGLE key, inserted directly.
+    const makeGoogleKey = (trx: Kysely<DB>) =>
+      trx
+        .insertInto("api_keys")
+        .values({
+          name: newName(),
+          type: "GOOGLE",
+          base_url: "https://www.googleapis.com",
+          secret_ciphertext: "v1:test:placeholder",
+          google_auth: "service_account",
+          sender_email: "labs@nile.example",
+          calendar_id: "c_abc@group.calendar.google.com",
+        })
+        .execute();
+
+    const reset = () => {
+      ctx.cookies.clear();
+      ctx.signIn = { ok: true };
+      ctx.signInCalls = [];
+    };
+
+    it("starts a sign in with PKCE and an encrypted cookie for this admin (AC-27)", () =>
+      as("admin", async () => {
+        reset();
+        const started = await startGoogleSignInAction(
+          clientForm(file(fakeOAuthClientText())),
+        );
+        if (started.kind !== "started") throw new Error("expected a start");
+        const url = new URL(started.url);
+        const params = Object.fromEntries(url.searchParams);
+        expect(url.origin + url.pathname).toBe(
+          "https://accounts.google.com/o/oauth2/v2/auth",
+        );
+        expect(params).toMatchObject({
+          client_id: FAKE_CLIENT_ID,
+          redirect_uri: "http://127.0.0.1:47613/",
+          response_type: "code",
+          access_type: "offline",
+          prompt: "consent",
+          code_challenge_method: "S256",
+        });
+        expect(params.state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        expect(params.code_challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+        const cookie = ctx.cookies.get(COOKIE);
+        expect(cookie?.options).toEqual({
+          httpOnly: true,
+          sameSite: "lax",
+          // Dev runs on plain http.
+          secure: false,
+          path: "/admin",
+          maxAge: 600,
+        });
+        // Only ciphertext: neither the state nor the client id shows.
+        expect(cookie?.value).toMatch(/^v1:/);
+        expect(cookie?.value).not.toContain(params.state);
+        expect(cookie?.value).not.toContain("apps.googleusercontent.com");
+        expect(JSON.stringify(started)).not.toContain("GOCSPX");
+      }));
+
+    it.each<[string, File | undefined, string]>([
+      ["no file", undefined, "Choose the OAuth client file."],
+      [
+        "a Web application client",
+        file(
+          JSON.stringify({
+            web: { client_id: FAKE_CLIENT_ID, client_secret: "GOCSPX-canary" },
+          }),
+        ),
+        "This is a Web application client. Create a Desktop app OAuth client in Google Cloud and use its file.",
+      ],
+      [
+        "a service account key",
+        file(fakeKeyFileText()),
+        "This is a service account key. Choose Service account as the sign in method, or use an OAuth client file.",
+      ],
+      [
+        "junk",
+        file("GOCSPX-canary not json"),
+        "This isn't a Google OAuth client file (.json).",
+      ],
+      [
+        "a file over 16 KB",
+        file("x".repeat(16 * 1024 + 1)),
+        "The OAuth client file is too large.",
+      ],
+    ])("refuses %s and sets no cookie (AC-26)", (_, client, message) =>
+      as("admin", async () => {
+        reset();
+        const answer = await startGoogleSignInAction(clientForm(client));
+        expect(answer).toEqual({
+          kind: "error",
+          fields: { clientFile: message },
+        });
+        expect(ctx.cookies.size).toBe(0);
+        expect(JSON.stringify(answer)).not.toContain("canary");
+      }),
+    );
+
+    it("refuses a learner (AC-27)", () =>
+      as("learner", async () => {
+        reset();
+        await expect(
+          startGoogleSignInAction(clientForm(file(fakeOAuthClientText()))),
+        ).rejects.toThrow();
+        expect(ctx.cookies.size).toBe(0);
+      }));
+
+    it("checks the fields, the file, and the address before Google, keeping the cookie (AC-28 steps 1 to 3)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        await start();
+        expect(
+          await createApiKeyAction(IDLE, signInForm("", { devInbox: "nope" })),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            name: "Enter a name.",
+            devInbox: "Enter an email address.",
+            clientFile: "Choose the OAuth client file.",
+            returnUrl: "Sign in with Google first, then paste the address.",
+          },
+        });
+        const client = file(fakeOAuthClientText());
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            signInForm(newName(), {
+              client,
+              returnUrl: "http://localhost:47613/?state=s&code=c",
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            returnUrl: "Paste the full address from the page Google opened.",
+          },
+        });
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            signInForm(newName(), {
+              client,
+              returnUrl: "http://127.0.0.1:47613/?error=access_denied&state=s",
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            returnUrl: "The Google sign in was cancelled. Sign in again.",
+          },
+        });
+        expect(ctx.signInCalls).toEqual([]);
+        expect(ctx.cookies.has(COOKIE)).toBe(true);
+      }));
+
+    it.each<[string, (trx: Kysely<DB>, state: string) => Promise<string>]>([
+      [
+        "no cookie",
+        async (_trx, state) => {
+          ctx.cookies.clear();
+          return state;
+        },
+      ],
+      ["another state", async () => "another-state"],
+      [
+        "another admin's cookie",
+        async (_trx, state) => {
+          const cookie = ctx.cookies.get(COOKIE);
+          if (!cookie) throw new Error("expected the cookie");
+          ctx.cookies.set(COOKIE, {
+            ...cookie,
+            value: encryptSecret(
+              KEYRING,
+              JSON.stringify({
+                state,
+                codeVerifier: "v",
+                clientId: FAKE_CLIENT_ID,
+                issuedAt: new Date().toISOString(),
+              }),
+              secretAad("google_sign_in", "cookie", crypto.randomUUID()),
+            ),
+          });
+          return state;
+        },
+      ],
+      [
+        "a cookie older than 10 minutes by the DB clock",
+        async (trx, state) => {
+          const old = new Date(
+            (await dbNow(trx)).getTime() - 11 * 60_000,
+          ).toISOString();
+          ctx.cookies.set(COOKIE, {
+            value: encryptSecret(
+              KEYRING,
+              JSON.stringify({
+                state,
+                codeVerifier: "v",
+                clientId: FAKE_CLIENT_ID,
+                issuedAt: old,
+              }),
+              secretAad("google_sign_in", "cookie", await adminId(trx)),
+            ),
+            options: {},
+          });
+          return state;
+        },
+      ],
+      [
+        "another client's file",
+        async (_trx, state) => {
+          otherClient = true;
+          return state;
+        },
+      ],
+    ])("refuses %s before the exchange (AC-28 step 4)", (_, tamper) =>
+      as("admin", async (trx) => {
+        reset();
+        otherClient = false;
+        await clearGoogle(trx);
+        const state = await tamper(trx, await start());
+        const client = file(
+          fakeOAuthClientText(
+            otherClient
+              ? { clientId: "999-other.apps.googleusercontent.com" }
+              : {},
+          ),
+        );
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            signInForm(newName(), { client, returnUrl: returned(state) }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            returnUrl:
+              "This sign in expired or belongs to another attempt. Sign in with Google again.",
+          },
+        });
+        expect(ctx.signInCalls).toEqual([]);
+      }),
+    );
+
+    it("saves a sign in with the cookie's verifier, then deletes the cookie (AC-28)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        const state = await start();
+        const name = newName();
+        const saved = await createApiKeyAction(
+          IDLE,
+          signInForm(name, {
+            client: file(fakeOAuthClientText()),
+            returnUrl: returned(state),
+          }),
+        );
+        expect(saved).toEqual({ kind: "saved", message: `Created ${name}.` });
+        expect(ctx.signInCalls).toEqual([
+          {
+            code: "4/0canary-auth-code",
+            codeVerifier: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+            clientId: FAKE_CLIENT_ID,
+            clientSecret: "GOCSPX-test-client-secret",
+            calendarId: "c_gmail@group.calendar.google.com",
+          },
+        ]);
+        expect(ctx.cookies.has(COOKIE)).toBe(false);
+        const [key] = await trx
+          .selectFrom("api_keys")
+          .select(["google_auth", "sender_email", "secret_ciphertext"])
+          .where("name", "=", name)
+          .execute();
+        expect(key).toMatchObject({
+          google_auth: "oauth",
+          sender_email: "hol.sender@gmail.com",
+        });
+        expect(key?.secret_ciphertext).not.toMatch(/canary|GOCSPX/);
+      }));
+
+    it.each<[VerifySignInError, unknown]>([
+      [
+        { kind: "refused" },
+        {
+          kind: "error",
+          fields: {
+            returnUrl:
+              "Google didn't accept this sign in (it may have been used already). Sign in with Google again.",
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "client" },
+        {
+          kind: "error",
+          fields: {
+            clientFile:
+              "Google didn't accept this OAuth client. Check the file, or create a new Desktop app client.",
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "no_refresh" },
+        {
+          kind: "error",
+          fields: {
+            returnUrl:
+              "Google didn't return a lasting sign in. Sign in with Google again.",
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "scopes" },
+        {
+          kind: "error",
+          fields: {
+            returnUrl:
+              "Allow both sending email and Calendar events on the Google screen, then sign in with Google again.",
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "no_email" },
+        {
+          kind: "error",
+          fields: {
+            returnUrl:
+              "Google didn't share a verified email for this account. Sign in with Google again.",
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "calendar", sender: "hol.sender@gmail.com" },
+        {
+          kind: "error",
+          fields: {
+            calendarId:
+              'hol.sender@gmail.com can\'t open this calendar. Create it in that mailbox or share it with "Make changes to events". Then sign in with Google again.',
+          },
+          restart: true,
+        },
+      ],
+      [
+        { kind: "check_unavailable" },
+        {
+          kind: "error",
+          message:
+            "Couldn't reach Google to check the key. Try again. Then sign in with Google again.",
+          fields: {},
+          restart: true,
+        },
+      ],
+      [
+        { kind: "exchange_unavailable" },
+        {
+          kind: "error",
+          message: "Couldn't reach Google to check the key. Try again.",
+          fields: {},
+        },
+      ],
+    ])(
+      "maps %j after the exchange, writing nothing and deleting the cookie",
+      (error, answer) =>
+        as("admin", async (trx) => {
+          reset();
+          await clearGoogle(trx);
+          ctx.signIn = { ok: false, error };
+          const state = await start();
+          const name = newName();
+          expect(
+            await createApiKeyAction(
+              IDLE,
+              signInForm(name, {
+                client: file(fakeOAuthClientText()),
+                returnUrl: returned(state),
+              }),
+            ),
+          ).toEqual(answer);
+          expect(ctx.cookies.has(COOKIE)).toBe(false);
+          expect(await keysNamed(trx, name)).toEqual([]);
+        }),
+    );
+
+    it("restarts a spent sign in that a second Google key refuses (AC-28)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        await makeGoogleKey(trx);
+        const state = await start();
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            signInForm(newName(), {
+              client: file(fakeOAuthClientText()),
+              returnUrl: returned(state),
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            type: "Only one Google key can exist. Edit the existing one.",
+          },
+          restart: true,
+        });
+      }));
+
+    it("edits a Google sign in key without a sign in, and refuses a calendar change or a switch (AC-29)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        const state = await start();
+        const name = newName();
+        await createApiKeyAction(
+          IDLE,
+          signInForm(name, {
+            client: file(fakeOAuthClientText()),
+            returnUrl: returned(state),
+          }),
+        );
+        const [key] = await keysNamed(trx, name);
+        if (!key) throw new Error("expected the key");
+        ctx.signInCalls = [];
+        expect(
+          await updateApiKeyAction(
+            key.id,
+            IDLE,
+            signInForm(name, { devInbox: "dev-inbox@nile.example" }),
+          ),
+        ).toEqual({ kind: "saved", message: `Updated ${name}.` });
+        expect(
+          await updateApiKeyAction(
+            key.id,
+            IDLE,
+            signInForm(name, {
+              calendarId: "c_other@group.calendar.google.com",
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            returnUrl: "Sign in with Google again to change the calendar.",
+          },
+        });
+        const toServiceAccount = signInForm(name);
+        toServiceAccount.set("googleAuth", "service_account");
+        toServiceAccount.set("senderEmail", "labs@nile.example");
+        toServiceAccount.set("keyFile", new File([], ""));
+        expect(
+          await updateApiKeyAction(key.id, IDLE, toServiceAccount),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            keyFile: "Upload the key file to switch to Service account.",
+          },
+        });
+        expect(ctx.signInCalls).toEqual([]);
+      }));
+
+    it("tells an OAuth client file apart under Service account (AC-26)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        const f = signInForm(newName());
+        f.set("googleAuth", "service_account");
+        f.set("senderEmail", "labs@nile.example");
+        f.set("keyFile", file(fakeOAuthClientText()));
+        expect(await createApiKeyAction(IDLE, f)).toEqual({
+          kind: "error",
+          fields: {
+            keyFile:
+              "This is an OAuth client file. Choose Google sign in as the sign in method, or use a service account key.",
+          },
+        });
+      }));
+  });
 });
 
 // Feature 9 (spec 0007): testbed load, edit, and delete actions.

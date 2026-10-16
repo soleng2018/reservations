@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { expect, type Page, type Response } from "@playwright/test";
 import { test } from "./admin-session";
 import { haveSecrets } from "./authentik";
+import { expectNoSeriousViolations } from "./axe";
 
 // Feature 8 (spec 0006) in the browser: add, search, edit, replace, and
 // delete an API key on /admin/api-keys against the real database, and prove
@@ -291,7 +292,16 @@ test("a GOOGLE key swaps the fields, refuses a bad file, and never echoes the ke
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(dialog.getByText("Choose the key file.")).toBeVisible();
 
-  // AC-3: not a service account key.
+  // AC-3: not a service account key; AC-26: an OAuth client file is named.
+  await dialog.getByLabel("Key file").setInputFiles({
+    name: "notes.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{not json"),
+  });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    dialog.getByText("This isn't a Google service account key file (.json)."),
+  ).toBeVisible();
   await dialog.getByLabel("Key file").setInputFiles({
     name: "client_secret.json",
     mimeType: "application/json",
@@ -299,7 +309,9 @@ test("a GOOGLE key swaps the fields, refuses a bad file, and never echoes the ke
   });
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(
-    dialog.getByText("This isn't a Google service account key file (.json)."),
+    dialog.getByText(
+      "This is an OAuth client file. Choose Google sign in as the sign in method, or use a service account key.",
+    ),
   ).toBeVisible();
 
   // AC-2: a well formed key Google has never issued. The real token call
@@ -338,4 +350,89 @@ test("a GOOGLE key swaps the fields, refuses a bad file, and never echoes the ke
   const sent = (await bodies()).join("\n");
   expect(sent).not.toContain(canary);
   expect(sent).not.toContain("PRIVATE KEY");
+});
+
+// covers: spec 0013 AC-25 to AC-28 (Google sign in). Playwright can't drive
+// Google's own sign in, so this covers the dialog only: the fields switch
+// with the method, a sign in starts (no Google call: it only builds the
+// address), and a wrong pasted address is refused before any exchange.
+test("Google sign in swaps the fields, starts a sign in, and refuses a wrong address", async ({
+  adminPage: page,
+}) => {
+  const name = `e2e keys ${unique()}`;
+  created.push(name);
+  await openPage(page);
+
+  await page.getByRole("button", { name: "Add API key" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("combobox", { name: "Type" }).click();
+  await page.getByRole("option", { name: "GOOGLE", exact: true }).click();
+  const methods = dialog.getByRole("radiogroup", { name: "Sign in method" });
+  await expect(
+    methods.getByRole("radio", { name: "Service account (Workspace)" }),
+  ).toBeChecked();
+  await methods
+    .getByRole("radio", {
+      name: "Google sign in (personal Gmail, for testing)",
+    })
+    .click();
+  await expect(dialog.getByLabel("Key file")).toHaveCount(0);
+  await expect(dialog.getByLabel("Sender mailbox")).toHaveCount(0);
+  await expect(dialog.getByLabel("OAuth client file")).toBeVisible();
+  await expect(dialog.getByLabel("Google sign in address")).toHaveCount(0);
+  await dialog
+    .getByLabel("Calendar ID")
+    .fill("c_e2e@group.calendar.google.com");
+
+  // AC-28 steps 2 and 3: nothing chosen, nothing pasted.
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByText("Choose the OAuth client file.")).toBeVisible();
+  await expect(
+    dialog.getByText("Sign in with Google first, then paste the address."),
+  ).toBeVisible();
+  await expectNoSeriousViolations(page);
+
+  // AC-26, AC-27: a Desktop app client file starts the sign in.
+  await dialog.getByLabel("OAuth client file").setInputFiles({
+    name: "client_secret_desktop.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        installed: {
+          client_id: "100000000001-e2e.apps.googleusercontent.com",
+          client_secret: `GOCSPX-${unique()}`,
+        },
+      }),
+    ),
+  });
+  await dialog.getByRole("button", { name: "Sign in with Google" }).click();
+  const open = dialog.getByRole("link", { name: "Open Google sign in" });
+  await expect(open).toBeVisible();
+  await expect(open).toHaveAttribute("target", "_blank");
+  await expect(open).toHaveAttribute("rel", "noopener noreferrer");
+  const href = new URL((await open.getAttribute("href")) ?? "");
+  expect(href.origin + href.pathname).toBe(
+    "https://accounts.google.com/o/oauth2/v2/auth",
+  );
+  expect(href.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:47613/");
+  await expect(
+    dialog.getByText("Sign in with Google first, then paste the address."),
+  ).toHaveCount(0);
+  await expectNoSeriousViolations(page);
+
+  // AC-28 step 3: an address from somewhere else never reaches Google.
+  await dialog
+    .getByLabel("Google sign in address")
+    .fill("http://localhost:47613/?state=x&code=y");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    dialog.getByText("Paste the full address from the page Google opened."),
+  ).toBeVisible();
+  await expect(dialog.getByLabel("Google sign in address")).toBeFocused();
+  await page.screenshot({
+    path: "e2e/screenshots/1280-api-keys-google-sign-in.png",
+  });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(rowOf(page, name)).toHaveCount(0);
 });

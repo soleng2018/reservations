@@ -1,10 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState, type MouseEvent } from "react";
+import { ExternalLinkIcon } from "lucide-react";
+import {
+  startGoogleSignInAction,
+  type AdminFormState,
+} from "@/app/admin/actions";
+import { GENERIC, useFormDialog } from "@/components/admin/form-dialog";
 import { Field } from "@/components/field";
+import { useFormErrors } from "@/components/form-errors";
 import { FormSelect } from "@/components/form-select";
+import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  FieldError,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ApiKeyType } from "@/lib/db-enums";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Spinner } from "@/components/ui/spinner";
+import { ApiKeyType, GoogleAuthMethod } from "@/lib/db-enums";
 
 const TYPES = [
   { value: "IDP", label: "IDP" },
@@ -13,11 +29,19 @@ const TYPES = [
   { value: "GOOGLE", label: "GOOGLE" },
 ] as const satisfies readonly { value: ApiKeyType; label: string }[];
 
+// Spec 0013 AC-25: Service account first, and selected on create.
+const METHODS = [
+  { value: "service_account", label: "Service account (Workspace)" },
+  { value: "oauth", label: "Google sign in (personal Gmail, for testing)" },
+] as const satisfies readonly { value: GoogleAuthMethod; label: string }[];
+
 export type ApiKeyDefaults = {
   readonly name: string;
   readonly type: ApiKeyType;
   readonly baseUrl: string;
-  // GOOGLE only (spec 0013 AC-4); empty for every other type.
+  // GOOGLE only (spec 0013 AC-4, AC-29); empty (or the first method) for
+  // every other type.
+  readonly googleAuth: GoogleAuthMethod;
   readonly senderEmail: string;
   readonly calendarId: string;
   readonly devInbox: string;
@@ -28,6 +52,7 @@ const NEW_KEY: ApiKeyDefaults = {
   name: "",
   type: "IDP",
   baseUrl: "",
+  googleAuth: "service_account",
   senderEmail: "",
   calendarId: "",
   devInbox: "",
@@ -39,8 +64,8 @@ const NEW_KEY: ApiKeyDefaults = {
 // the stored secret never reaches the browser; on edit, blank keeps it.
 // Defaults are read once on open (the Testbed Types pattern). No maxLength
 // on the key: a pasted secret must never be cut short without a word.
-// Choosing GOOGLE (spec 0013 AC-1, AC-4) swaps Base URL and Key value for
-// the key file and the mailbox and calendar settings.
+// Choosing GOOGLE (spec 0013 AC-1, AC-4, AC-25) swaps Base URL and Key value
+// for the sign in method and its fields.
 export function ApiKeyFields({
   defaults: initialDefaults = NEW_KEY,
   lastChanged: initialLastChanged,
@@ -114,8 +139,9 @@ export function ApiKeyFields({
   );
 }
 
-// The key file input always starts empty: the stored key never comes back,
-// and on edit an empty input keeps it.
+// Spec 0013 AC-25, AC-29: the sign in method, then its fields. The edit
+// dialog opens on the key's method; the stored credential is kept only
+// while the method stays the same (the action enforces it).
 function GoogleFields({
   defaults,
   changedNote,
@@ -123,40 +149,103 @@ function GoogleFields({
   readonly defaults: ApiKeyDefaults;
   readonly changedNote: string | undefined;
 }) {
-  const editing = changedNote !== undefined;
+  const [method, setMethod] = useState<GoogleAuthMethod>(defaults.googleAuth);
+  const legendId = useId();
+  const { fields } = useFormErrors();
+  const methodError = fields.googleAuth;
+  // An edit keeps the stored credential only on the key's own method.
+  const keeps = (m: GoogleAuthMethod) =>
+    changedNote !== undefined &&
+    defaults.type === "GOOGLE" &&
+    defaults.googleAuth === m;
   return (
     <>
-      <Field
-        path="keyFile"
-        label="Key file"
-        description={
-          editing
-            ? `Leave empty to keep the current key. ${changedNote}.`
-            : "The service account JSON key from Google Cloud."
-        }
-      >
-        <Input
-          name="keyFile"
-          type="file"
-          accept=".json,application/json"
-          required={!editing}
+      <FieldSet data-invalid={methodError ? true : undefined}>
+        <FieldLegend
+          id={legendId}
+          variant="label"
+          className="mb-0 text-[0.8125rem] font-semibold text-fg1"
+        >
+          Sign in method
+        </FieldLegend>
+        <RadioGroup
+          name="googleAuth"
+          aria-labelledby={legendId}
+          value={method}
+          onValueChange={(v) => {
+            const parsed = GoogleAuthMethod.safeParse(v);
+            if (parsed.success) setMethod(parsed.data);
+          }}
+          aria-invalid={methodError ? true : undefined}
+          data-field="googleAuth"
+        >
+          {METHODS.map((m) => (
+            <FieldLabel
+              key={m.value}
+              className="items-center font-normal text-fg1"
+            >
+              <RadioGroupItem value={m.value} />
+              {m.label}
+            </FieldLabel>
+          ))}
+        </RadioGroup>
+        {methodError ? <FieldError>{methodError}</FieldError> : null}
+      </FieldSet>
+      {method === "service_account" ? (
+        <>
+          <Field
+            path="keyFile"
+            label="Key file"
+            description={
+              keeps("service_account")
+                ? `Leave empty to keep the current key. ${changedNote}.`
+                : "The service account JSON key from Google Cloud."
+            }
+          >
+            <Input
+              name="keyFile"
+              type="file"
+              accept=".json,application/json"
+              required={!keeps("service_account")}
+            />
+          </Field>
+          <Field
+            path="senderEmail"
+            label="Sender mailbox"
+            description="The Workspace mailbox emails come from. The service account acts as it."
+          >
+            <Input
+              name="senderEmail"
+              type="email"
+              required
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="labs@example.com"
+              // A Google sign in's sender is the account, not a typed box.
+              defaultValue={
+                defaults.googleAuth === "service_account"
+                  ? defaults.senderEmail
+                  : ""
+              }
+            />
+          </Field>
+          <MailboxFields defaults={defaults} />
+        </>
+      ) : (
+        <SignInFields
+          defaults={defaults}
+          signedInAs={keeps("oauth") ? defaults.senderEmail : undefined}
+          changedNote={keeps("oauth") ? changedNote : undefined}
         />
-      </Field>
-      <Field
-        path="senderEmail"
-        label="Sender mailbox"
-        description="The Workspace mailbox emails come from. The service account acts as it."
-      >
-        <Input
-          name="senderEmail"
-          type="email"
-          required
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="labs@example.com"
-          defaultValue={defaults.senderEmail}
-        />
-      </Field>
+      )}
+    </>
+  );
+}
+
+// The settings both methods share (spec 0013 AC-1).
+function MailboxFields({ defaults }: { readonly defaults: ApiKeyDefaults }) {
+  return (
+    <>
       <Field path="calendarId" label="Calendar ID">
         <Input
           name="calendarId"
@@ -195,6 +284,128 @@ function GoogleFields({
           defaultValue={defaults.opsBcc}
         />
       </Field>
+    </>
+  );
+}
+
+// Spec 0013 AC-25, AC-27, AC-28: Google sign in. "Sign in with Google" runs
+// its own request with the chosen client file (the dialog keeps every field
+// and file), then shows the Google link and the field for the address
+// Google opens. The started state outlives later field errors, and is
+// dropped once a save spent its code (`restartAt`), which clears the pasted
+// address too.
+function SignInFields({
+  defaults,
+  signedInAs,
+  changedNote,
+}: {
+  readonly defaults: ApiKeyDefaults;
+  // Edit only, on a key that already signs in this way (AC-29).
+  readonly signedInAs: string | undefined;
+  readonly changedNote: string | undefined;
+}) {
+  const { startAside, asidePending, onFieldErrors, saves, restartAt } =
+    useFormDialog();
+  const { fields } = useFormErrors();
+  const errorId = useId();
+  const [started, setStarted] = useState<{
+    readonly url: string;
+    // The save count when it started, against `restartAt`.
+    readonly at: number;
+  } | null>(null);
+  const live =
+    started !== null && (restartAt === undefined || started.at >= restartAt)
+      ? started
+      : null;
+  // An error about the address while its field isn't shown (a save that
+  // needs a new sign in) is shown under the button instead.
+  const buttonError = live ? undefined : fields.returnUrl;
+
+  const start = (e: MouseEvent<HTMLButtonElement>) => {
+    const form = e.currentTarget.form;
+    if (!form) return;
+    const data = new FormData(form);
+    const at = saves;
+    startAside(async () => {
+      const next = await startGoogleSignInAction(data).catch(
+        (): AdminFormState => ({ kind: "error", message: GENERIC, fields: {} }),
+      );
+      if (next.kind === "started") {
+        setStarted({ url: next.url, at });
+        onFieldErrors({ kind: "idle" });
+      } else onFieldErrors(next);
+    });
+  };
+
+  return (
+    <>
+      {signedInAs ? (
+        <p className="text-sm text-fg2">
+          Signed in as{" "}
+          <span className="font-semibold break-all text-fg1">{signedInAs}</span>
+        </p>
+      ) : null}
+      <Field
+        path="clientFile"
+        label="OAuth client file"
+        description={
+          signedInAs
+            ? `Choose the client file again to sign in again. ${changedNote}.`
+            : "The Desktop app OAuth client JSON from Google Cloud."
+        }
+      >
+        <Input name="clientFile" type="file" accept=".json,application/json" />
+      </Field>
+      <MailboxFields defaults={defaults} />
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="w-fit"
+          disabled={asidePending}
+          onClick={start}
+          aria-describedby={buttonError ? errorId : undefined}
+          data-error-anchor={buttonError ? true : undefined}
+        >
+          {asidePending ? <Spinner data-icon="inline-start" /> : null}
+          Sign in with Google
+        </Button>
+        {buttonError ? (
+          <FieldError id={errorId} role={undefined}>
+            {buttonError}
+          </FieldError>
+        ) : null}
+      </div>
+      {live === null ? null : (
+        <>
+          <a
+            href={live.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonVariants({ className: "w-fit" })}
+          >
+            Open Google sign in
+            <ExternalLinkIcon data-icon="inline-end" aria-hidden="true" />
+          </a>
+          <Field
+            path="returnUrl"
+            label="Google sign in address"
+            description="After you approve, Google opens a page that won't load. Copy its address from the address bar and paste it here."
+          >
+            <Input
+              // A new sign in starts with an empty address.
+              key={live.url}
+              name="returnUrl"
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono"
+              placeholder="http://127.0.0.1:47613/?state=…"
+            />
+          </Field>
+        </>
+      )}
     </>
   );
 }
