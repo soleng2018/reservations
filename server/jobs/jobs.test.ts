@@ -659,6 +659,69 @@ describe.skipIf(!hasDb)("the Needs attention marker (spec 0013 AC-31)", () => {
       expect(await rejectedAt(trx, key.id)).toBeNull();
     }));
 
+  // The sign in key's canaries, for the leak checks (AC-33).
+  const SIGN_IN = {
+    method: "oauth",
+    clientId: "1234-abc.apps.googleusercontent.com",
+    clientSecret: "GOCSPX-canary-secret",
+    refreshToken: "1//canary-refresh",
+  } as const;
+
+  // Every console line a run writes, so a test can check none carries a
+  // secret.
+  const capturingLogs = async <T>(run: () => Promise<T>) => {
+    const lines: string[] = [];
+    const keep = (...a: unknown[]) => {
+      lines.push(a.map(String).join(" "));
+    };
+    const { log, error, warn } = console;
+    console.log = keep;
+    console.error = keep;
+    console.warn = keep;
+    try {
+      return { result: await run(), lines };
+    } finally {
+      console.log = log;
+      console.error = error;
+      console.warn = warn;
+    }
+  };
+
+  it("sends through a Google sign in key with the refresh grant's token (AC-30)", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx);
+      const google = gmail((req) =>
+        req.url === "https://oauth2.googleapis.com/token"
+          ? {
+              status: 200,
+              json: { access_token: "ya29.canary-access", expires_in: 3599 },
+            }
+          : { status: 200, json: { id: "gmail-msg-oauth" } },
+      );
+      const { result, lines } = await capturingLogs(() =>
+        runJobs(asConn(trx), {
+          handlers: HANDLERS,
+          config: async () =>
+            config({
+              credentials: SIGN_IN,
+              senderEmail: "hol.sender@gmail.com",
+            }),
+          fetch: google.fetch,
+        }),
+      );
+      expect(result).toMatchObject({ ran: 1, breaker: false, method: "oauth" });
+      const [mint, send] = google.requests;
+      expect(mint?.url).toBe("https://oauth2.googleapis.com/token");
+      expect(send?.headers.authorization).toBe("Bearer ya29.canary-access");
+      const [email] = await emailsOf(trx, bookingId);
+      expect(email).toMatchObject({
+        status: "sent",
+        provider_message_id: "gmail-msg-oauth",
+      });
+      const jobs = await jobsFor(trx, `email:${bookingId}`);
+      expect(JSON.stringify([jobs, email, lines])).not.toMatch(/canary|GOCSPX/);
+    }));
+
   it("names Google sign in in the breaker's message for a sign in key (AC-30, AC-31)", () =>
     inRollback(async (trx) => {
       const { bookingId } = await confirmedBooking(trx);
@@ -669,19 +732,13 @@ describe.skipIf(!hasDb)("the Needs attention marker (spec 0013 AC-31)", () => {
           ? { status: 400, json: { error: "invalid_grant" } }
           : { status: 200, json: { id: "x" } },
       );
-      const step = await runJobs(asConn(trx), {
-        handlers: HANDLERS,
-        config: async () =>
-          config({
-            credentials: {
-              method: "oauth",
-              clientId: "1234-abc.apps.googleusercontent.com",
-              clientSecret: "GOCSPX-canary-secret",
-              refreshToken: "1//canary-refresh",
-            },
-          }),
-        fetch: google.fetch,
-      });
+      const { result: step, lines } = await capturingLogs(() =>
+        runJobs(asConn(trx), {
+          handlers: HANDLERS,
+          config: async () => config({ credentials: SIGN_IN }),
+          fetch: google.fetch,
+        }),
+      );
       expect(step).toMatchObject({ breaker: true, method: "oauth" });
       expect(google.requests.map((r) => r.url)).toEqual([
         "https://oauth2.googleapis.com/token",
@@ -695,7 +752,7 @@ describe.skipIf(!hasDb)("the Needs attention marker (spec 0013 AC-31)", () => {
       expect(jobs).toEqual([
         expect.objectContaining({ status: "pending", attempts: 0 }),
       ]);
-      expect(JSON.stringify([jobs, email])).not.toMatch(/canary|GOCSPX/);
+      expect(JSON.stringify([jobs, email, lines])).not.toMatch(/canary|GOCSPX/);
     }));
 });
 

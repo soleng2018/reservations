@@ -362,6 +362,8 @@ test("Google sign in swaps the fields, starts a sign in, and refuses a wrong add
   const name = `e2e keys ${unique()}`;
   created.push(name);
   await openPage(page);
+  const bodies = captureBodies(page);
+  const clientSecret = `GOCSPX-canary${unique()}`;
 
   await page.getByRole("button", { name: "Add API key" }).click();
   const dialog = page.getByRole("dialog");
@@ -401,7 +403,7 @@ test("Google sign in swaps the fields, starts a sign in, and refuses a wrong add
       JSON.stringify({
         installed: {
           client_id: "100000000001-e2e.apps.googleusercontent.com",
-          client_secret: `GOCSPX-${unique()}`,
+          client_secret: clientSecret,
         },
       }),
     ),
@@ -435,4 +437,9 @@ test("Google sign in swaps the fields, starts a sign in, and refuses a wrong add
   });
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(rowOf(page, name)).toHaveCount(0);
+
+  // AC-33: the client secret never comes back, in a reply or the page.
+  const sent = (await bodies()).join("\n");
+  expect(sent).not.toContain(clientSecret);
+  expect(await page.content()).not.toContain(clientSecret);
 });
