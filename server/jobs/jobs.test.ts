@@ -23,7 +23,9 @@ import {
 } from "@/server/google/testing";
 import type { MintError, MintToken } from "@/server/google/token";
 import { appUrl } from "@/server/env";
+import type { GoogleFetch } from "@/server/google/http";
 import { queueBookingNotice } from "./booking-notice";
+import { queueCalendarBackfill, syncBookingEvent } from "./calendar-sync";
 import { BREAKER_MESSAGE, runJobs, type Handlers } from "./runner";
 import { runSendEmail } from "./send-email";
 
@@ -681,3 +683,190 @@ describe.skipIf(!hasDb)(
       }));
   },
 );
+
+// A fake shared calendar: events by id, with Google's status codes.
+const fakeCalendar = (opts: { conflictOnce?: boolean } = {}) => {
+  const events = new Map<string, { summary: string; start: string }>();
+  let conflict = opts.conflictOnce ?? false;
+  const google = fakeGoogleFetch((req) => {
+    const m = req.url.match(
+      /\/calendars\/([^/]+)\/events(?:\/([^?]+))?\?sendUpdates=none$/,
+    );
+    if (!m) return { status: 400 };
+    const id = m[2];
+    const body = req.body
+      ? (JSON.parse(req.body) as Record<string, unknown>)
+      : {};
+    const stored = () => ({
+      summary: String(body.summary),
+      start: String((body.start as { dateTime: string }).dateTime),
+    });
+    switch (req.method) {
+      case "PUT":
+        if (!id || !events.has(id)) return { status: 404 };
+        events.set(id, stored());
+        return { status: 200, json: {} };
+      case "POST": {
+        const newId = String(body.id);
+        if (conflict) {
+          conflict = false;
+          events.set(newId, { summary: "made by another run", start: "" });
+          return { status: 409 };
+        }
+        if (events.has(newId)) return { status: 409 };
+        events.set(newId, stored());
+        return { status: 200, json: {} };
+      }
+      case "DELETE":
+        if (!id || !events.has(id)) return { status: 410 };
+        events.delete(id);
+        return { status: 204 };
+      default:
+        return { status: 405 };
+    }
+  });
+  return { ...google, events };
+};
+
+const CALENDAR_HANDLERS: Handlers = {
+  calendar_upsert: syncBookingEvent,
+  calendar_delete: syncBookingEvent,
+};
+
+describe.skipIf(!hasDb)("the calendar mirror (spec 0013 AC-19, AC-20)", () => {
+  const runCalendar = (trx: Transaction<DB>, fetch: GoogleFetch) =>
+    runJobs(asConn(trx), {
+      handlers: CALENDAR_HANDLERS,
+      config: async () => config(),
+      fetch,
+      mint: minting().mint,
+    });
+
+  it("creates one event, moves it on reschedule, and deletes it on cancel", () =>
+    inRollback(async (trx) => {
+      const { user, type, testbed, bookingId } = await confirmedBooking(trx);
+      const cal = fakeCalendar();
+      await runCalendar(trx, cal.fetch);
+      const eventId = bookingId.replaceAll("-", "");
+      expect([...cal.events.keys()]).toEqual([eventId]);
+      expect(cal.events.get(eventId)?.summary).toBe(
+        `${user.name} · ${type.name} · ${testbed.name}`,
+      );
+      expect(cal.requests[0]?.url).toContain(
+        "/calendars/c_abc%40group.calendar.google.com/events/",
+      );
+      const stamped = await trx
+        .selectFrom("bookings")
+        .select(["calendar_event_id", "version"])
+        .where("id", "=", bookingId)
+        .executeTakeFirstOrThrow();
+      expect(stamped).toEqual({ calendar_event_id: eventId, version: 1 });
+
+      const moved = slot(40);
+      await rescheduleBooking(trx, {
+        id: bookingId,
+        expectedVersion: 1,
+        testbedId: testbed.id,
+        testbedTypeId: type.id,
+        startsAt: moved,
+        endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+      });
+      await runCalendar(trx, cal.fetch);
+      expect(cal.events.size).toBe(1);
+      expect(cal.events.get(eventId)?.start).toBe(moved.toISOString());
+
+      await cancelBooking(trx, {
+        id: bookingId,
+        expectedVersion: 2,
+        source: "learner",
+        byUserId: null,
+      });
+      await runCalendar(trx, cal.fetch);
+      expect(cal.events.size).toBe(0);
+      // Deleting an event that is already gone is done.
+      await queueCalendarJob(trx, bookingId, 99);
+      await runCalendar(trx, cal.fetch);
+      expect(
+        (await jobsFor(trx, `calendar:${bookingId}`)).every(
+          (j) => j.status === "done",
+        ),
+      ).toBe(true);
+      expect(
+        cal.requests.every(
+          (r) => r.body === undefined || !r.body.includes("attendees"),
+        ),
+      ).toBe(true);
+    }));
+
+  it("falls back to an update when a concurrent run inserted first (409)", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx);
+      const cal = fakeCalendar({ conflictOnce: true });
+      await runCalendar(trx, cal.fetch);
+      expect(cal.requests.map((r) => r.method)).toEqual(["PUT", "POST", "PUT"]);
+      expect(cal.events.get(bookingId.replaceAll("-", ""))?.summary).toMatch(
+        /^Priya · /,
+      );
+    }));
+
+  it("marks a test learner's event [dev]", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx, {
+        email: `hol-test-${crypto.randomUUID().slice(0, 6)}@acme.com`,
+      });
+      const cal = fakeCalendar();
+      await runCalendar(trx, cal.fetch);
+      expect(cal.events.get(bookingId.replaceAll("-", ""))?.summary).toMatch(
+        /^\[dev\] Priya · /,
+      );
+    }));
+
+  it("never touches the email when the calendar fails", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx);
+      await runCalendar(trx, fakeGoogleFetch(() => ({ status: 403 })).fetch);
+      expect(await jobsFor(trx, `calendar:${bookingId}`)).toEqual([
+        expect.objectContaining({
+          status: "failed",
+          last_error: "Google Calendar refused the change (403).",
+        }),
+      ]);
+      expect((await emailsOf(trx, bookingId))[0]).toMatchObject({
+        status: "queued",
+        last_error: null,
+      });
+    }));
+
+  it("backfills each live confirmed booking once (AC-20)", () =>
+    inRollback(async (trx) => {
+      const { bookingId } = await confirmedBooking(trx);
+      // As if the booking predated the feature: no calendar job yet.
+      await trx
+        .deleteFrom("jobs")
+        .where("idempotency_key", "=", `calendar:${bookingId}:1`)
+        .execute();
+      const due = await queueCalendarBackfill(asConn(trx), false);
+      expect(due).toBeGreaterThanOrEqual(1);
+      expect(await jobsFor(trx, `calendar:${bookingId}`)).toHaveLength(0);
+      expect(await queueCalendarBackfill(asConn(trx), true)).toBe(due);
+      expect(await jobsFor(trx, `calendar:${bookingId}`)).toEqual([
+        expect.objectContaining({ kind: "calendar_upsert", status: "pending" }),
+      ]);
+      expect(await queueCalendarBackfill(asConn(trx), true)).toBe(0);
+      expect(await emailsOf(trx, bookingId)).toHaveLength(1);
+    }));
+});
+
+const queueCalendarJob = (
+  trx: Kysely<DB>,
+  bookingId: string,
+  version: number,
+) =>
+  trx
+    .insertInto("jobs")
+    .values({
+      kind: "calendar_delete",
+      payload: JSON.stringify({ bookingId }),
+      idempotency_key: `calendar:${bookingId}:${version}`,
+    })
+    .execute();

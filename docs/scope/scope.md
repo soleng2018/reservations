@@ -249,7 +249,7 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
 - [ ] Build it: `/develop email delivery & booking confirmations`
   - [x] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
   - [x] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
-  - [ ] Calendar mirror and backfill (AC-19, 20)
+  - [x] Calendar mirror and backfill (AC-19, 20)
   - [ ] Key edit and the console Emails section (AC-4, 21)
   - [ ] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
 - [ ] Verify it: `/check verify email delivery & booking confirmations`

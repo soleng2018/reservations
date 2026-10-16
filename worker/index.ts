@@ -13,6 +13,7 @@ import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { renderBookingEmail } from "@/server/email/compose";
 import { SAMPLE_BOOKING_DETAILS } from "@/server/email/sample";
 import { purgeDoneJobs, runJobs, type Handlers } from "@/server/jobs/runner";
+import { syncBookingEvent } from "@/server/jobs/calendar-sync";
 import { runSendEmail } from "@/server/jobs/send-email";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
@@ -37,7 +38,11 @@ const PURGE = "purge rate limits";
 
 // Spec 0013 AC-8: the job kinds this worker runs. send_welcome waits for
 // feature 16.
-const HANDLERS: Handlers = { send_email: runSendEmail };
+const HANDLERS: Handlers = {
+  send_email: runSendEmail,
+  calendar_upsert: syncBookingEvent,
+  calendar_delete: syncBookingEvent,
+};
 
 const log = (line: string) =>
   console.log(`${new Date().toISOString()} ${line}`);

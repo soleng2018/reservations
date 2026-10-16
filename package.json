@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "db:migrate": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/migrate.ts",
     "db:codegen": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/codegen.ts",
+    "calendar:backfill": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/calendar-backfill.ts",
     "worker": "tsx --import ./worker/server-only-hook.mjs --env-file-if-exists=.env.local worker/index.ts",
     "prepare": "husky",
     "test": "vitest run",
