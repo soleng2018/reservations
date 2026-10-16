@@ -35,3 +35,15 @@ describe("toneFor", () => {
     expect(words.every((w) => BADGE_TONES.includes(toneFor(w)))).toBe(true);
   });
 });
+
+// covers: spec 0013 AC-21
+describe("email status tones (spec 0013 AC-21)", () => {
+  it.each([
+    ["Queued", "info"],
+    ["Sent", "success"],
+    ["Failed", "accent"],
+    ["Suppressed", "neutral"],
+  ])("%s wears %s", (word, tone) => {
+    expect(toneFor(word)).toBe(tone);
+  });
+});

@@ -24,6 +24,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toneFor } from "@/lib/badge-tones";
+import {
+  EMAIL_KIND_LABEL,
+  EMAIL_NOT_SET_UP,
+  EMAIL_STATUS_LABEL,
+  emailErrorLine,
+} from "@/lib/email-log";
 import { formatDateTime } from "@/lib/format-time";
 import { initials } from "@/lib/initials";
 import {
@@ -33,7 +39,9 @@ import {
 } from "@/lib/learners";
 import { cn } from "@/lib/utils";
 import { requireAdmin } from "@/server/auth/require";
+import { googleConfigured } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
+import { listUserEmails, type EmailRow } from "@/server/email/messages";
 import { getLearnerDetail, type LearnerDetail } from "@/server/users/learners";
 import {
   cancelBookingAdminAction,
@@ -54,13 +62,17 @@ const load = async (id: string): Promise<LearnerDetail> => {
 };
 
 // Spec 0008 AC-2: one learner and every booking of theirs, newest first,
-// in the admin's timezone. Reads only.
+// in the admin's timezone. Reads only. Spec 0013 AC-21 adds their emails.
 export default async function UserDetailPage(
   props: PageProps<"/admin/users/[id]">,
 ) {
   const { user: admin } = await requireAdmin();
   const { id } = await props.params;
   const { learner, bookings } = await load(id);
+  const [emails, emailReady] = await Promise.all([
+    listUserEmails(db(), learner.id),
+    googleConfigured(db()),
+  ]);
   const status = learnerStatusLabel(learner.status);
   // AC-7: only an active learner who has not set a password yet.
   const canResend = learner.status === "active" && learner.setPasswordPending;
@@ -204,7 +216,97 @@ export default async function UserDetailPage(
             Times in {admin.timezone}.
           </p>
         </section>
+
+        <EmailsSection
+          emails={emails}
+          configured={emailReady}
+          timezone={admin.timezone}
+        />
       </PageBody>
     </>
+  );
+}
+
+// Spec 0013 AC-21: the learner's last 50 emails, newest first, so an admin
+// can answer "I never got anything".
+function EmailsSection({
+  emails,
+  configured,
+  timezone,
+}: {
+  readonly emails: readonly EmailRow[];
+  readonly configured: boolean;
+  readonly timezone: string;
+}) {
+  return (
+    <section
+      aria-labelledby="emails-heading"
+      className="rounded-xl border bg-card shadow-xs"
+    >
+      <h2
+        id="emails-heading"
+        className="px-6 pt-5 pb-1.5 text-base font-bold text-fg1"
+      >
+        Emails
+      </h2>
+      {configured ? null : (
+        <p
+          role="note"
+          className="mx-6 mt-2 mb-1 rounded-lg bg-cloud-mist px-4 py-3 text-sm text-fg2"
+        >
+          {EMAIL_NOT_SET_UP}
+        </p>
+      )}
+      {emails.length === 0 ? (
+        <p className="px-5 py-12.5 text-center text-sm text-fg3">
+          No emails yet.
+        </p>
+      ) : (
+        <Table className="min-w-160" region="Emails">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>When</TableHead>
+              <TableHead>Kind</TableHead>
+              <TableHead>Subject</TableHead>
+              <TableHead>To</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {emails.map((e) => {
+              const status = EMAIL_STATUS_LABEL[e.status];
+              const error = emailErrorLine(e.status, e.lastError);
+              return (
+                <TableRow key={e.id}>
+                  <TableCell className="min-w-36 text-sub whitespace-normal text-fg2">
+                    {formatDateTime(e.createdAt, timezone)}
+                  </TableCell>
+                  <TableCell className="text-fg2">
+                    {EMAIL_KIND_LABEL[e.kind]}
+                  </TableCell>
+                  <TableCell className="min-w-56 text-cell whitespace-normal text-fg1">
+                    {e.subject}
+                  </TableCell>
+                  <TableCell className="text-sub break-all whitespace-normal text-fg2">
+                    {e.to}
+                  </TableCell>
+                  <TableCell className="min-w-40 whitespace-normal">
+                    <Badge tone={toneFor(status)}>{status}</Badge>
+                    {error ? (
+                      <span className="mt-1 block text-pill text-fg3">
+                        {error}
+                      </span>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+      <p className="border-t px-6 py-3.5 text-pill text-fg3">
+        Times in {timezone}.
+      </p>
+    </section>
   );
 }

@@ -246,7 +246,7 @@ Tracer Bullet: the first two tasks prove one booked email from a real booking to
 4. [x] Failure strands: the no key wait with its one time log, the breaker with the attempt returned, the stale skip, the final 4xx mapping, the daily purge of old `done` jobs. Satisfies **AC-7**, **AC-8**, **AC-9**, **AC-18**
 5. [x] Calendar mirror: `putEvent`, `insertEvent`, `deleteEvent`, `syncBookingEvent`, `calendar_event_id`; `npm run calendar:backfill`. Satisfies **AC-19**, **AC-20**
 6. [x] Key edit: the `GOOGLE` edit dialog, the file required rules, the widened audit metadata and `changedFields` keys. Satisfies **AC-4**
-7. Console: `listUserEmails`, the Emails section, the not set up note. Satisfies **AC-21**
+7. [x] Console: `listUserEmails`, the Emails section, the not set up note. Satisfies **AC-21**
 8. Proof: template snapshots, the extended canary scan and source scans, Vitest DB tests in `inRollback` with fake Google calls, Playwright for the key and the Emails section, and the manual matrix in `verify.md`. Satisfies **AC-5**, **AC-23**
 
 ## Migration plan

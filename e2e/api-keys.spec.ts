@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { expect, type Page, type Response } from "@playwright/test";
 import { test } from "./admin-session";
 import { haveSecrets } from "./authentik";
@@ -261,4 +262,80 @@ test("an AI key is listed with its type, and search matches name and type", asyn
   await search.fill(idp.toUpperCase());
   await expect(rowOf(page, idp)).toHaveCount(1);
   await expect(rowOf(page, ai)).toHaveCount(0);
+});
+
+// covers: spec 0013 AC-1 to AC-3, AC-5 (the GOOGLE key)
+test("a GOOGLE key swaps the fields, refuses a bad file, and never echoes the key", async ({
+  adminPage: page,
+}) => {
+  test.setTimeout(60_000);
+  const name = `e2e keys ${unique()}`;
+  created.push(name);
+  await openPage(page);
+  const bodies = captureBodies(page);
+
+  await page.getByRole("button", { name: "Add API key" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("combobox", { name: "Type" }).click();
+  await page.getByRole("option", { name: "GOOGLE", exact: true }).click();
+  await expect(dialog.getByLabel("Base URL")).toHaveCount(0);
+  await expect(dialog.getByLabel("Key value")).toHaveCount(0);
+  await expect(dialog.getByLabel("Key file")).toBeVisible();
+  await dialog.getByLabel("Sender mailbox").fill("labs@nile-test.invalid");
+  await dialog
+    .getByLabel("Calendar ID")
+    .fill("c_e2e@group.calendar.google.com");
+
+  // AC-1: no file.
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(dialog.getByText("Choose the key file.")).toBeVisible();
+
+  // AC-3: not a service account key.
+  await dialog.getByLabel("Key file").setInputFiles({
+    name: "client_secret.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ web: { client_id: "x" } })),
+  });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    dialog.getByText("This isn't a Google service account key file (.json)."),
+  ).toBeVisible();
+
+  // AC-2: a well formed key Google has never issued. The real token call
+  // refuses it (or Google can't be reached); either way nothing is saved.
+  const canary = `canary${unique()}${unique()}`;
+  const privateKey = generateKeyPairSync("rsa", { modulusLength: 2048 })
+    .privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString();
+  await dialog.getByLabel("Key file").setInputFiles({
+    name: "hol-key.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        type: "service_account",
+        project_id: "hol-e2e",
+        private_key_id: canary,
+        private_key: privateKey,
+        client_email: `e2e-${unique()}@hol-e2e.iam.gserviceaccount.com`,
+        client_id: "100000000000000000001",
+      }),
+    ),
+  });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(
+    dialog
+      .getByText(
+        /^Google (didn't accept|refused) this key for labs@nile-test\.invalid/,
+      )
+      .or(
+        dialog.getByText("Couldn't reach Google to check the key. Try again."),
+      ),
+  ).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(rowOf(page, name)).toHaveCount(0);
+
+  const sent = (await bodies()).join("\n");
+  expect(sent).not.toContain(canary);
+  expect(sent).not.toContain("PRIVATE KEY");
 });

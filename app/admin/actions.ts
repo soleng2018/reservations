@@ -179,15 +179,15 @@ const apiKeyFields = (form: FormData) => ({
   opsBcc: text(form, "opsBcc"),
 });
 
-// Spec 0013 AC-1, AC-3: the uploaded key file, or null when none was
-// chosen (an empty file input still posts a nameless, empty File). The size
-// is checked before reading; the contents never reach a message or a log.
+// Spec 0013 AC-1, AC-3: the uploaded key file, or null when none was chosen
+// (an empty file input still posts an empty File, its name varying by
+// browser, so any empty file counts as none). The size is checked before
+// reading; the contents never reach a message or a log.
 async function readKeyFile(
   form: FormData,
 ): Promise<Result<GoogleServiceAccountKey | null, string>> {
   const file = form.get("keyFile");
-  if (!(file instanceof File) || (file.size === 0 && file.name === ""))
-    return ok(null);
+  if (!(file instanceof File) || file.size === 0) return ok(null);
   if (file.size > MAX_KEY_FILE_BYTES)
     return err(API_KEY_MESSAGES.keyFileTooLarge);
   const parsed = parseGoogleKeyFile(await file.text());
