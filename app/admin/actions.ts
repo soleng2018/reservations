@@ -410,7 +410,9 @@ function signInError(e: VerifySignInError): AdminFormState {
 // AC-28 steps 4 to 8, after the form's own checks passed: the cookie that
 // started this sign in, then the code exchange and its checks. The cookie
 // is kept when step 4 fails, so a typo can be fixed and saved again, and
-// deleted once the exchange was tried (a code works once).
+// when Google couldn't be reached at the exchange (it may never have seen
+// the code, so the same save can be retried). It is deleted once Google
+// answered the exchange (a code works once).
 async function finishSignIn(
   userId: string,
   keyring: Keyring,
@@ -429,18 +431,16 @@ async function finishSignIn(
   });
   if (!cookie.ok)
     return err(fieldError("returnUrl", API_KEY_MESSAGES.signInExpired));
-  try {
-    const verified = await verifyGoogleSignIn({
-      code: signIn.returned.code,
-      codeVerifier: cookie.value.codeVerifier,
-      clientId: signIn.client.clientId,
-      clientSecret: signIn.client.clientSecret,
-      calendarId,
-    });
-    return verified.ok ? verified : err(signInError(verified.error));
-  } finally {
+  const verified = await verifyGoogleSignIn({
+    code: signIn.returned.code,
+    codeVerifier: cookie.value.codeVerifier,
+    clientId: signIn.client.clientId,
+    clientSecret: signIn.client.clientSecret,
+    calendarId,
+  });
+  if (verified.ok || verified.error.kind !== "exchange_unavailable")
     await clearSignInCookie();
-  }
+  return verified.ok ? verified : err(signInError(verified.error));
 }
 
 // A save's GOOGLE credential, ready for the catalog: the key file as read,

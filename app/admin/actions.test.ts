@@ -1350,14 +1350,6 @@ describe.skipIf(!hasDb)("API key actions", () => {
           restart: true,
         },
       ],
-      [
-        { kind: "exchange_unavailable" },
-        {
-          kind: "error",
-          message: "Couldn't reach Google to check the key. Try again.",
-          fields: {},
-        },
-      ],
     ])(
       "maps %j after the exchange, writing nothing and deleting the cookie",
       (error, answer) =>
@@ -1380,6 +1372,39 @@ describe.skipIf(!hasDb)("API key actions", () => {
           expect(await keysNamed(trx, name)).toEqual([]);
         }),
     );
+
+    it("keeps the cookie when Google can't be reached at the exchange, so the same save then succeeds (AC-28)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        ctx.signIn = { ok: false, error: { kind: "exchange_unavailable" } };
+        const state = await start();
+        const name = newName();
+        const form = () =>
+          signInForm(name, {
+            client: file(fakeOAuthClientText()),
+            returnUrl: returned(state),
+          });
+        expect(await createApiKeyAction(IDLE, form())).toEqual({
+          kind: "error",
+          message: "Couldn't reach Google to check the key. Try again.",
+          fields: {},
+        });
+        expect(ctx.cookies.has(COOKIE)).toBe(true);
+        expect(await keysNamed(trx, name)).toEqual([]);
+
+        ctx.signIn = { ok: true };
+        expect(await createApiKeyAction(IDLE, form())).toEqual({
+          kind: "saved",
+          message: `Created ${name}.`,
+        });
+        expect(ctx.signInCalls).toHaveLength(2);
+        expect(ctx.signInCalls[1]?.codeVerifier).toBe(
+          ctx.signInCalls[0]?.codeVerifier,
+        );
+        expect(ctx.cookies.has(COOKIE)).toBe(false);
+        expect(await keysNamed(trx, name)).toHaveLength(1);
+      }));
 
     it("restarts a spent sign in that a second Google key refuses (AC-28)", () =>
       as("admin", async (trx) => {
