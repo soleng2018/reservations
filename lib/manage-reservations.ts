@@ -84,6 +84,26 @@ export function cardActions(
   }
 }
 
+// The cancel dialog's extra line for a Current booking (spec 0012 AC-13,
+// AC-14), or none. Only the learner is asked to close their tabs, since the
+// end of access doesn't close an open VM tab and an admin can't close it.
+export function cancelAccessLine(
+  who: "learner" | "admin",
+  current: boolean,
+): string | null {
+  if (!current) return null;
+  switch (who) {
+    case "learner":
+      return " Your lab access ends within a minute. Close any open lab tabs.";
+    case "admin":
+      return " The learner's lab access ends within a minute.";
+    default: {
+      const never: never = who;
+      throw new Error(`unknown cancel dialog: ${String(never)}`);
+    }
+  }
+}
+
 // The kept testbed first, the rest in their given order. A preferred id that
 // is not among the candidates changes nothing.
 export function preferFirst<T extends { readonly id: string }>(

@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { RESCHEDULE_MESSAGES } from "@/lib/booking-input";
+import { cancelAccessLine } from "@/lib/manage-reservations";
 import type { Result } from "@/lib/result";
 
 // Spec 0011 AC-4, AC-5: a learner's "Cancel reservation", with a confirm.
@@ -74,7 +75,7 @@ export function CancelReservationButton({
             <AlertDialogTitle>Cancel this reservation?</AlertDialogTitle>
             <AlertDialogDescription>
               This will free up {testbed} on {start}.
-              {current ? " Your lab access ends within a minute." : null}
+              {cancelAccessLine("learner", current)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

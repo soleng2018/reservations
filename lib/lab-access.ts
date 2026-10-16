@@ -62,12 +62,14 @@ export type LabAccessView = {
 
 // The detail page's note and link state by phase (AC-7, AC-8). Lab access
 // exists only for confirmed and completed bookings, so Pending and Cancelled
-// are a broken invariant.
+// are a broken invariant. The Current note asks for the tabs to be closed,
+// because the end of a booking refuses new requests but doesn't close an
+// open VM tab (AC-10).
 export function labAccessView(phase: BookingPhase): LabAccessView {
   switch (phase) {
     case "Current":
       return {
-        note: `${SUPPORT_NOTE} Access can take up to a minute to start after your start time.`,
+        note: `${SUPPORT_NOTE} Access can take up to a minute to start after your start time. Close your lab tabs when your time ends.`,
         active: true,
       };
     case "Upcoming":

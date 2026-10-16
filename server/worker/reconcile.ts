@@ -25,8 +25,8 @@ import type { DB } from "@/server/db/types";
 // learners whose confirmed booking on that testbed is Current by the DB
 // clock. A soft deleted testbed's group is emptied of tagged learners. Each
 // removal also ends the learner's Authentik sessions and, when the revoke is
-// on, their Cloudflare Access sessions (spec 0012 AC-10), and is the only
-// caller of that revoke.
+// on, makes Cloudflare Access refuse their new requests (spec 0012 AC-10).
+// This is the only caller of that revoke.
 
 type Testbed = {
   readonly id: string;
@@ -200,9 +200,9 @@ async function reconcileGroup(
     const who = user ? `user ${user.id}` : `pk ${pk}`;
     // Membership is already gone, so neither step is retried after this
     // run: a failure is logged (by id, never the email) and audited.
-    // Ending the Authentik sessions cuts off a learner already in the lab
-    // (they sign in again to manage bookings; accepted). The VM revoke runs
-    // even when that failed (AC-10).
+    // Ending the Authentik sessions forces a fresh sign in, which HOL Labs
+    // then refuses (they sign in again to manage bookings; accepted). The VM
+    // revoke runs even when that failed (AC-10).
     const ended = await endAuthentikSessions(api, pk);
     if (!ended.ok) console.error(`reconciler: could not end sessions of ${pk}`);
     const vmRevoke = await revoke(user?.email ?? null);

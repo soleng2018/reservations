@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BookingStatus } from "./db-enums";
 import {
+  cancelAccessLine,
   cardActions,
   firstName,
   preferFirst,
@@ -113,6 +114,28 @@ describe("cardActions", () => {
       viewAccess: false,
     });
   });
+});
+
+// covers: spec 0012 AC-13, AC-14
+describe("cancelAccessLine", () => {
+  it("asks the learner to close their lab tabs on a Current booking", () => {
+    expect(cancelAccessLine("learner", true)).toBe(
+      " Your lab access ends within a minute. Close any open lab tabs.",
+    );
+  });
+
+  it("tells the admin the access ends, with no tab line", () => {
+    expect(cancelAccessLine("admin", true)).toBe(
+      " The learner's lab access ends within a minute.",
+    );
+  });
+
+  it.each(["learner", "admin"] as const)(
+    "adds nothing for a booking that is not Current (%s)",
+    (who) => {
+      expect(cancelAccessLine(who, false)).toBeNull();
+    },
+  );
 });
 
 // covers: AC-9

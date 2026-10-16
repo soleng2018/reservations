@@ -44,7 +44,7 @@ describe("labRows", () => {
 describe("labAccessView", () => {
   it("is active with the support note while Current", () => {
     expect(labAccessView("Current")).toEqual({
-      note: "Quote the testbed name below if you contact support. Access can take up to a minute to start after your start time.",
+      note: "Quote the testbed name below if you contact support. Access can take up to a minute to start after your start time. Close your lab tabs when your time ends.",
       active: true,
     });
   });

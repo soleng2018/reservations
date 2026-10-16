@@ -120,6 +120,7 @@ describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
       expect(html).toContain("Testbed assigned");
       expect(html).toContain(`href="${PORTAL}"`);
       expect(html).toContain("Access can take up to a minute");
+      expect(html).toContain("Close your lab tabs when your time ends.");
     }));
 
   it("shows an Upcoming booking with the start note", () =>

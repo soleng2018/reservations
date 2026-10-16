@@ -3,9 +3,9 @@ import { z } from "zod";
 import { err, ok, type Result } from "@/lib/result";
 
 // Cloudflare Access (spec 0012 AC-10, AC-11). The revoke ends every Access
-// session the learner's email holds, so an open browser VM tab stops within
-// about a minute instead of lasting until the Access session expires; the
-// worker is its only caller. The token check runs in the web process when an
+// session the learner's email holds, so Cloudflare refuses their new requests
+// and fresh sign ins within seconds. It does not close a browser VM stream
+// that is already open (AC-10). The worker is its only caller. The token check runs in the web process when an
 // admin saves a CLOUDFLARE API key. Nothing here ever logs or returns the
 // token, the email, the request URL, or the response body.
 
