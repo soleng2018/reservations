@@ -562,6 +562,10 @@ describe.skipIf(!hasDb)("no key and the breaker (spec 0013 AC-9)", () => {
         expect(
           emails.filter((e) => e.last_error === BREAKER_MESSAGE),
         ).toHaveLength(1);
+        // AC-5: no token or key text in any stored error.
+        expect(JSON.stringify([jobs, emails])).not.toMatch(
+          /token-\d|ya29\.|PRIVATE KEY/,
+        );
       }),
   );
 });
