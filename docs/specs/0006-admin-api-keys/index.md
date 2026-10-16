@@ -6,7 +6,7 @@
 
 ## Summary
 
-Admins get the API Keys screen from the mock: list, search, add, edit, and delete IDP and AI credentials (name, type, base URL, secret). A secret is typed once, encrypted before it reaches the database, and never sent back to the browser again; the list shows a fixed mask and the date the secret last changed, and there is no reveal or copy anywhere. This slice also builds the app's encryption module (AES-256-GCM, the standard authenticated cipher, with a keyring of rotatable keys from spec 0001), because nothing has needed it until now. `IDP` and `AI` keys are stored and edited only. Since spec 0012, a third type, `CLOUDFLARE`, holds the token the worker uses to cut off open lab VM sessions; at most one exists, and Cloudflare checks the token when it is saved.
+Admins get the API Keys screen from the mock: list, search, add, edit, and delete IDP and AI credentials (name, type, base URL, secret). A secret is typed once, encrypted before it reaches the database, and never sent back to the browser again; the list shows a fixed mask and the date the secret last changed, and there is no reveal or copy anywhere. This slice also builds the app's encryption module (AES-256-GCM, the standard authenticated cipher, with a keyring of rotatable keys from spec 0001), because nothing has needed it until now. `IDP` and `AI` keys are stored and edited only. Since spec 0012, a third type, `CLOUDFLARE`, holds the token the worker uses to revoke a learner's lab VM access when a booking ends (new requests only; an open VM tab is not closed, spec 0012 AC-10); at most one exists, and Cloudflare checks the token when it is saved.
 
 ## Requirements
 

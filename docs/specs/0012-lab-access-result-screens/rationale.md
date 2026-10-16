@@ -4,7 +4,7 @@
 
 Feature 14 is the last part of the learner portal (Slice 3). The scope asks for lab links (Nile Portal, LMS, clients) right after booking and on Current booking details, "to a learner whose email is verified", greyed out on Past details, and left the success screen before verification for `/architect` to settle. The mock (`context/reservations_mock.html`) fixes the layouts: a "Your lab access" card on the success screen, "View lab access" on Current and Past cards only, and a detail page whose Past card fades to 50% opacity with clicks turned off.
 
-Most of the access side already exists. Spec 0004's reconciler adds and removes `pod-*` members on the DB clock every 30 seconds and ends Authentik sessions on removal. Spec 0007 stores https only testbed URLs and keeps client OS credentials out of every learner screen. Spec 0003 sets `email_verified_at` at a learner's first sign in, so every signed in learner is verified. Spec 0001 chose the Cloudflare Access revoke as the only hard cut for open browser rendered VM sessions and deferred it here, behind spike 3. Without it, a VM session survives the booking by up to its 1 hour Access session.
+Most of the access side already exists. Spec 0004's reconciler adds and removes `pod-*` members on the DB clock every 30 seconds and ends Authentik sessions on removal. Spec 0007 stores https only testbed URLs and keeps client OS credentials out of every learner screen. Spec 0003 sets `email_verified_at` at a learner's first sign in, so every signed in learner is verified. Spec 0001 chose the Cloudflare Access revoke as the only hard cut for open browser rendered VM sessions and deferred it here, behind spike 3. Without it, a VM session survives the booking by up to its 1 hour Access session. (Corrected 2026-10-15: the revoke refuses new requests but does not close an open stream, and neither does the session limit; see *VM cut correction*.)
 
 The forces that shaped this:
 - `/book` is public. Anyone can type any email there, and a reused account books with no proof of ownership (spec 0010). "Verified" describes the account, not the person at the keyboard.
@@ -115,10 +115,58 @@ Results:
 | Token | a user API token, `GET /user/tokens/verify` → `active` (`/accounts/<id>/tokens/verify` → 401 for a user token); permission Account → Access: Organizations, Identity Providers, and Groups → Edit |
 | `POST /accounts/e6043d055ee10da55bd8e4b39758c681/access/organizations/revoke_user` `{ "email" }` | HTTP 200, `{ "success": true, "result": true }`, twice |
 | After the revoke, new requests | 302 to the Access login within about 5 seconds |
-| After the revoke, the open VNC websocket | kept streaming (about 13 frames every 5 seconds) for 37 seconds, then Cloudflare closed it; no frames after, mouse input ignored, a reload landed on the Access login |
+| After the revoke, the open VNC websocket | kept streaming (about 13 frames every 5 seconds) for 37 seconds, then Cloudflare closed it; no frames after, mouse input ignored, a reload landed on the Access login. **Not reproducible**: two controlled runs on 2026-10-15 kept streaming 182 and 153 seconds (see *VM cut correction*) |
 | Fresh sign in 1 to 2 minutes after a revoke (learner back in the group) | Cloudflare "Current authentication token is expired. Try again later." |
 | Fresh sign in about 2 minutes after a revoke | worked |
 
-Not covered: a Windows RDP session (expected to behave the same, since the cut is at the Access session; owner to confirm once, see Follow-up). The RDP GA status was not checked; the VMs already run browser rendered RDP and VNC in production use.
+Not covered: a Windows RDP session (expected to behave the same, since the cut is at the Access session; owner to confirm once, see Follow-up). (Corrected 2026-10-15: the Access session does not cut an open stream, so the RDP check is now about handover, see *VM cut correction* and the Follow-up.) The RDP GA status was not checked; the VMs already run browser rendered RDP and VNC in production use.
 
 Cleanup: `hol-test-learner` was removed from `pod-nile-hol-1` after each run; the group was left empty. The HOL Labs objects stay in place for the owner's VM setup.
+
+## VM cut correction (2026-10-15)
+
+### Context
+
+A `/debug` run on 2026-10-15 found that an open VM tab keeps streaming after a successful revoke. The app code does what AC-10 said. The premise was wrong. Two controlled A/B runs on `nw4-mac1.nile.global` with `hol-test-learner` (revoke HTTP 200, `success: true`, the email matching `get-identity` exactly):
+
+| Run | After the revoke |
+|---|---|
+| A, no other requests from the tab | new requests 302 to the Access login within seconds; the open VNC websocket kept streaming for the whole 182 second watch |
+| B, the tab's cookies also used for a request every 5 seconds | new requests 302 the same way; the websocket closed only at 153 seconds |
+
+Cloudflare's documentation says Access "does not control the length of an active SSH, VNC, or RDP session". So spike 3's 37 second close was a single sample that didn't repeat. The "1 hour Access session backstop" doesn't bound an open stream either.
+
+Forces:
+- The VMs sit behind one shared Cloudflare tunnel on the VM server, which the owner keeps. Anything that restarts or cleans up that tunnel cuts every VM at once.
+- The app runs on the same server today, but may later run in the cloud with no network path to the VMs.
+- Back to back bookings on one testbed are allowed (spec 0002 AC-1), and QEMU VNC shares one screen among all viewers. An open stream that outlives a booking can watch and control the next learner's desktop.
+
+### Options considered
+
+**Option A: block new requests only (chosen).** Keep the revoke as built. It stops every reload, new tab, and sign in within seconds. Accept that an open tab streams on, and ask learners to close their tabs.
+- Pros: nothing new to build or operate; no host credentials; works the same when the app moves to the cloud.
+- Cons: an open stream has no guaranteed bound, and the handover case likely exposes the next learner on that VM.
+
+**Option B: a lab host agent.** A small program on the VM server polls the app outbound (so it works from the cloud) for VMs with no current learner, and drops the TCP connection between cloudflared and that VM's VNC or RDP port (for example `ss -K` on that port). The tunnel stays up, and other VMs are untouched.
+- Pros: a real hard cut within about a minute, per VM, on a shared tunnel.
+- Cons: a new component on the lab host, outside this repo's deploy; an app endpoint and a credential for it; one more thing to monitor; a mapping from each testbed to its VM ports.
+
+**Option C: Cloudflare tunnel connection cleanup through the API.** Drop the tunnel's connections when a booking ends.
+- Pros: Cloudflare API only, no host access.
+- Cons: with one shared tunnel it cuts every VM's learner at once, and whether a cleanup drops live streams on a healthy connector is unproven.
+
+**Option D: one tunnel per VM.** Then Option C (or a restart) touches only one VM.
+- Pros: per VM cuts through the Cloudflare API.
+- Cons: the owner wants to keep one tunnel; it needs many connectors to run and watch, and it is still unproven.
+
+### Rationale
+
+Option A won because the forces rule out a cheap hard cut. Options C and D fight the owner's single tunnel, and Option B adds an operated component on the lab host. I recommended Option A now with Option B enrolled as a later feature, because the handover case puts one learner's desktop in front of another. The engineer chose Option A with no agent planned and accepted that risk. The Follow-up keeps Option B as the documented upgrade path. Calls made with the engineer:
+- Learner copy: the Current detail note gains "Close your lab tabs when your time ends.", and the Current cancel line gains "Close any open lab tabs." (AC-7, AC-13). Runner up: the detail note only.
+- Specs 0001, 0004, 0006, and 0011 are corrected in place, so none still promises a hard cut. Runner up: a Follow-up only.
+- After the cross check: feature 15's lab access email also carries the tab line, because it is the one message every learner gets (natural ends included). The admin cancel line becomes "ends within a minute" (AC-14), with no tab line. A reschedule of a Current booking gets no line, because its new start is at least an hour away and its risk matches a natural end. Runner up for each: the in app copy only, a tab warning for the admin, and a line on the reschedule success screen.
+
+Calls made while writing: the two cancel lines live in one pure `cancelAccessLine` beside `cardActions`, because a closed dialog's body doesn't render in static markup and a pure function tests as plain input and output. Runner up: render the dialog open in a component test.
+- The revoke stays, and so do its retries, breaker, and audit outcome. Without it, a removed learner's reloads would pass for up to an hour.
+
+Evidence scripts: the `/debug` session's scratchpad `ab/` (`ab.spec.ts`, `run-A-noprobe.log`, `run-B-probe.log`).

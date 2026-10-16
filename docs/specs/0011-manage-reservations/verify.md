@@ -18,7 +18,7 @@ Run against the dev server on the LAN IP (`http://10.1.255.18:3000`), signed in 
 - [ ] Remove the last bookable testbed of a live booking's type (or soft delete the type) → the card shows only Cancel and "This lab type can't be rescheduled right now." → AC-1, AC-6 (reschedulable source)
 - [ ] Reloading `/reservations` writes nothing: an ended confirmed booking shows as Past and stays `confirmed` in the database → AC-1
 - [x] "Cancel reservation" → "Cancel this reservation?", "This will free up <testbed> on <start>.", "Keep it" focused, "Cancel reservation" → AC-4
-- [ ] On a Current booking the dialog also says "Your lab access ends within a minute." → AC-4 (Current note source)
+- [ ] On a Current booking the dialog also says "Your lab access ends within a minute. Close any open lab tabs." (spec 0012 AC-13) → AC-4 (Current note source)
 - [x] Confirm → toast "Reservation cancelled.", the card goes, the Reserve another link returns; the row is `cancelled`, `cancel_source = 'learner'`, `cancelled_by_user_id` the learner, `ends_at` unchanged → AC-4
 - [ ] Cancel an Upcoming booking that starts in under an hour → it cancels → AC-4
 - [x] Open the dialog in two tabs; confirm in one, then the other → "This reservation already changed. The list has been refreshed." and nothing changes → AC-5
