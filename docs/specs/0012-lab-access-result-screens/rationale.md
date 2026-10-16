@@ -113,7 +113,7 @@ Results:
 | Learner removed from the group, fresh sign in | refused by Authentik within about 7 seconds (no stale policy cache) |
 | Learner removed, open session, no revoke | still working: the VM URL answered 200 |
 | Token | a user API token, `GET /user/tokens/verify` → `active` (`/accounts/<id>/tokens/verify` → 401 for a user token); permission Account → Access: Organizations, Identity Providers, and Groups → Edit |
-| `POST /accounts/e6043d055ee10da55bd8e4b39758c681/access/organizations/revoke_user` `{ "email" }` | HTTP 200, `{ "success": true, "result": true }`, twice |
+| `POST /accounts/<account id>/access/organizations/revoke_user` `{ "email" }` | HTTP 200, `{ "success": true, "result": true }`, twice |
 | After the revoke, new requests | 302 to the Access login within about 5 seconds |
 | After the revoke, the open VNC websocket | kept streaming (about 13 frames every 5 seconds) for 37 seconds, then Cloudflare closed it; no frames after, mouse input ignored, a reload landed on the Access login. **Not reproducible**: two controlled runs on 2026-10-15 kept streaming 182 and 153 seconds (see *VM cut correction*) |
 | Fresh sign in 1 to 2 minutes after a revoke (learner back in the group) | Cloudflare "Current authentication token is expired. Try again later." |

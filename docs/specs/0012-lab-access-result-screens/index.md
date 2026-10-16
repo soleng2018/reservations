@@ -147,7 +147,7 @@ Shared types in `lib/lab-access.ts` (safe on both sides): `LabLinks = { portalUr
 
 ### Configuration required
 
-- Owner, admin console: add one API key of type `CLOUDFLARE`, base URL `https://api.cloudflare.com/client/v4/accounts/<account id>` (today `e6043d055ee10da55bd8e4b39758c681`), secret = a Cloudflare API token with Account → Access: Organizations, Identity Providers, and Groups → Edit on that account. Until it exists, revoke is `off`.
+- Owner, admin console: add one API key of type `CLOUDFLARE`, base URL `https://api.cloudflare.com/client/v4/accounts/<account id>`, secret = a Cloudflare API token with Account → Access: Organizations, Identity Providers, and Groups → Edit on that account. Until it exists, revoke is `off`.
 - Worker env: `APP_ENCRYPTION_KEYS_FILE` and `APP_ENCRYPTION_ACTIVE_KEY_ID` (spec 0006), now also set for the worker. Without them a live `CLOUDFLARE` key makes the revoke `broken`.
 - Remove `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN_FILE` from `.env.example` and the production env.
 - Owner, Cloudflare Zero Trust, once: the login method "Reservations HOL Labs" (OpenID Connect, the HOL Labs client id and secret, auth URL `…/application/o/authorize/`, token URL `…/application/o/token/`, certificate URL `…/application/o/hol-labs/jwks/`, PKCE on, OIDC claim `groups`). Done 2026-10-14.

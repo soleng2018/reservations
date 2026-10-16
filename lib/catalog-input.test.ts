@@ -298,7 +298,7 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
 
 // covers: spec 0006 AC-12, spec 0012 AC-11 (the CLOUDFLARE base URL)
 describe("a CLOUDFLARE key's base URL", () => {
-  const ACCOUNT = "e6043d055ee10da55bd8e4b39758c681";
+  const ACCOUNT = "0123456789abcdef0123456789abcdef";
   const ROUTE = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}`;
   const RULE =
     "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.";
