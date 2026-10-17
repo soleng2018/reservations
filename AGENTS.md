@@ -74,6 +74,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Signed in learner on a public path (`/book`): read the session with `currentSession()` (never `requireLearner()`, which redirects) and take identity from the session's `users` row, never from the post; `sessionAccount` in `server/booking/account.ts` is the reference.
 - Learner booking changes (cancel, reschedule): the page binds the booking id and the `version` it showed; the action locks the learner `FOR SHARE`, then the booking `FOR UPDATE` by id, session learner, `ends_at > now()`, and version, and a miss is `stale`. Every learner booking read filters by the session learner's `user_id`; `server/booking/manage.ts` is the reference.
 - Lab links (Nile Portal, LMS, client URLs) reach a learner only through `ownLabAccess` in `server/booking/lab-access.ts`: the session learner's own verified booking, every miss is `missing` (a 404), and a guest reply never carries them.
+- Email and calendar: a booking change queues its notice with `queueBookingNotice` (`server/jobs/booking-notice.ts`) in the same transaction; the web process never calls Google for a booking, the worker sends.
 - Search indexing: every page is `noindex, nofollow` by default (root layout metadata), and a page opts in explicitly (today only `/`). A page whose metadata uses relative URLs sets `metadataBase` from `appUrl()` in `server/env.ts` and is `force-dynamic`, so `next build` reads no env. Nothing public (`robots.txt`, sitemap, learner pages) names `ADMIN_ENTRY_PATH`.
 
 ## Tooling
