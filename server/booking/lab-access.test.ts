@@ -121,6 +121,8 @@ describe.skipIf(!hasDb)("ownLabAccess (AC-1)", () => {
         ownLabAccess(trx, w.user.id, provisioning.id),
         ownLabAccess(trx, w.user.id, crypto.randomUUID()),
         ownLabAccess(trx, w.user.id, "not-a-uuid"),
+        // A malformed user id is a miss too, never a Postgres uuid error.
+        ownLabAccess(trx, "not-a-uuid", theirs.id),
       ];
       for (const miss of await Promise.all(misses))
         expect(miss).toEqual({ kind: "missing" });

@@ -27,7 +27,7 @@ vi.mock("@/components/learner-frame", () => ({
   LearnerFrame: ({ children }: { readonly children: ReactNode }) => children,
 }));
 
-const { default: LabAccessPage } = await import("./page");
+const { default: LabAccessPage, metadata } = await import("./page");
 const { asConn, hasDb, inRollback, makeTestbed, makeType, makeUser, slot } =
   await import("@/server/db/testing");
 
@@ -81,6 +81,14 @@ const render = async (id: string) =>
 
 const NOT_FOUND = { digest: "NEXT_HTTP_ERROR_FALLBACK;404" };
 
+// covers: AC-7
+describe("/reservations/[id] metadata (AC-7)", () => {
+  it("titles the tab Lab access and keeps the root layout's noindex", () => {
+    // No robots key here, so the root layout's noindex, nofollow applies.
+    expect(metadata).toEqual({ title: "Lab access" });
+  });
+});
+
 // covers: AC-7, AC-8
 describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
   it("redirects anyone who is not a signed in learner", () =>
@@ -123,6 +131,28 @@ describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
       expect(html).toContain("Close your lab tabs when your time ends.");
     }));
 
+  it("lays out the way back, the heading, the booking rows, then the card, in order", () =>
+    withConn(async (trx) => {
+      const { book, testbed } = await signedIn(trx);
+      const html = await render((await book(-1, 1)).id);
+      const at = (s: string) => html.indexOf(s);
+      const order = [
+        at("All reservations"),
+        at("<h1"),
+        at(">Current<"),
+        at(">Lab type<"),
+        at(">Starts<"),
+        at(">Ends<"),
+        at(">Lab access<"),
+        at("Testbed assigned"),
+        at("Nile Portal"),
+        at("LMS course"),
+      ];
+      expect(order.every((i) => i >= 0)).toBe(true);
+      expect(order).toEqual([...order].sort((a, b) => a - b));
+      expect(html.slice(at("<h1"), at("</h1>"))).toContain(testbed.name);
+    }));
+
   it("shows an Upcoming booking with the start note", () =>
     withConn(async (trx) => {
       const { book } = await signedIn(trx);
@@ -136,14 +166,30 @@ describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
 
   it("shows a Past booking ended, with no URL anywhere in the page", () =>
     withConn(async (trx) => {
-      const { book } = await signedIn(trx);
+      const { book, testbed } = await signedIn(trx);
+      await trx
+        .insertInto("testbed_clients")
+        .values({
+          testbed_id: testbed.id,
+          name: "Bench Mac",
+          kind: "wired",
+          url: "https://past-client.example.test",
+          position: 0,
+          os_username: "student",
+          os_password: "past-pass",
+        })
+        .execute();
       const b = await book(-50, -48, { status: "completed" });
       const html = await render(b.id);
       expect(html).toContain(">Past<");
       expect(html).toContain("access is no longer active");
-      expect(html).toContain(">Ended<");
+      expect(html.match(/>Ended</g)).toHaveLength(3);
+      expect(html).toContain("Bench Mac");
+      expect(html).toContain("· wired");
       expect(html).not.toContain(PORTAL);
       expect(html).not.toContain("lms.example.test");
+      expect(html).not.toContain("past-client.example.test");
+      expect(html).not.toContain("past-pass");
       // The only anchor left is the way back to the list.
       expect(html.match(/<a /g)).toHaveLength(1);
     }));

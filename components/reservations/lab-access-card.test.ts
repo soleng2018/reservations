@@ -53,6 +53,16 @@ describe("LabAccessCard while active", () => {
     expect(html).not.toContain("Testbed assigned");
   });
 
+  it("marks each Open link with an external link icon hidden from screen readers", () => {
+    const html = detail("Upcoming");
+    const anchors = html.match(/<a [^>]*>[\s\S]*?<\/a>/g) ?? [];
+    expect(anchors).toHaveLength(3);
+    for (const a of anchors) {
+      expect(a).toContain("Open");
+      expect(a).toMatch(/<svg[^>]*aria-hidden="true"/);
+    }
+  });
+
   it("shows the testbed row and the Current note on the detail page", () => {
     const html = detail("Current");
     expect(html).toContain("Lab access");

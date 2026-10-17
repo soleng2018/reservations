@@ -207,6 +207,33 @@ describe("makeRevoker", () => {
     expect(delays).toEqual([2000]);
   });
 
+  it("retries a try that timed out", async () => {
+    script = ["hang", { status: 200, body: '{"success":true}' }];
+    const delays: number[] = [];
+    const revoker = makeRevoker(config, {
+      timeoutMs: 50,
+      sleep: async (ms) => {
+        delays.push(ms);
+      },
+    });
+    expect(await revoker(EMAIL)).toBe("done");
+    expect(seen).toHaveLength(2);
+    expect(delays).toEqual([2000]);
+  });
+
+  it("fails a 2xx without success: true for that learner only, with no retry", async () => {
+    script = [
+      { status: 200, body: '{"success":false}' },
+      { status: 200, body: '{"success":true}' },
+    ];
+    const { revoker, delays, error } = setup();
+    expect(await revoker(EMAIL)).toBe("failed");
+    expect(delays).toEqual([]);
+    expect(await revoker("other@example.test")).toBe("done");
+    expect(seen).toHaveLength(2);
+    expect(error).not.toHaveBeenCalled();
+  });
+
   it("trips the breaker on a 403 with no retry", async () => {
     script = [{ status: 403 }];
     const { revoker, delays, error } = setup();

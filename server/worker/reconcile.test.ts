@@ -452,6 +452,27 @@ describe.skipIf(!hasDb)(
         ]);
       }));
 
+    // users.email keeps its case (unique on lower(email)), and Cloudflare's
+    // email claim is the stored value, so the revoke must not normalize it.
+    it("revokes the email exactly as stored, case and all", () =>
+      inRollback(async (trx) => {
+        const { users, ak } = await ended(trx, [PK + 44]);
+        const stored = `Mixed.Case-${users[0]?.id}@Example.Test`;
+        await trx
+          .updateTable("users")
+          .set({ email: stored })
+          .where("id", "=", users[0]?.id ?? "")
+          .execute();
+        const revoker = fakeRevoker();
+        await reconcileAccess(
+          ak().api,
+          asConn(trx),
+          ON.read,
+          revoker.newRevoker,
+        );
+        expect(revoker.calls).toEqual([stored]);
+      }));
+
     it("still revokes when ending the sessions failed", () =>
       inRollback(async (trx) => {
         const { users, ak } = await ended(trx, [PK + 41]);
