@@ -236,8 +236,8 @@ Access is enforced by Authentik: the learner is in the assigned testbed's group 
   - [x] HOL Labs in the setup script and its isolation checks: `authentik:setup` adopts the app, provider, flow, and policy (spec 0003 AC-19) (AC-9)
   - [x] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
   - [x] VM cut correction (spec 0012 task 9): the revoke blocks new requests only, so add the "close your lab tabs" copy (Current note, `cancelAccessLine` for the learner and admin cancel dialogs) and fix the revoke comments (AC-7, 10, 13, 14)
-- [ ] Verify it: `/check verify lab access & booking result screens`
-- [ ] Test it: `/test lab access & booking result screens`
+- [x] Verify it: `/check verify lab access & booking result screens`
+- [x] Test it: `/test lab access & booking result screens`
 spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/reservations/[id]/`, `components/reservations/lab-access-card.tsx`, `components/reservations/cancel-reservation-button.tsx`, `components/admin/booking-cancel-button.tsx`, `server/booking/lab-access.ts`, `lib/lab-access.ts`, `lib/manage-reservations.ts`, `server/cloudflare/`, `server/catalog/api-keys.ts`, `server/worker/`, `worker/index.ts`, `db/migrations/0008_cloudflare_api_key.sql`, `scripts/authentik-setup.ts`, `app/book/`, `components/book/`, `e2e/lab-access.spec.ts`, `e2e/hol-labs.spec.ts`
 
 ## Slice 4: Notifications
@@ -246,15 +246,19 @@ spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/re
 Set up email sending and shared templates (the umbrella that features 16 and 17 build on), then send a confirmation with a calendar invite on book, reschedule, and cancel, with times in the learner's timezone. Book, reschedule, and cancel use the mock's email templates.
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
 - [x] Design it (spec): `/architect email delivery & booking confirmations`
-- [ ] Build it: `/develop email delivery & booking confirmations`
+- [x] Build it: `/develop email delivery & booking confirmations`
   - [x] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
   - [x] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
   - [x] Calendar mirror and backfill (AC-19, 20)
   - [x] Key edit and the console Emails section (AC-4, 21)
-  - [ ] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
+  - [x] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
+  - [x] Google sign in, for a personal Gmail sender (spec amended 2026-10-16): migration `0010`, the method radio, sign in with paste back, the refresh token mint, and one email to the dev inbox (AC-25, 26, 27, 28, 30, 34)
+  - [x] Google sign in thickened: edit and switch methods, the breaker by method with the Needs attention badge, and its proof (AC-29, 31, 32, 33)
+  - [x] Exchange outage keeps the sign in, so the same save can be retried (spec amended 2026-10-16, task 13) (AC-28)
+  - [x] Review fixes: the invite attached once outside `multipart/alternative` with a MIME tree test, the booked email in the zone `/book` showed, the rescheduled intro and the password box for new accounts only (spec amended 2026-10-16, task 14) (AC-6, 11, 12, 15, 17, 23)
 - [ ] Verify it: `/check verify email delivery & booking confirmations`
 - [ ] Test it: `/test email delivery & booking confirmations`
-spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `scripts/calendar-backfill.ts`
+spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `db/migrations/0010_google_sign_in.sql`, `lib/google-sign-in.ts`, `components/admin/api-key-fields.tsx`, `scripts/calendar-backfill.ts`
 
 ### 16. Set password / welcome email
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
