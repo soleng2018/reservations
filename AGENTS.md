@@ -34,6 +34,7 @@ npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
 npm run worker       # background worker; exits unless WORKER_ENABLED=true; shared DB, so it IS the prod worker (one at a time)
+npm run calendar:backfill # queues a calendar job for every confirmed booking not yet ended; dry run, -- --apply writes
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
@@ -72,6 +73,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
 - Signed in learner on a public path (`/book`): read the session with `currentSession()` (never `requireLearner()`, which redirects) and take identity from the session's `users` row, never from the post; `sessionAccount` in `server/booking/account.ts` is the reference.
 - Learner booking changes (cancel, reschedule): the page binds the booking id and the `version` it showed; the action locks the learner `FOR SHARE`, then the booking `FOR UPDATE` by id, session learner, `ends_at > now()`, and version, and a miss is `stale`. Every learner booking read filters by the session learner's `user_id`; `server/booking/manage.ts` is the reference.
+- Lab links (Nile Portal, LMS, client URLs) reach a learner only through `ownLabAccess` in `server/booking/lab-access.ts`: the session learner's own verified booking, every miss is `missing` (a 404), and a guest reply never carries them.
 - Search indexing: every page is `noindex, nofollow` by default (root layout metadata), and a page opts in explicitly (today only `/`). A page whose metadata uses relative URLs sets `metadataBase` from `appUrl()` in `server/env.ts` and is `force-dynamic`, so `next build` reads no env. Nothing public (`robots.txt`, sitemap, learner pages) names `ADMIN_ENTRY_PATH`.
 
 ## Tooling
@@ -104,6 +106,9 @@ Installed:
 - [shadcn-errors-react-day-picker-v9](.claude/skills/shadcn-errors-react-day-picker-v9/): `impertio-studio/shadcn-ui-claude-skill-package`, react-day-picker v9 errors and v8 props that no longer exist
 - [base-ui](.claude/skills/base-ui/): `itechmeat/llm-code`, Base UI (`@base-ui/react`) components, render props, forms, overlays
 - [shadcn-baseui](.claude/skills/shadcn-baseui/): `thunderboltdev/shadcn-baseui`, Base UI patterns in shadcn (no Radix `asChild`)
+- [react-email](.claude/skills/react-email/): `resend/react-email`, React Email templates and rendering (the booking emails in `server/email/`)
+- [gws-gmail](.claude/skills/gws-gmail/): `googleworkspace/cli`, Gmail send and read
+- [gws-calendar](.claude/skills/gws-calendar/): `googleworkspace/cli`, Google Calendar events
 - Declined: `morksen123/base-ui-mcp-server` (third party Base UI MCP server), 2026-10-11
 
 MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setup help (connected; `npx auth@latest mcp --claude-code`), next-devtools-mcp (recommended), github-mcp-server (recommended), pg-mcp-server in read only mode (recommended; dev and prod share one database)
