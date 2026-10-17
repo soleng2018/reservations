@@ -119,5 +119,7 @@ MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setu
 - [server/authentik/AGENTS.md](server/authentik/AGENTS.md): Authentik API client, the write guard, learner provisioning, and token rules
 - [server/worker/AGENTS.md](server/worker/AGENTS.md): the background worker, its lock, tick loop, sweepers, and the access reconciler
 - [server/users/AGENTS.md](server/users/AGENTS.md): learner admin from the console, the add saga, the lock first pattern, and the admin timezone
+- [server/jobs/AGENTS.md](server/jobs/AGENTS.md): the job queue, booking emails and the calendar mirror, the breaker, and the email templates in `server/email/`
+- [server/google/AGENTS.md](server/google/AGENTS.md): every Google call, the two sign in methods, the token, the key save check, and the sign in cookie
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._
