@@ -16,6 +16,12 @@ import { BLUE, EmailFrame, LINE, MUTED, sectionPad } from "./email-frame";
 const PREVIEW =
   "Your lab is reserved. Access links and session details inside.";
 
+// AC-12 (amended 2026-10-16): the rescheduled email has its own intro.
+const intro = (kind: "booked" | "rescheduled", name: string) =>
+  kind === "booked"
+    ? `Hi ${name}, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`
+    : `Hi ${name}, your reservation was moved. Here are the new details. The links below become active at your new start time and stop working when your session ends. The calendar invite attached to this email moves the event in your calendar.`;
+
 const linkLabel = {
   portal: "Open the portal for this testbed",
   lms: "Open the lab guide",
@@ -51,7 +57,7 @@ export function LabAccessEmail({
           ? "Your lab access is ready"
           : "Your reservation was rescheduled"
       }
-      intro={`Hi ${details.learnerName}, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`}
+      intro={intro(kind, details.learnerName)}
     >
       <DetailsCard
         rows={[
@@ -91,31 +97,34 @@ export function LabAccessEmail({
           </Section>
         ))}
       </Section>
-      <Section style={sectionPad(20, 4)}>
-        <Section
-          style={{
-            border: `1px solid ${LINE}`,
-            borderRadius: "12px",
-            padding: "16px 20px",
-          }}
-        >
-          <Text style={{ margin: 0, fontSize: "14px", fontWeight: 600 }}>
-            Set your password
-          </Text>
-          <Text
+      {/* AC-12 (amended 2026-10-16): only for an account this booking
+          created, since only then was its welcome email queued. */}
+      {kind === "booked" && details.newAccount ? (
+        <Section style={sectionPad(20, 4)}>
+          <Section
             style={{
-              margin: "4px 0 0",
-              fontSize: "13px",
-              lineHeight: 1.5,
-              color: MUTED,
+              border: `1px solid ${LINE}`,
+              borderRadius: "12px",
+              padding: "16px 20px",
             }}
           >
-            You will receive a separate email with a link to set your password.
-            Use it with this email address to reschedule or cancel. Existing
-            users sign in with their current credentials.
-          </Text>
+            <Text style={{ margin: 0, fontSize: "14px", fontWeight: 600 }}>
+              Set your password
+            </Text>
+            <Text
+              style={{
+                margin: "4px 0 0",
+                fontSize: "13px",
+                lineHeight: 1.5,
+                color: MUTED,
+              }}
+            >
+              You will receive a separate email with a link to set your
+              password. Use it with this email address to reschedule or cancel.
+            </Text>
+          </Section>
         </Section>
-      </Section>
+      ) : null}
       <CtaButton href={manageUrl(details)}>Manage my reservation</CtaButton>
       <Section
         style={{

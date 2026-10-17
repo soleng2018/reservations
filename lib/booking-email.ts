@@ -50,10 +50,13 @@ const EmailLabLinks = z.object({
 
 // AC-11: what an email shows, captured when it was queued, so each email
 // describes its own booking version. Times are ISO strings in the jsonb.
-// `links` is null for a cancellation.
+// `links` is null for a cancellation. `newAccount` (amended 2026-10-16) is
+// true only on a booked email whose booking created the account; rows queued
+// before it existed parse as false.
 export const BookingEmailDetails = z.object({
   learnerName: z.string(),
   timezone: z.string(),
+  newAccount: z.boolean().default(false),
   labTypeName: z.string(),
   testbedName: z.string(),
   startsAt: z.iso.datetime({ offset: true }),

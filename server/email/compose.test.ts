@@ -7,6 +7,7 @@ import {
 } from "./compose";
 import { inviteFields } from "@/lib/booking-email";
 import { SAMPLE_BOOKING_DETAILS } from "./sample";
+import { allParts, mimeShape, parseMime } from "./testing";
 
 // covers: spec 0013 AC-12 to AC-15, AC-17, AC-23 (the render snapshots)
 const KOLKATA: BookingEmailDetails = {
@@ -29,6 +30,12 @@ const cases = [
   ["booked", "Kolkata", KOLKATA],
   ["rescheduled", "Kolkata", KOLKATA],
   ["cancelled", "Kolkata", cancelled(KOLKATA)],
+  // AC-12: no password box for an account the booking didn't create.
+  [
+    "booked",
+    "New York, existing account",
+    { ...SAMPLE_BOOKING_DETAILS, newAccount: false },
+  ],
 ] as const;
 
 describe("booking email render (spec 0013 AC-23)", () => {
@@ -54,15 +61,22 @@ describe("booking email render (spec 0013 AC-23)", () => {
 // covers: spec 0013 AC-15, AC-17
 describe("composeBookingEmail (spec 0013 AC-15)", () => {
   const compose = (
-    over: { bcc?: string | null; subjectPrefix?: string } = {},
+    over: {
+      bcc?: string | null;
+      subjectPrefix?: string;
+      kind?: "booked" | "rescheduled" | "cancelled";
+    } = {},
   ) =>
     composeBookingEmail({
       emailId: "11111111-1111-4111-8111-111111111111",
       bookingId: BOOKING_ID,
       bookingVersion: 2,
       createdAt: CREATED,
-      kind: "rescheduled",
-      details: SAMPLE_BOOKING_DETAILS,
+      kind: over.kind ?? "rescheduled",
+      details:
+        over.kind === "cancelled"
+          ? cancelled(SAMPLE_BOOKING_DETAILS)
+          : SAMPLE_BOOKING_DETAILS,
       subject: "Updated: Your Nile Hands-On Lab access - x",
       senderEmail: "labs@nile.example",
       to: "priya@acme.com",
@@ -73,7 +87,7 @@ describe("composeBookingEmail (spec 0013 AC-15)", () => {
       mime: Buffer.from(raw, "base64url").toString("utf8"),
     }));
 
-  it("builds one message with HTML, text, the inline logo, and the invite twice", async () => {
+  it("builds one message with the sender, recipients, and Message-ID", async () => {
     const { subject, mime } = await compose();
     expect(subject).toBe("Updated: Your Nile Hands-On Lab access - x");
     expect(mime).toContain('From: "Nile Hands-On Labs" <labs@nile.example>');
@@ -82,19 +96,54 @@ describe("composeBookingEmail (spec 0013 AC-15)", () => {
     expect(mime).toContain(
       "Message-ID: <11111111-1111-4111-8111-111111111111@nile-hol-reservations>",
     );
-    expect(mime).toMatch(/Content-Type: multipart\/alternative/);
-    expect(mime).toMatch(/Content-Type: text\/plain/);
-    expect(mime).toMatch(/Content-Type: text\/html/);
-    expect(mime).toContain("Content-ID: <nile-logo>");
-    expect(mime).toMatch(
-      /Content-Type: text\/calendar; charset=utf-8; method=REQUEST/,
-    );
-    expect(mime).toMatch(/Content-Type: application\/ics; name=invite\.ics/);
-    expect(mime).toContain("SEQUENCE:2");
-    expect(mime).toContain(`UID:${BOOKING_ID}@nile-hol-reservations`);
-    expect(mime).toContain("DTSTAMP:20261012T100000Z");
     expect(mime).not.toMatch(/^Reply-To:/m);
   });
+
+  // AC-15 (amended 2026-10-16): with the calendar part last inside
+  // multipart/alternative, iOS Mail showed no body. This pins the whole tree.
+  it.each([
+    ["booked", "REQUEST"],
+    ["rescheduled", "REQUEST"],
+    ["cancelled", "CANCEL"],
+  ] as const)(
+    "puts the %s invite once, beside the alternatives",
+    async (kind, method) => {
+      const root = parseMime((await compose({ kind })).mime);
+      expect(mimeShape(root)).toEqual([
+        "multipart/mixed",
+        [
+          [
+            "multipart/alternative",
+            ["text/plain", ["multipart/related", ["text/html", "image/png"]]],
+          ],
+          "text/calendar",
+        ],
+      ]);
+
+      const [alternative, invite] = root.children;
+      const logo = alternative?.children[1]?.children[1];
+      expect(logo?.contentId).toBe("<nile-logo>");
+      expect(logo?.disposition).toMatch(/^inline/);
+
+      expect(invite?.params).toMatchObject({
+        charset: "utf-8",
+        method,
+        name: "invite.ics",
+      });
+      expect(invite?.disposition).toBe("attachment; filename=invite.ics");
+      expect(
+        allParts(root).filter((p) => p.type === "text/calendar"),
+      ).toHaveLength(1);
+      expect(allParts(root).map((p) => p.type)).not.toContain(
+        "application/ics",
+      );
+
+      expect(invite?.body).toMatch(new RegExp(`^METHOD:${method}\\r?$`, "m"));
+      expect(invite?.body).toMatch(/^SEQUENCE:2\r?$/m);
+      expect(invite?.body).toContain(`UID:${BOOKING_ID}@nile-hol-reservations`);
+      expect(invite?.body).toContain("DTSTAMP:20261012T100000Z");
+    },
+  );
 
   it("adds the [dev] prefix and leaves out an empty Bcc", async () => {
     const { subject, mime } = await compose({

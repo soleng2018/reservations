@@ -56,6 +56,9 @@ async function setup(trx: Kysely<DB>) {
   return { input, state, testbed, type };
 }
 
+// What the /book screen showed (spec 0013 AC-6); not under test here.
+const SHOWN = { timezone: "UTC", newAccount: false } as const;
+
 const started = async (trx: Kysely<DB>, input: GuestBookingInput) => {
   const r = await startGuestBooking(trx, input);
   if (!r.ok) throw new Error(`start failed: ${r.error}`);
@@ -70,7 +73,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
       const { input, state } = await setup(trx);
       const ref = await started(trx, input);
       await recordAuthentikUser(trx, ref.userId, { pk: 41, created: true });
-      expect(await confirmGuestBooking(trx, ref)).toEqual({
+      expect(await confirmGuestBooking(trx, ref, SHOWN)).toEqual({
         ok: true,
         value: { version: 1 },
       });
@@ -187,7 +190,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
         .execute();
       expect(await staleProvisioning(trx)).toContainEqual(ref);
       await compensateGuestBooking(trx, ref, auth.deleteAuthentikUser);
-      expect(await confirmGuestBooking(trx, ref)).toEqual({
+      expect(await confirmGuestBooking(trx, ref, SHOWN)).toEqual({
         ok: false,
         error: "gone",
       });
@@ -306,7 +309,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
     inRollback(async (trx) => {
       const { input } = await setup(trx);
       const ref = await started(trx, input);
-      await confirmGuestBooking(trx, ref);
+      await confirmGuestBooking(trx, ref, SHOWN);
       expect(
         await startGuestBooking(trx, { ...input, startsAt: slot(48) }),
       ).toEqual({ ok: false, error: "has_live_booking" });

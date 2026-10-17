@@ -26,12 +26,21 @@ export const emailJobKey = (
 export const calendarJobKey = (bookingId: string, version: number) =>
   `calendar:${bookingId}:${version}`;
 
+// AC-6, AC-11 (amended 2026-10-16): what the /book screen showed, passed only
+// by confirmGuestBooking. A returning learner who books as a guest keeps their
+// stored zone, so the booked email follows the screen, not users.timezone.
+export type ShownAtBooking = {
+  readonly timezone: string;
+  readonly newAccount: boolean;
+};
+
 // AC-11: one explicit column read (never a client's OS login), from the
 // booking row as the change left it. Links only for booked and rescheduled.
 async function readDetails(
   trx: Kysely<DB>,
   bookingId: string,
   kind: BookingEmailKind,
+  shown: ShownAtBooking | undefined,
 ): Promise<{
   readonly userId: string;
   readonly email: string;
@@ -81,7 +90,8 @@ async function readDetails(
     email: row.email,
     details: BookingEmailDetails.parse({
       learnerName: row.learnerName,
-      timezone: row.timezone,
+      timezone: shown?.timezone ?? row.timezone,
+      newAccount: shown?.newAccount ?? false,
       labTypeName: row.labTypeName,
       testbedName: row.testbedName,
       startsAt: row.starts_at.toISOString(),
@@ -99,6 +109,7 @@ export async function queueBookingNotice(
   bookingId: string,
   version: number,
   kind: BookingEmailKind,
+  shown?: ShownAtBooking,
 ): Promise<void> {
   const emailMessageId = crypto.randomUUID();
   const job = await trx
@@ -115,7 +126,12 @@ export async function queueBookingNotice(
     .executeTakeFirst();
   if (!job) return;
 
-  const { userId, email, details } = await readDetails(trx, bookingId, kind);
+  const { userId, email, details } = await readDetails(
+    trx,
+    bookingId,
+    kind,
+    shown,
+  );
   await trx
     .insertInto("email_messages")
     .values({

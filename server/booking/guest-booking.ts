@@ -101,7 +101,10 @@ export async function bookAsGuest(
       });
 
     const confirmed = await conn.transaction().execute(async (trx) => {
-      const done = await confirmGuestBooking(trx, ref);
+      const done = await confirmGuestBooking(trx, ref, {
+        timezone: input.timezone,
+        newAccount: created,
+      });
       if (!done.ok) return done;
       if (created)
         await enqueueWelcome(trx, ref.userId, welcomeKey(ref.userId));

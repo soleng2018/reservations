@@ -135,13 +135,17 @@ export async function composeBookingEmail(
         contentType: "image/png",
         cid: LOGO_CID,
       },
+      // AC-15 (amended 2026-10-16): the invite once, beside the alternatives,
+      // never inside them, so the HTML stays every client's preferred part.
+      // Not icalEvent, which adds a text/calendar alternative last (iOS Mail
+      // then shows no body) plus a second application/ics copy.
+      {
+        filename: "invite.ics",
+        content: renderInvite(invite),
+        contentType: `text/calendar; charset=utf-8; method=${invite.method}`,
+        contentDisposition: "attachment",
+      },
     ],
-    // Both the text/calendar alternative and the invite.ics attachment.
-    icalEvent: {
-      method: invite.method,
-      filename: "invite.ics",
-      content: renderInvite(invite),
-    },
   }).compile();
   // Gmail reads Bcc from the raw message and drops it on delivery.
   node.keepBcc = true;

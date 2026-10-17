@@ -22,9 +22,10 @@ import {
   type RecordedRequest,
 } from "@/server/google/testing";
 import type { MintError, MintToken } from "@/server/google/token";
+import { inviteOf } from "@/server/email/testing";
 import { appUrl } from "@/server/env";
 import type { GoogleFetch } from "@/server/google/http";
-import { queueBookingNotice } from "./booking-notice";
+import { queueBookingNotice, type ShownAtBooking } from "./booking-notice";
 import { queueCalendarBackfill, syncBookingEvent } from "./calendar-sync";
 import { breakerMessage, runJobs, type Handlers } from "./runner";
 import { runSendEmail } from "./send-email";
@@ -80,7 +81,12 @@ const parkRealJobs = (trx: Kysely<DB>) =>
 // A guest booking confirmed through the saga's own step, with two clients.
 async function confirmedBooking(
   trx: Transaction<DB>,
-  opts: { email?: string; startsIn?: number; hours?: number } = {},
+  opts: {
+    email?: string;
+    startsIn?: number;
+    hours?: number;
+    shown?: ShownAtBooking;
+  } = {},
 ) {
   await parkRealJobs(trx);
   const user = await makeUser(trx, {
@@ -124,10 +130,11 @@ async function confirmedBooking(
     })
     .returning("id")
     .executeTakeFirstOrThrow();
-  const confirmed = await confirmGuestBooking(trx, {
-    userId: user.id,
-    bookingId: booking.id,
-  });
+  const confirmed = await confirmGuestBooking(
+    trx,
+    { userId: user.id, bookingId: booking.id },
+    opts.shown ?? { timezone: "America/New_York", newAccount: false },
+  );
   if (!confirmed.ok) throw new Error("expected a confirm");
   return { user, type, testbed, bookingId: booking.id };
 }
@@ -178,6 +185,7 @@ describe.skipIf(!hasDb)("queueBookingNotice (spec 0013 AC-6, AC-11)", () => {
       expect(email?.details).toEqual({
         learnerName: "Priya",
         timezone: "America/New_York",
+        newAccount: false,
         labTypeName: type.name,
         testbedName: testbed.name,
         startsAt: expect.any(String),
@@ -214,6 +222,44 @@ describe.skipIf(!hasDb)("queueBookingNotice (spec 0013 AC-6, AC-11)", () => {
           idempotency_key: `calendar:${bookingId}:1`,
         }),
       ]);
+    }));
+
+  // AC-6, AC-11 (amended 2026-10-16): a returning learner who books as a
+  // guest keeps their stored zone; the booked email follows the screen.
+  it("uses the zone the booking screen showed for booked, and the stored zone after", () =>
+    inRollback(async (trx) => {
+      const { user, type, testbed, bookingId } = await confirmedBooking(trx, {
+        shown: { timezone: "Asia/Kolkata", newAccount: true },
+      });
+      const [booked] = await emailsOf(trx, bookingId);
+      expect(booked?.details).toMatchObject({
+        timezone: "Asia/Kolkata",
+        newAccount: true,
+      });
+      expect(booked?.subject).toMatch(/ India Time$/);
+      expect(
+        await trx
+          .selectFrom("users")
+          .select("timezone")
+          .where("id", "=", user.id)
+          .executeTakeFirstOrThrow(),
+      ).toEqual({ timezone: "America/New_York" });
+
+      const moved = slot(30);
+      await rescheduleBooking(trx, {
+        id: bookingId,
+        expectedVersion: 1,
+        testbedId: testbed.id,
+        testbedTypeId: type.id,
+        startsAt: moved,
+        endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+      });
+      const [, rescheduled] = await emailsOf(trx, bookingId);
+      expect(rescheduled?.details).toMatchObject({
+        timezone: "America/New_York",
+        newAccount: false,
+      });
+      expect(rescheduled?.subject).toMatch(/ ET$/);
     }));
 
   it("queues nothing when the booking change rolls back", () =>
@@ -264,8 +310,9 @@ describe.skipIf(!hasDb)(
         const mime = decoded(req);
         expect(mime).toContain(`To: ${user.email}`);
         expect(mime).toContain("Bcc: ops@nile.example");
-        expect(mime).toContain("method=REQUEST");
-        expect(mime).toContain("SEQUENCE:1");
+        const invite = inviteOf(mime);
+        expect(invite.method).toBe("REQUEST");
+        expect(invite.ics).toMatch(/^SEQUENCE:1\r?$/m);
         const [email] = await emailsOf(trx, bookingId);
         expect(email).toMatchObject({
           status: "sent",
@@ -813,9 +860,14 @@ describe.skipIf(!hasDb)(
           "Updated:",
           "Cancelled:",
         ]);
-        expect(sent[1]).toContain("SEQUENCE:2");
-        expect(sent[2]).toContain("method=CANCEL");
-        expect(sent[2]).toContain("SEQUENCE:3");
+        const invites = sent.map(inviteOf);
+        expect(invites.map((i) => i.method)).toEqual([
+          "REQUEST",
+          "REQUEST",
+          "CANCEL",
+        ]);
+        expect(invites[1]?.ics).toMatch(/^SEQUENCE:2\r?$/m);
+        expect(invites[2]?.ics).toMatch(/^SEQUENCE:3\r?$/m);
         expect((await emailsOf(trx, bookingId)).map((e) => e.status)).toEqual([
           "sent",
           "sent",

@@ -7,6 +7,7 @@ import type { BookingEmailDetails } from "@/lib/booking-email";
 export const SAMPLE_BOOKING_DETAILS: BookingEmailDetails = {
   learnerName: "Priya",
   timezone: "America/New_York",
+  newAccount: true,
   labTypeName: "Basic",
   testbedName: "Testbed 1",
   startsAt: "2026-10-13T13:00:00.000Z",

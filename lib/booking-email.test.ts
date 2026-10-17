@@ -99,4 +99,11 @@ describe("emailSubject (spec 0013 AC-12, AC-13)", () => {
       }).success,
     ).toBe(false);
   });
+
+  // AC-11 (amended 2026-10-16): rows queued before newAccount existed.
+  it("reads a snapshot without newAccount as an existing account", () => {
+    const older: Record<string, unknown> = { ...details };
+    delete older.newAccount;
+    expect(BookingEmailDetails.parse(older).newAccount).toBe(false);
+  });
 });
