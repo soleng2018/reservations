@@ -1,7 +1,7 @@
 # 0012. Lab access and booking result screens
 
 **Date**: 2026-10-14 (updated 2026-10-14 after spike 3; updated 2026-10-15: the revoke blocks new requests only)
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -172,7 +172,7 @@ Shared types in `lib/lab-access.ts` (safe on both sides): `LabLinks = { portalUr
 - API key rules (DB, `inRollback`, a stub verifier): a second live `CLOUDFLARE` key on create or on a type change returns `cloudflare_exists`, not `duplicate_name`; a type change to or from `CLOUDFLARE`, or a base URL change on one, with the key blank is refused; a name only edit makes no Cloudflare call. Verifies **AC-11**.
 - Playwright (the `learner` test account): sign in, book through signed in `/book`, and see "Your lab access" with the links under "View my reservations"; open `/reservations/<id>` directly and see the Upcoming note; the Upcoming card has no View lab access; cancel to clean up. An `afterEach` cancels any live booking the test account still holds, so a failed run never leaves it blocked by the one active booking rule on the shared database. Axe, keyboard, and screenshots on the success card and the detail page. Verifies **AC-2**, **AC-6**, **AC-7**.
 - Cancel dialog lines (pure): `cancelAccessLine("learner", true)` is " Your lab access ends within a minute. Close any open lab tabs.", `cancelAccessLine("admin", true)` is " The learner's lab access ends within a minute.", and both are `null` for `false`. Verifies **AC-13**, **AC-14**.
-- `verify.md` (manual, real Authentik and Cloudflare in `/check verify`): a booking becomes Current, and the learner is in `pod-<slug>` within a tick and the VM opens through HOL Labs; cancel it, and within a tick the membership is gone, the audit row shows `vmRevoke: 'done'`, and within about a minute a new tab or a reload of the VM URL lands on the Access login. The tab that was already open may keep streaming (accepted, AC-10), and the check must not fail on it. Its detail page then shows the Past state. Verifies **AC-8**, **AC-9**, **AC-10**, **AC-12**.
+- `verify.md` (manual, real Authentik and Cloudflare in `/check verify`): a booking becomes Current, and the learner is in `pod-<slug>` within a tick and the VM opens through HOL Labs; cancel it, and within a tick the membership is gone, the audit row shows `vmRevoke: 'done'`, and within about a minute a new tab or a reload of the VM URL lands on the Access login. The tab that was already open may keep streaming (accepted, AC-10), and the check must not fail on it. Its detail page then returns 404, because a cancelled booking has no lab access (AC-1, AC-7). Verifies **AC-7**, **AC-9**, **AC-10**, **AC-12**.
 
 ## Build plan
 

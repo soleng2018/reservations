@@ -42,7 +42,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 11 | Public landing page | Slice 3 | done |
 | 12 | Availability & booking rules | Slice 3 | done |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | done |
-| 14 | Lab access & booking result screens | Slice 3 | in-progress |
+| 14 | Lab access & booking result screens | Slice 3 | done |
 | 15 | Email delivery & booking confirmations | Slice 4 | in-progress |
 | 16 | Set password / welcome email | Slice 4 | planned |
 | 17 | Reminder before start | Slice 4 | planned |
@@ -223,7 +223,7 @@ spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/b
 - [x] Review it (fresh model): `/check review manage reservations`
 spec [0011](../specs/0011-manage-reservations/index.md) · code in `app/reservations/`, `components/reservations/`, `server/booking/manage.ts`, `server/booking/account.ts`, `lib/manage-reservations.ts`, `lib/reschedule-flow.ts`, `lib/time-pick.ts`, `app/book/`, `components/book/`, `e2e/reservations.spec.ts`
 
-### 14. Lab access & booking result screens · in-progress
+### 14. Lab access & booking result screens · done
 The success screen after booking or rescheduling, and the reservation detail page, both showing the testbed's Nile Portal, LMS course, and client links as in the mock.
 Access is enforced by Authentik: the learner is in the assigned testbed's group for the booking, and is removed right after the lab time ends.
 **Done when:** access details reach only the booking's own verified learner; a learner can open the testbed's URLs only during their booking window, and an open lab session stops working right after the lab time is over; cancel, reschedule to another testbed, and booking end update the group membership; Upcoming bookings show no detail link, Current and Past do; Past details show the links greyed out and unclickable with the "access is no longer active" note; the success screen tells a new learner to set their password from the email.
