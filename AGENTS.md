@@ -42,6 +42,7 @@ npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
 - Dev runs on the LAN IP (`http://10.1.255.18:3000`), because the Authentik proxy refuses requests that mention localhost. `APP_URL` must match the URL the browser uses, or sign in fails with `state_mismatch`.
+- A Better Auth config change in `server/auth/index.ts` needs a dev server restart: `auth()` is cached on `globalThis`, so a hot reload keeps the old instance.
 - `db/bootstrap.sql` is a one time setup run by hand as `postgres` (creates the `hol_app` role and schemas), not a migration; its header has the exact command.
 
 ## Specs
@@ -73,6 +74,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
 - Signed in learner on a public path (`/book`): read the session with `currentSession()` (never `requireLearner()`, which redirects) and take identity from the session's `users` row, never from the post; `sessionAccount` in `server/booking/account.ts` is the reference.
 - Learner booking changes (cancel, reschedule): the page binds the booking id and the `version` it showed; the action locks the learner `FOR SHARE`, then the booking `FOR UPDATE` by id, session learner, `ends_at > now()`, and version, and a miss is `stale`. Every learner booking read filters by the session learner's `user_id`; `server/booking/manage.ts` is the reference.
+- Set password links (spec 0014): the app stores only `sha256(token)` in `set_password_links`. The page and the `startSetPassword` action read state through one function, `linkState` in `server/auth/set-password-links.ts` (a GET changes nothing); the action locks the user `FOR SHARE`, then the link `FOR UPDATE`, as the lock first pattern does. Only misses count toward the per IP limit, and every dead case shows the same message.
 - Lab links (Nile Portal, LMS, client URLs) reach a learner only through `ownLabAccess` in `server/booking/lab-access.ts`: the session learner's own verified booking, every miss is `missing` (a 404), and a guest reply never carries them.
 - Email and calendar: a booking change queues its notice with `queueBookingNotice` (`server/jobs/booking-notice.ts`) in the same transaction; the web process never calls Google for a booking, the worker sends.
 - Search indexing: every page is `noindex, nofollow` by default (root layout metadata), and a page opts in explicitly (today only `/`). A page whose metadata uses relative URLs sets `metadataBase` from `appUrl()` in `server/env.ts` and is `force-dynamic`, so `next build` reads no env. Nothing public (`robots.txt`, sitemap, learner pages) names `ADMIN_ENTRY_PATH`.

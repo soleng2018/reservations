@@ -5,13 +5,13 @@ The background worker: one long running process that completes ended bookings, s
 ## Files
 
 - `../../worker/index.ts`: the process entry (`npm run worker`). Checks `WORKER_ENABLED`, takes the lock, runs ticks until SIGTERM or SIGINT, then exits 0.
-- `../../worker/server-only-hook.mjs`: `npm run worker` runs without `--conditions=react-server`, because React Email needs `react-dom/server`, so this `--import` hook maps `server-only` to its empty module. The entry renders one sample email before taking the lock and exits 1 if the renderer fails to load ([spec 0013](../../docs/specs/0013-email-delivery-booking-confirmations/index.md) AC-22).
+- `../../worker/server-only-hook.mjs`: `npm run worker` runs without `--conditions=react-server`, because React Email needs `react-dom/server`, so this `--import` hook maps `server-only` to its empty module. The entry renders the sample booking and welcome emails before taking the lock and exits 1 if the renderer fails to load ([spec 0013](../../docs/specs/0013-email-delivery-booking-confirmations/index.md) AC-22).
 - `lock.ts`: `lockClient` (a dedicated `pg` client, never the pool) and `tryWorkerLock` (`pg_try_advisory_lock`).
 - `loop.ts`: `runTick` runs steps in order, each under `STEP_TIMEOUT_MS`; `TICK_PAUSE_MS` between ticks; `purgeDue` for the daily rate limit purge; `WORKER_LOCK_KEY`.
 - `sweep.ts`: `completeEnded`, `sweepGuestSagas` (provisioning over 10 minutes), `sweepTestbedCreates` (no group pk after 10 minutes), `sweepUnlinkedLearners` (learner rows an add saga left with no Authentik pk and no bookings, after 10 minutes; [spec 0008](../../docs/specs/0008-admin-users/index.md) AC-12), `purgeRateLimits`.
 - `reconcile.ts`: `reconcileAccess`, the access reconciler. The pure diff it applies is `membershipDiff` in `lib/reconcile.ts`.
 - `teardown.ts`: `teardownDeletedTestbeds`, the step right after the reconciler ([spec 0007](../../docs/specs/0007-admin-testbeds/index.md) AC-7). Deletes a soft deleted testbed's `pod-*` group, then stamps `authentik_group_deleted_at` with an `authentik_group.deleted` audit row; returns how many it stamped.
-- The `jobs` step (after teardown) runs `runJobs` from `server/jobs/runner.ts` with the `send_email`, `calendar_upsert`, and `calendar_delete` handlers; with no `GOOGLE` API key the jobs wait, logged once. The daily purge also runs `purgeDoneJobs` ([spec 0013](../../docs/specs/0013-email-delivery-booking-confirmations/index.md) AC-8 to AC-10).
+- The `jobs` step (after teardown) runs `runJobs` from `server/jobs/runner.ts` with the `send_email`, `calendar_upsert`, `calendar_delete`, and `send_welcome` handlers (`HANDLERS` in the entry); with no `GOOGLE` API key the jobs wait, logged once. The daily purge also runs `purgeDoneJobs` ([spec 0013](../../docs/specs/0013-email-delivery-booking-confirmations/index.md) AC-8 to AC-10) and `purgeSetPasswordLinks`, which deletes links 30 days past expiry ([spec 0014](../../docs/specs/0014-set-password-welcome-email/index.md) AC-16).
 
 ## Rules
 
