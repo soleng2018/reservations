@@ -17,6 +17,7 @@ import {
   makeUser,
   slot,
 } from "@/server/db/testing";
+import { dbNow } from "@/server/db/bookings";
 import type { DB } from "@/server/db/types";
 import {
   cancelBookingByAdmin,
@@ -371,8 +372,12 @@ describe.skipIf(!hasDb)("updateLearner, lock first (spec 0008 AC-6)", () => {
         username: email.toLowerCase(),
       });
       expect((await reread(trx, row.id)).email).toBe(email);
+      // Spec 0014 AC-14: the key carries the change's DB time (now() is
+      // fixed for the whole test transaction).
       expect(await jobsOf(trx, row.id)).toEqual([
-        { idempotency_key: `welcome:${row.id}:email:${email.toLowerCase()}` },
+        {
+          idempotency_key: `welcome:${row.id}:email:${email.toLowerCase()}:${(await dbNow(trx)).getTime()}`,
+        },
       ]);
     }));
 

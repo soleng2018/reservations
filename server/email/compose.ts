@@ -6,7 +6,7 @@ import ical, {
   ICalEventStatus,
 } from "ical-generator";
 import MailComposer from "nodemailer/lib/mail-composer";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { plainTextSelectors, render } from "react-email";
 import {
   inviteFields,
@@ -16,13 +16,16 @@ import {
   type BookingEmailKind,
   type InviteFields,
 } from "@/lib/booking-email";
+import { WELCOME_SUBJECT, type WelcomeEmailDetails } from "@/lib/welcome-email";
 import { CancellationEmail } from "./templates/cancellation-email";
 import { DETAILS_ROW } from "./templates/details-card";
 import { LOGO_CID } from "./templates/email-frame";
 import { LabAccessEmail } from "./templates/lab-access-email";
+import { WelcomeEmail } from "./templates/welcome-email";
 
 // Spec 0013 AC-15, AC-17: one booking email as one MIME message, ready for
-// Gmail's messages.send. Pure but for reading the logo once.
+// Gmail's messages.send; spec 0014 adds the set password email. Pure but for
+// reading the logo once.
 
 // The committed 60 px copy of public/brand/nile-logo.png (AC-15), read once.
 let logo: Buffer | undefined;
@@ -61,14 +64,10 @@ export function renderInvite(f: InviteFields): string {
   return calendar.toString();
 }
 
-export async function renderBookingEmail(
-  kind: BookingEmailKind,
-  details: BookingEmailDetails,
-): Promise<{ readonly html: string; readonly text: string }> {
-  const element =
-    kind === "cancelled"
-      ? createElement(CancellationEmail, { details })
-      : createElement(LabAccessEmail, { kind, details });
+type Rendered = { readonly html: string; readonly text: string };
+
+// The HTML and plain text parts of one template.
+async function renderParts(element: ReactElement): Promise<Rendered> {
   const [html, text] = await Promise.all([
     render(element),
     render(element, {
@@ -86,6 +85,26 @@ export async function renderBookingEmail(
     }),
   ]);
   return { html, text };
+}
+
+export async function renderBookingEmail(
+  kind: BookingEmailKind,
+  details: BookingEmailDetails,
+): Promise<Rendered> {
+  return renderParts(
+    kind === "cancelled"
+      ? createElement(CancellationEmail, { details })
+      : createElement(LabAccessEmail, { kind, details }),
+  );
+}
+
+// Spec 0014 AC-7. `email` is the learner's address as stored.
+export async function renderWelcomeEmail(
+  details: WelcomeEmailDetails,
+  email: string,
+  url: string,
+): Promise<Rendered> {
+  return renderParts(createElement(WelcomeEmail, { details, email, url }));
 }
 
 export type ComposeInput = {
@@ -149,5 +168,47 @@ export async function composeBookingEmail(
   }).compile();
   // Gmail reads Bcc from the raw message and drops it on delivery.
   node.keepBcc = true;
+  return { subject, raw: base64url(await node.build()) };
+}
+
+export type WelcomeComposeInput = {
+  // The email row's id, shared with the Message-ID (spec 0014 AC-6).
+  readonly emailId: string;
+  readonly details: WelcomeEmailDetails;
+  // The learner's address as stored, shown in the body.
+  readonly email: string;
+  readonly url: string;
+  readonly senderEmail: string;
+  readonly to: string;
+  readonly subjectPrefix: string;
+};
+
+// Spec 0014 AC-5, AC-7: HTML and text in multipart/alternative (plus the
+// inline logo), no attachment, and never a Bcc.
+export async function composeWelcomeEmail(
+  input: WelcomeComposeInput,
+): Promise<{ readonly subject: string; readonly raw: string }> {
+  const subject = `${input.subjectPrefix}${WELCOME_SUBJECT}`;
+  const { html, text } = await renderWelcomeEmail(
+    input.details,
+    input.email,
+    input.url,
+  );
+  const node = new MailComposer({
+    from: { name: SENDER_NAME, address: input.senderEmail },
+    to: input.to,
+    subject,
+    messageId: messageId(input.emailId),
+    text,
+    html,
+    attachments: [
+      {
+        filename: "nile-logo.png",
+        content: nileLogo(),
+        contentType: "image/png",
+        cid: LOGO_CID,
+      },
+    ],
+  }).compile();
   return { subject, raw: base64url(await node.build()) };
 }

@@ -60,6 +60,14 @@ export type EmailKind = z.infer<typeof EmailKind>;
 export const EmailStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
 export type EmailStatus = z.infer<typeof EmailStatus>;
 
+// Spec 0014: why a set password link stopped working before it expired.
+export const SetPasswordLinkEndReason = z.enum([
+  "used",
+  "other_used",
+  "email_changed",
+]);
+export type SetPasswordLinkEndReason = z.infer<typeof SetPasswordLinkEndReason>;
+
 export const AuditTargetType = z.enum([
   "testbed_type",
   "testbed",
@@ -90,5 +98,6 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "jobs.status": JobStatus.options,
   "email_messages.kind": EmailKind.options,
   "email_messages.status": EmailStatus.options,
+  "set_password_links.ended_reason": SetPasswordLinkEndReason.options,
   "audit_events.target_type": AuditTargetType.options,
 };

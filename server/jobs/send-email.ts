@@ -15,9 +15,9 @@ import type { JobHandler, JobOutcome } from "./runner";
 // loads the renderer.
 
 export const STALE = "The booking had already ended.";
-const UNREADABLE = "The queued email can't be read.";
-const GMAIL_RETRY = "Gmail didn't take the message yet. Retrying.";
-const gmailRefused = (status: number) =>
+export const UNREADABLE = "The queued email can't be read.";
+export const GMAIL_RETRY = "Gmail didn't take the message yet. Retrying.";
+export const gmailRefused = (status: number) =>
   `Gmail refused the message (${status}).`;
 
 const DONE: JobOutcome = { kind: "done" };

@@ -7,6 +7,18 @@ export const PROVIDER_NAME = "Provider for HOL";
 export const ADMIN_GROUP = "hol-admins";
 export const LEARNER_PATH = "hol/learners";
 export const RECOVERY_FLOW_SLUG = "hol-recovery";
+// Spec 0014 AC-11: after the password, sign the learner in (a browser
+// session), so Authentik's `next` reaches the authorize endpoint signed in.
+export const desiredRecoveryLoginStage = {
+  name: "hol-recovery-login",
+  session_duration: "seconds=0",
+} as const;
+// The stages of hol-recovery, in order: prompt, user write, user login.
+export const RECOVERY_STAGE_ORDER = {
+  prompt: 10,
+  write: 20,
+  login: 30,
+} as const;
 // HOL's own authorization flow (AC-17): no stages, no policy bindings, used
 // by the HOL provider only, so the deny on the default flows never reaches it.
 export const HOL_AUTHORIZATION_FLOW_SLUG = "hol-authorization";

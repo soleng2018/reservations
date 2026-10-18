@@ -62,6 +62,8 @@ export type ClaimedJob = {
   readonly payload: unknown;
   // Already counting this attempt.
   readonly attempts: number;
+  // When it was queued (spec 0014 AC-2: a welcome over 72 hours old is stale).
+  readonly createdAt: Date;
 };
 
 export type JobOutcome =
@@ -97,6 +99,7 @@ const JobRow = z.object({
   kind: z.string(),
   payload: z.unknown(),
   attempts: z.number(),
+  created_at: z.date(),
 });
 
 // AC-8, AC-10. One statement: the oldest due job of a handled kind with
@@ -130,11 +133,11 @@ export async function claimJob(
       limit 1
       for update skip locked
     )
-    returning id, kind, payload, attempts`.execute(conn);
+    returning id, kind, payload, attempts, created_at`.execute(conn);
   const [row] = rows;
   if (!row) return undefined;
-  const parsed = JobRow.parse(row);
-  return { ...parsed, kind: JobKind.parse(parsed.kind) };
+  const { created_at, ...parsed } = JobRow.parse(row);
+  return { ...parsed, kind: JobKind.parse(parsed.kind), createdAt: created_at };
 }
 
 // AC-8: a send_email job that ends failed takes its email row with it, so a

@@ -19,7 +19,8 @@ import {
   type StepOneError,
 } from "@/server/db/guest-saga";
 import type { DB } from "@/server/db/types";
-import { enqueueWelcome, welcomeKey } from "@/server/jobs/send-welcome";
+import { appUrl } from "@/server/env";
+import { enqueueWelcome, welcomeKey } from "@/server/jobs/welcome-queue";
 
 // The guest booking saga with its Authentik step (spec 0001 saga, spec 0002
 // data steps, spec 0003 AC-5, 6, 15, 16, spec 0004 AC-5 to AC-10). /book puts
@@ -107,7 +108,7 @@ export async function bookAsGuest(
       });
       if (!done.ok) return done;
       if (created)
-        await enqueueWelcome(trx, ref.userId, welcomeKey(ref.userId));
+        await enqueueWelcome(trx, ref.userId, welcomeKey(ref.userId), appUrl());
       await audit(trx, {
         actorUserId: null,
         action: "booking.created",

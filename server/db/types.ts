@@ -155,6 +155,18 @@ export interface RateLimits {
   window_start: Timestamp;
 }
 
+export interface SetPasswordLinks {
+  created_at: Generated<Timestamp>;
+  email: string;
+  email_message_id: string;
+  ended_at: Timestamp | null;
+  ended_reason: string | null;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  token_hash: Buffer;
+  user_id: string;
+}
+
 export interface TestbedClients {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -221,6 +233,7 @@ export interface DB {
   "hol_auth.verification": HolAuthVerification;
   jobs: Jobs;
   rate_limits: RateLimits;
+  set_password_links: SetPasswordLinks;
   testbed_clients: TestbedClients;
   testbed_types: TestbedTypes;
   testbeds: Testbeds;

@@ -9,7 +9,8 @@ import { audit } from "@/server/audit";
 import { requireLearner } from "@/server/auth/require";
 import { cancelOwnBooking } from "@/server/booking/manage";
 import { db } from "@/server/db";
-import { resendKey, enqueueWelcome } from "@/server/jobs/send-welcome";
+import { appUrl } from "@/server/env";
+import { resendKey, enqueueWelcome } from "@/server/jobs/welcome-queue";
 import { countHourlyAttempt } from "@/server/rate-limit";
 import { clientIp } from "@/server/request-ip";
 import { verifyTurnstile } from "@/server/turnstile";
@@ -72,7 +73,12 @@ export async function resendSetPassword(
   if (!learner) return GENERIC;
 
   await conn.transaction().execute(async (trx) => {
-    await enqueueWelcome(trx, learner.id, resendKey(learner.id, new Date()));
+    await enqueueWelcome(
+      trx,
+      learner.id,
+      resendKey(learner.id, new Date()),
+      appUrl(),
+    );
     await audit(trx, {
       actorUserId: null,
       action: "set_password.resent",

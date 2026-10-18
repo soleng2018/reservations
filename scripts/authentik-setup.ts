@@ -34,7 +34,9 @@ import {
   LEGACY_INVALIDATION_FLOW_SLUG,
   LEGACY_INVALIDATION_STAGE,
   RECOVERY_FLOW_SLUG,
+  RECOVERY_STAGE_ORDER,
   desiredHolAuthorizationFlow,
+  desiredRecoveryLoginStage,
   desiredIsolationBinding,
   desiredLabAuthorizationFlow,
   desiredLabsProvider,
@@ -305,14 +307,21 @@ const writeStage = z.looseObject({
   name: z.string(),
   user_creation_mode: z.string(),
 });
+const loginStage = z.looseObject({
+  pk: z.string(),
+  name: z.string(),
+  session_duration: z.string(),
+});
 const binding = z.looseObject({
   pk: z.string(),
   stage: z.string(),
   order: z.number(),
 });
 
-// hol-recovery: set a password, then done. Entered only through a recovery
-// link (the link carries the user), so it has no identification stage.
+// hol-recovery: set a password, then sign in (spec 0014 AC-11), so the
+// app's `next` lands the learner on HOL signed in. Entered only through a
+// recovery link the app asks for at click time (the link carries the user),
+// so it has no identification stage.
 async function ensureRecoveryFlow(): Promise<string | undefined> {
   say("Recovery flow");
   const promptName = "hol-recovery-password";
@@ -385,14 +394,44 @@ async function ensureRecoveryFlow(): Promise<string | undefined> {
   if (userWrite && userWrite.user_creation_mode !== "never_create")
     throw new Error(`stage ${writeName} must not create users`);
 
-  if (flow && prompt && userWrite) {
+  const loginName = desiredRecoveryLoginStage.name;
+  const login =
+    (await one(
+      loginStage,
+      `/stages/user_login/?name=${q(loginName)}`,
+      loginName,
+    )) ??
+    (await write(`create user login stage ${loginName}`, () =>
+      call(
+        loginStage,
+        "POST",
+        "/stages/user_login/",
+        desiredRecoveryLoginStage,
+      ),
+    ));
+  if (login) {
+    const changes = diffFields(login, desiredRecoveryLoginStage);
+    reportChanges(`stage ${loginName}`, changes);
+    if (changes.length > 0)
+      await write(`update stage ${loginName}`, () =>
+        call(
+          loginStage,
+          "PATCH",
+          `/stages/user_login/${login.pk}/`,
+          desiredRecoveryLoginStage,
+        ),
+      );
+  }
+
+  if (flow && prompt && userWrite && login) {
     const bound = await list(
       binding,
       `/flows/bindings/?target=${flow.pk}&page_size=50`,
     );
     const want = [
-      { stage: prompt.pk, order: 10 },
-      { stage: userWrite.pk, order: 20 },
+      { stage: prompt.pk, order: RECOVERY_STAGE_ORDER.prompt },
+      { stage: userWrite.pk, order: RECOVERY_STAGE_ORDER.write },
+      { stage: login.pk, order: RECOVERY_STAGE_ORDER.login },
     ];
     const extra = bound.filter((b) => !want.some((w) => w.stage === b.stage));
     if (extra.length > 0)
@@ -419,7 +458,9 @@ async function ensureRecoveryFlow(): Promise<string | undefined> {
       else say(`  ok      binding order ${w.order}`);
     }
   } else if (!apply)
-    say(`  would   bind the two stages to ${RECOVERY_FLOW_SLUG}`);
+    say(
+      `  would   bind ${RECOVERY_FLOW_SLUG}'s stages in order (prompt, write, login)`,
+    );
   return flow?.pk;
 }
 

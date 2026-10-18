@@ -1,5 +1,21 @@
 import "server-only";
 import type { BookingEmailDetails } from "@/lib/booking-email";
+import { setPasswordUrl, type WelcomeEmailDetails } from "@/lib/welcome-email";
+
+// Spec 0014 AC-17, AC-7: the same learner's set password email. The token is
+// a fixed sample of the real shape, never a working link.
+export const SAMPLE_WELCOME = {
+  details: {
+    name: "Priya Raman",
+    expiresAt: "2026-10-16T13:00:00.000Z",
+    timeZone: "America/New_York",
+  } satisfies WelcomeEmailDetails,
+  email: "priya@example.com",
+  url: setPasswordUrl(
+    "https://labs.nile.example",
+    "SAMPLE_token_0123456789_abcdefghijklmnopqrs",
+  ),
+} as const;
 
 // Spec 0013 AC-22, AC-23: fixed details, matching the standalone files'
 // sample (Priya, Testbed 1), for the worker's start up render and the

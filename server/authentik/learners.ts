@@ -181,20 +181,22 @@ export async function deleteSagaLearner(
   return call("users.destroy", () => api.coreUsersDestroy({ id: pk }));
 }
 
-// AC-6: requested when the welcome job sends, so a failure only retries the
-// job. The link opens the brand's `hol-recovery` flow and lasts 72 hours,
-// asked for on each call (Authentik's own default is 30 minutes).
+// Spec 0003 AC-6 (amended by spec 0014): requested when the learner clicks
+// the app's own link, for `tokenDuration` ("minutes=10"), and never stored.
+// The link opens the brand's `hol-recovery` flow; Authentik keeps one token
+// per user, so a second request returns the same link with the later expiry.
 // Guarded: a recovery link for an admin would be an account takeover.
 export async function issueSetPasswordLink(
   api: CoreApi,
   pk: number,
+  tokenDuration: string,
 ): Promise<Result<string, UserRefusal | AuthentikFailure>> {
   const guarded = await guardUserWrite(api, pk, "learner");
   if (!guarded.ok) return guarded;
   const link = await call("users.recovery", () =>
     api.coreUsersRecoveryCreate({
       id: pk,
-      userRecoveryLinkRequest: { tokenDuration: "hours=72" },
+      userRecoveryLinkRequest: { tokenDuration },
     }),
   );
   return link.ok ? ok(link.value.link) : link;

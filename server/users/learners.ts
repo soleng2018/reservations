@@ -21,11 +21,14 @@ import { mapConstraintError } from "@/server/db/constraint-errors";
 import { HAS_NO_BOOKINGS } from "@/server/db/guest-saga";
 import { Refusal, refusable } from "@/server/db/refusal";
 import type { DB } from "@/server/db/types";
+import { endLiveLinks } from "@/server/auth/set-password-links";
+import { appUrl } from "@/server/env";
 import {
+  emailChangeKey,
   enqueueWelcome,
   resendKey,
   welcomeKey,
-} from "@/server/jobs/send-welcome";
+} from "@/server/jobs/welcome-queue";
 
 // Learner admin (spec 0008): the users list, the user detail page, and the
 // learner changes an admin makes from the console. Only learners with an
@@ -323,7 +326,8 @@ export async function createLearner(
         })
         .where("id", "=", id)
         .execute();
-      if (neverLoggedIn) await enqueueWelcome(trx, id, welcomeKey(id));
+      if (neverLoggedIn)
+        await enqueueWelcome(trx, id, welcomeKey(id), appUrl());
       await audit(trx, {
         actorUserId: actorId,
         action: "user.created",
@@ -482,12 +486,17 @@ export async function updateLearner(
           })
           .where("id", "=", id)
           .execute();
-        if (emailChanged)
+        // Spec 0014 AC-14: under the user lock, before the new welcome is
+        // queued, so a link mailed to the old address stops working.
+        if (emailChanged) {
+          await endLiveLinks(trx, id, "email_changed");
           await enqueueWelcome(
             trx,
             id,
-            `welcome:${id}:email:${input.email.toLowerCase()}`,
+            emailChangeKey(id, input.email, await dbNow(trx)),
+            appUrl(),
           );
+        }
         await audit(trx, {
           actorUserId: actorId,
           action: "user.updated",
@@ -529,7 +538,7 @@ export async function resendSetPasswordByAdmin(
       .where("set_password_pending", "=", true)
       .executeTakeFirst();
     if (!learner) return err("not_eligible");
-    await enqueueWelcome(trx, id, resendKey(id, new Date()));
+    await enqueueWelcome(trx, id, resendKey(id, new Date()), appUrl());
     await audit(trx, {
       actorUserId: actorId,
       action: "set_password.resent",
