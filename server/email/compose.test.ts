@@ -15,6 +15,12 @@ const KOLKATA: BookingEmailDetails = {
   learnerName: "Arjun",
   timezone: "Asia/Kolkata",
 };
+// AC-14 (amended 2026-10-17): Intl would print GMT+0 here.
+const UTC_LEARNER: BookingEmailDetails = {
+  ...SAMPLE_BOOKING_DETAILS,
+  learnerName: "Sam",
+  timezone: "UTC",
+};
 const cancelled = (d: BookingEmailDetails): BookingEmailDetails => ({
   ...d,
   links: null,
@@ -36,6 +42,8 @@ const cases = [
     "New York, existing account",
     { ...SAMPLE_BOOKING_DETAILS, newAccount: false },
   ],
+  ["booked", "UTC", UTC_LEARNER],
+  ["cancelled", "UTC", cancelled(UTC_LEARNER)],
 ] as const;
 
 describe("booking email render (spec 0013 AC-23)", () => {
@@ -56,6 +64,19 @@ describe("booking email render (spec 0013 AC-23)", () => {
     );
     expect(ics).toMatchSnapshot("ics");
   });
+
+  it.each(["booked", "cancelled"] as const)(
+    "names the UTC zone UTC in the %s card and plain text (AC-14)",
+    async (kind) => {
+      const details =
+        kind === "cancelled" ? cancelled(UTC_LEARNER) : UTC_LEARNER;
+      const { html, text } = await renderBookingEmail(kind, details);
+      for (const body of [html, text]) {
+        expect(body).toContain("1:00 PM UTC");
+        expect(body).not.toContain("GMT+0");
+      }
+    },
+  );
 });
 
 // covers: spec 0013 AC-15, AC-17

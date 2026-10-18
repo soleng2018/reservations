@@ -25,7 +25,11 @@ import type { MintError, MintToken } from "@/server/google/token";
 import { inviteOf } from "@/server/email/testing";
 import { appUrl } from "@/server/env";
 import type { GoogleFetch } from "@/server/google/http";
-import { queueBookingNotice, type ShownAtBooking } from "./booking-notice";
+import {
+  bookingZone,
+  queueBookingNotice,
+  type ShownAtBooking,
+} from "./booking-notice";
 import { queueCalendarBackfill, syncBookingEvent } from "./calendar-sync";
 import { breakerMessage, runJobs, type Handlers } from "./runner";
 import { runSendEmail } from "./send-email";
@@ -224,9 +228,10 @@ describe.skipIf(!hasDb)("queueBookingNotice (spec 0013 AC-6, AC-11)", () => {
       ]);
     }));
 
-  // AC-6, AC-11 (amended 2026-10-16): a returning learner who books as a
-  // guest keeps their stored zone; the booked email follows the screen.
-  it("uses the zone the booking screen showed for booked, and the stored zone after", () =>
+  // AC-6, AC-11 (amended 2026-10-16, 2026-10-17): a returning learner who
+  // books as a guest keeps their stored zone; the booked email follows the
+  // screen, and every later email for that booking keeps the booked zone.
+  it("uses the zone the booking screen showed for booked, and keeps it after", () =>
     inRollback(async (trx) => {
       const { user, type, testbed, bookingId } = await confirmedBooking(trx, {
         shown: { timezone: "Asia/Kolkata", newAccount: true },
@@ -254,13 +259,228 @@ describe.skipIf(!hasDb)("queueBookingNotice (spec 0013 AC-6, AC-11)", () => {
         startsAt: moved,
         endsAt: new Date(moved.getTime() + 2 * 3_600_000),
       });
-      const [, rescheduled] = await emailsOf(trx, bookingId);
+      await cancelBooking(trx, {
+        id: bookingId,
+        expectedVersion: 2,
+        source: "learner",
+        byUserId: null,
+      });
+      const [, rescheduled, cancelled] = await emailsOf(trx, bookingId);
       expect(rescheduled?.details).toMatchObject({
-        timezone: "America/New_York",
+        timezone: "Asia/Kolkata",
         newAccount: false,
       });
-      expect(rescheduled?.subject).toMatch(/ ET$/);
+      expect(rescheduled?.subject).toMatch(/ India Time$/);
+      expect(cancelled?.details).toMatchObject({ timezone: "Asia/Kolkata" });
+      expect(cancelled?.subject).toMatch(/ India Time$/);
     }));
+
+  // AC-6, AC-7, AC-11 (amended 2026-10-17): one zone per booking.
+  describe("one zone per booking", () => {
+    const moveThenCancel = async (
+      trx: Kysely<DB>,
+      b: { type: { id: string }; testbed: { id: string }; bookingId: string },
+    ) => {
+      const moved = slot(30);
+      expect(
+        await rescheduleBooking(trx, {
+          id: b.bookingId,
+          expectedVersion: 1,
+          testbedId: b.testbed.id,
+          testbedTypeId: b.type.id,
+          startsAt: moved,
+          endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+        }),
+      ).toEqual({ ok: true, value: { version: 2 } });
+      expect(
+        await cancelBooking(trx, {
+          id: b.bookingId,
+          expectedVersion: 2,
+          source: "learner",
+          byUserId: null,
+        }),
+      ).toEqual({ ok: true, value: { version: 3 } });
+      return (await emailsOf(trx, b.bookingId)).map((e) => ({
+        kind: e.kind,
+        zone: (e.details as { timezone: string }).timezone,
+        subject: e.subject,
+      }));
+    };
+
+    const setZone = (trx: Kysely<DB>, userId: string, timezone: string) =>
+      trx
+        .updateTable("users")
+        .set({ timezone })
+        .where("id", "=", userId)
+        .execute();
+
+    const bookedRow = (trx: Kysely<DB>, bookingId: string) =>
+      trx
+        .updateTable("email_messages")
+        .where("booking_id", "=", bookingId)
+        .where("kind", "=", "booked");
+
+    it("keeps the booked zone after the learner changes theirs", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx);
+        await setZone(trx, b.user.id, "Europe/Berlin");
+        const emails = await moveThenCancel(trx, b);
+        expect(emails.map((e) => e.zone)).toEqual([
+          "America/New_York",
+          "America/New_York",
+          "America/New_York",
+        ]);
+        expect(emails.every((e) => / ET$/.test(e.subject))).toBe(true);
+      }));
+
+    it("falls back to the stored zone for a booking with no booked email", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx);
+        // As a booking made before this feature: no booked row.
+        await trx
+          .deleteFrom("email_messages")
+          .where("booking_id", "=", b.bookingId)
+          .execute();
+        await setZone(trx, b.user.id, "Europe/Berlin");
+        const emails = await moveThenCancel(trx, b);
+        expect(emails.map((e) => [e.kind, e.zone])).toEqual([
+          ["rescheduled", "Europe/Berlin"],
+          ["cancelled", "Europe/Berlin"],
+        ]);
+      }));
+
+    it.each(["failed", "suppressed"])(
+      "still takes the zone from a %s booked email",
+      (status) =>
+        inRollback(async (trx) => {
+          const b = await confirmedBooking(trx, {
+            shown: { timezone: "Asia/Kolkata", newAccount: false },
+          });
+          await bookedRow(trx, b.bookingId).set({ status }).execute();
+          const emails = await moveThenCancel(trx, b);
+          expect(emails.map((e) => e.zone)).toEqual([
+            "Asia/Kolkata",
+            "Asia/Kolkata",
+            "Asia/Kolkata",
+          ]);
+        }),
+    );
+
+    it("falls back when the booked zone is not a real zone, and still cancels", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx);
+        await bookedRow(trx, b.bookingId)
+          .set({
+            details: sql`jsonb_set(details, '{timezone}', '"Mars/Olympus"')`,
+          })
+          .execute();
+        await setZone(trx, b.user.id, "Europe/Berlin");
+        const emails = await moveThenCancel(trx, b);
+        expect(emails.slice(1).map((e) => e.zone)).toEqual([
+          "Europe/Berlin",
+          "Europe/Berlin",
+        ]);
+      }));
+
+    it("names a UTC learner's zone UTC in the subject (AC-14)", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx, {
+          shown: { timezone: "UTC", newAccount: false },
+        });
+        const emails = await moveThenCancel(trx, b);
+        expect(emails.every((e) => / [AP]M UTC$/.test(e.subject))).toBe(true);
+      }));
+  });
+
+  // covers: AC-7, AC-11 (amended 2026-10-17), bookingZone on its own.
+  describe("bookingZone", () => {
+    const FALLBACK = "Europe/Berlin";
+
+    const setBookedDetails = (
+      trx: Kysely<DB>,
+      bookingId: string,
+      details: unknown,
+    ) =>
+      trx
+        .updateTable("email_messages")
+        .set({ details: sql`${JSON.stringify(details)}::jsonb` })
+        .where("booking_id", "=", bookingId)
+        .where("kind", "=", "booked")
+        .execute();
+
+    it("returns the booked email's zone, not the fallback", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx, {
+          shown: { timezone: "Asia/Kolkata", newAccount: false },
+        });
+        expect(await bookingZone(trx, b.bookingId, FALLBACK)).toBe(
+          "Asia/Kolkata",
+        );
+      }));
+
+    it.each([
+      ["no timezone key", {}],
+      ["a number for timezone", { timezone: 5 }],
+      ["an empty timezone", { timezone: "" }],
+      ["JSON null", null],
+    ])("falls back when the booked details hold %s", (_label, details) =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx);
+        await setBookedDetails(trx, b.bookingId, details);
+        expect(await bookingZone(trx, b.bookingId, FALLBACK)).toBe(FALLBACK);
+      }),
+    );
+
+    it("falls back for a booking id that has no rows at all", () =>
+      inRollback(async (trx) => {
+        expect(await bookingZone(trx, crypto.randomUUID(), FALLBACK)).toBe(
+          FALLBACK,
+        );
+      }));
+
+    it("never reads another booking's booked email", () =>
+      inRollback(async (trx) => {
+        await confirmedBooking(trx, {
+          shown: { timezone: "Asia/Kolkata", newAccount: false },
+        });
+        const other = await confirmedBooking(trx);
+        await trx
+          .deleteFrom("email_messages")
+          .where("booking_id", "=", other.bookingId)
+          .execute();
+        expect(await bookingZone(trx, other.bookingId, FALLBACK)).toBe(
+          FALLBACK,
+        );
+      }));
+
+    it("ignores a rescheduled email's zone when the booked row is gone", () =>
+      inRollback(async (trx) => {
+        const b = await confirmedBooking(trx);
+        const moved = slot(30);
+        await rescheduleBooking(trx, {
+          id: b.bookingId,
+          expectedVersion: 1,
+          testbedId: b.testbed.id,
+          testbedTypeId: b.type.id,
+          startsAt: moved,
+          endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+        });
+        await trx
+          .deleteFrom("email_messages")
+          .where("booking_id", "=", b.bookingId)
+          .where("kind", "=", "booked")
+          .execute();
+        await trx
+          .updateTable("email_messages")
+          .set({
+            details: sql`jsonb_set(details, '{timezone}', '"Asia/Kolkata"')`,
+          })
+          .where("booking_id", "=", b.bookingId)
+          .where("kind", "=", "rescheduled")
+          .execute();
+        expect(await bookingZone(trx, b.bookingId, FALLBACK)).toBe(FALLBACK);
+      }));
+  });
 
   it("queues nothing when the booking change rolls back", () =>
     inRollback(async (trx) => {

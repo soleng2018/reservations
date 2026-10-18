@@ -7,6 +7,7 @@ import {
   type BookingEmailKind,
 } from "@/lib/booking-email";
 import { TestbedClientKind } from "@/lib/db-enums";
+import { isTimeZone } from "@/lib/timezones";
 import type { DB } from "@/server/db/types";
 import { appUrl } from "@/server/env";
 
@@ -33,6 +34,31 @@ export type ShownAtBooking = {
   readonly timezone: string;
   readonly newAccount: boolean;
 };
+
+const ZoneOnly = z.object({ timezone: z.string() });
+
+// AC-11 (amended 2026-10-17): the zone a booking speaks, the one its booked
+// email used, so every email for that booking agrees. A booking with no
+// usable booked row (made before this feature, a bad zone) gets the
+// fallback; never throws, so an email can't roll back the change (AC-7).
+export async function bookingZone(
+  trx: Kysely<DB>,
+  bookingId: string,
+  fallback: string,
+): Promise<string> {
+  const row = await trx
+    .selectFrom("email_messages")
+    .select("details")
+    .where("booking_id", "=", bookingId)
+    .where("kind", "=", "booked")
+    .orderBy("booking_version")
+    .limit(1)
+    .executeTakeFirst();
+  const parsed = ZoneOnly.safeParse(row?.details);
+  return parsed.success && isTimeZone(parsed.data.timezone)
+    ? parsed.data.timezone
+    : fallback;
+}
 
 // AC-11: one explicit column read (never a client's OS login), from the
 // booking row as the change left it. Links only for booked and rescheduled.
@@ -85,12 +111,16 @@ async function readDetails(
             url: c.url,
           })),
         };
+  const timezone =
+    kind === "booked"
+      ? (shown?.timezone ?? row.timezone)
+      : await bookingZone(trx, bookingId, row.timezone);
   return {
     userId: row.user_id,
     email: row.email,
     details: BookingEmailDetails.parse({
       learnerName: row.learnerName,
-      timezone: shown?.timezone ?? row.timezone,
+      timezone,
       newAccount: shown?.newAccount ?? false,
       labTypeName: row.labTypeName,
       testbedName: row.testbedName,
