@@ -922,6 +922,86 @@ describe.skipIf(!hasDb)("API key actions", () => {
       }
     }));
 
+  // covers: spec 0013 AC-35
+  it("maps an inbox in the sender's mailbox to its field, on create and edit, with no Google check", () =>
+    as("admin", async (trx) => {
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "GOOGLE")
+        .where("deleted_at", "is", null)
+        .execute();
+      const keyText = fakeKeyFileText(fakeServiceAccountKey());
+      const googleForm = (
+        name: string,
+        inboxes: { readonly devInbox?: string; readonly opsBcc?: string },
+        withFile = true,
+      ) => {
+        const f = new FormData();
+        f.set("name", name);
+        f.set("type", "GOOGLE");
+        f.set("googleAuth", "service_account");
+        f.set("senderEmail", "labs@nile.example");
+        f.set("calendarId", "c_abc@group.calendar.google.com");
+        f.set("devInbox", inboxes.devInbox ?? "");
+        f.set("opsBcc", inboxes.opsBcc ?? "");
+        f.set(
+          "keyFile",
+          withFile
+            ? new File([keyText], "key.json", { type: "application/json" })
+            : new File([], ""),
+        );
+        return f;
+      };
+      ctx.googleChecks = 0;
+      expect(
+        await createApiKeyAction(
+          IDLE,
+          googleForm(newName(), { opsBcc: "labs+ops@nile.example" }),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: {
+          opsBcc:
+            "Use a mailbox outside the sender's account. Every email is already in the sender's Sent folder.",
+        },
+      });
+      expect(
+        await createApiKeyAction(
+          IDLE,
+          googleForm(newName(), { devInbox: "LABS@nile.example" }),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: {
+          devInbox:
+            "Use a mailbox outside the sender's account, so test invites reach a calendar the way a learner's do.",
+        },
+      });
+      expect(ctx.googleChecks).toBe(0);
+
+      const name = newName();
+      expect(await createApiKeyAction(IDLE, googleForm(name, {}))).toEqual({
+        kind: "saved",
+        message: `Created ${name}.`,
+      });
+      const [key] = await keysNamed(trx, name);
+      if (!key) throw new Error("expected the key");
+      expect(
+        await updateApiKeyAction(
+          key.id,
+          IDLE,
+          googleForm(name, { opsBcc: "labs+ops@nile.example" }, false),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: {
+          opsBcc:
+            "Use a mailbox outside the sender's account. Every email is already in the sender's Sent folder.",
+        },
+      });
+    }));
+
   // covers: spec 0013 AC-25 to AC-29 (Google sign in), with the Google
   // checks stubbed and the response cookies held in memory.
   describe("Google sign in", () => {
@@ -1427,6 +1507,33 @@ describe.skipIf(!hasDb)("API key actions", () => {
           },
           restart: true,
         });
+      }));
+
+    // covers: spec 0013 AC-35
+    it("restarts a spent sign in whose account owns the dev inbox, on that field (AC-35)", () =>
+      as("admin", async (trx) => {
+        reset();
+        await clearGoogle(trx);
+        const state = await start();
+        const name = newName();
+        expect(
+          await createApiKeyAction(
+            IDLE,
+            signInForm(name, {
+              client: file(fakeOAuthClientText()),
+              returnUrl: returned(state),
+              devInbox: "hol.sender+dev@gmail.com",
+            }),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: {
+            devInbox:
+              "Use a mailbox outside the sender's account, so test invites reach a calendar the way a learner's do.",
+          },
+          restart: true,
+        });
+        expect(await keysNamed(trx, name)).toEqual([]);
       }));
 
     it("edits a Google sign in key without a sign in, and refuses a calendar change or a switch (AC-29)", () =>

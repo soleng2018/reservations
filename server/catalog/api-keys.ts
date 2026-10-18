@@ -12,6 +12,7 @@ import {
 import { changedFields } from "@/lib/changed-fields";
 import { ApiKeyType, GoogleAuthMethod } from "@/lib/db-enums";
 import type { Blocker } from "@/lib/delete-flow";
+import { sameMailbox } from "@/lib/email-routing";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
 import {
@@ -161,6 +162,23 @@ const storedFields = (
         opsBcc: null,
         googleAuth: null,
       };
+
+// Spec 0013 AC-35: an inbox in the sender's own mailbox would put a learner's
+// invite in the organizer's calendar, so a save refuses it. Ops BCC is
+// checked first, one error at a time. A null sender or inbox never clashes,
+// and a non GOOGLE row has neither.
+export type MailboxClashError =
+  "google_ops_bcc_sender" | "google_dev_inbox_sender";
+
+export const mailboxClash = (fields: Stored): MailboxClashError | null => {
+  const sender = fields.senderEmail;
+  if (sender === null) return null;
+  if (fields.opsBcc !== null && sameMailbox(fields.opsBcc, sender))
+    return "google_ops_bcc_sender";
+  if (fields.devInbox !== null && sameMailbox(fields.devInbox, sender))
+    return "google_dev_inbox_sender";
+  return null;
+};
 
 // Spec 0013 AC-3: only these three fields of a service account key file are
 // stored. AC-28: a Google sign in stores its client and refresh token. The
@@ -352,7 +370,7 @@ const googleAuditFields = (s: Stored) =>
     : {};
 
 export type ApiKeyCreateError =
-  UniqueError | CloudflareCheckError | GoogleCheckError;
+  UniqueError | CloudflareCheckError | GoogleCheckError | MailboxClashError;
 
 // AC-2, AC-7. The id is made here so the ciphertext can be bound to its row
 // before the insert. A live key with the same name ignoring case is refused
@@ -366,12 +384,15 @@ export async function createApiKey(
   actorId: string,
   deps: ApiKeyDeps = LIVE_DEPS,
 ): Promise<Result<{ readonly id: string }, ApiKeyCreateError>> {
+  const fields = storedFields(input);
+  // Before the Google call, so a clash costs none (spec 0013 AC-35).
+  const clash = mailboxClash(fields);
+  if (clash) return err(clash);
   const checked = await checkCredential(deps, input);
   if (!checked.ok) return checked;
   const secret = newSecret(input);
   // Both schemas require a secret on create; this is a broken invariant.
   if (secret === undefined) throw new Error("api key create without a secret");
-  const fields = storedFields(input);
   const id = crypto.randomUUID();
   const ciphertext = encryptSecret(keyring, secret, aad(id));
   try {
@@ -424,6 +445,7 @@ export type ApiKeyUpdateError =
   | UniqueError
   | CloudflareCheckError
   | GoogleCheckError
+  | MailboxClashError
   | "not_found"
   // Spec 0006 AC-12: the web process never decrypts a stored token, so a
   // change that moves a token to another type or account needs it typed.
@@ -517,6 +539,10 @@ export async function updateApiKey(
   actorId: string,
   deps: ApiKeyDeps = LIVE_DEPS,
 ): Promise<Result<void, ApiKeyUpdateError>> {
+  // Spec 0013 AC-35, before the Google call. With no new sign in the sender
+  // is not known yet (null), so the check in the transaction covers it.
+  const clash = mailboxClash(storedFields(input));
+  if (clash) return err(clash);
   const checked = await checkCredential(deps, input);
   if (!checked.ok) return checked;
   const secret = newSecret(input);
@@ -573,6 +599,11 @@ export async function updateApiKey(
             names: blockers.map((b) => b.label),
           });
       }
+
+      // AC-35 again, with the sender carried over from the locked row: a
+      // clashing row saved before AC-35 is refused once anything is saved.
+      const storedClash = mailboxClash(after);
+      if (storedClash) return err(storedClash);
 
       await trx
         .updateTable("api_keys")

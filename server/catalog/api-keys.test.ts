@@ -38,6 +38,7 @@ import {
   googleConfigured,
   googleMailConfig,
   listIdpKeyOptions,
+  mailboxClash,
   updateApiKey,
   type ApiKeyDeps,
   type GoogleKeyCreate,
@@ -1013,6 +1014,67 @@ describe.skipIf(!hasDb)("cloudflareRevokeConfig (spec 0012 AC-11)", () => {
 });
 
 // covers: spec 0013 AC-1 to AC-5, AC-28 to AC-30, AC-34 (the GOOGLE key)
+// covers: spec 0013 AC-35
+describe("mailboxClash (spec 0013 AC-35)", () => {
+  const google: Parameters<typeof mailboxClash>[0] = {
+    name: "Google",
+    type: "GOOGLE",
+    baseUrl: "https://www.googleapis.com",
+    senderEmail: "mnisdm@gmail.com",
+    calendarId: "c@group.calendar.google.com",
+    devInbox: null,
+    opsBcc: null,
+    googleAuth: "oauth",
+  };
+
+  it("is null for a non GOOGLE row, a null sender, and null inboxes", () => {
+    expect(
+      mailboxClash({
+        ...google,
+        type: "AI",
+        senderEmail: null,
+        calendarId: null,
+        googleAuth: null,
+      }),
+    ).toBeNull();
+    expect(
+      mailboxClash({
+        ...google,
+        senderEmail: null,
+        opsBcc: "mnisdm@gmail.com",
+        devInbox: "mnisdm@gmail.com",
+      }),
+    ).toBeNull();
+    expect(mailboxClash(google)).toBeNull();
+  });
+
+  it("names each clashing inbox, and only the Ops BCC when both clash", () => {
+    expect(mailboxClash({ ...google, opsBcc: "mnisdm+holops@gmail.com" })).toBe(
+      "google_ops_bcc_sender",
+    );
+    expect(
+      mailboxClash({ ...google, devInbox: "M.Nisdm@googlemail.com" }),
+    ).toBe("google_dev_inbox_sender");
+    expect(
+      mailboxClash({
+        ...google,
+        opsBcc: "mnisdm+holops@gmail.com",
+        devInbox: "mnisdm+dev@gmail.com",
+      }),
+    ).toBe("google_ops_bcc_sender");
+  });
+
+  it("is null for inboxes outside the sender's mailbox", () => {
+    expect(
+      mailboxClash({
+        ...google,
+        opsBcc: "ops@nile.co",
+        devInbox: "dev@nile.co",
+      }),
+    ).toBeNull();
+  });
+});
+
 describe.skipIf(!hasDb)("a GOOGLE key (spec 0013)", () => {
   const keyFile = fakeServiceAccountKey();
 
@@ -1681,4 +1743,119 @@ describe.skipIf(!hasDb)("a GOOGLE key (spec 0013)", () => {
       expect(e.message).toContain("api_keys_google_fields_check");
     }),
   );
+
+  // covers: spec 0013 AC-35
+  const keysNamed = (trx: Kysely<DB>, name: string) =>
+    trx.selectFrom("api_keys").select("id").where("name", "=", name).execute();
+
+  it.each([
+    [
+      "an Ops BCC",
+      { opsBcc: "Labs+ops@nile.example" },
+      "google_ops_bcc_sender",
+    ],
+    [
+      "a dev inbox",
+      { devInbox: "labs@NILE.example" },
+      "google_dev_inbox_sender",
+    ],
+    [
+      "both (Ops BCC first)",
+      { opsBcc: "labs@nile.example", devInbox: "labs+dev@nile.example" },
+      "google_ops_bcc_sender",
+    ],
+  ] as const)(
+    "refuses %s in the sender's mailbox on create, before any Google call, writing nothing (AC-35)",
+    (_label, inboxes, error) =>
+      inRollback(async (trx) => {
+        await clearGoogle(trx);
+        const actor = await makeUser(trx, { role: "admin" });
+        const { calls, deps } = googleStub();
+        const fields = googleInput(inboxes);
+        expect(
+          await createApiKey(asConn(trx), KEYRING, fields, actor.id, deps),
+        ).toEqual({ ok: false, error });
+        expect(calls).toEqual([]);
+        expect(await keysNamed(trx, fields.name)).toEqual([]);
+      }),
+  );
+
+  it("refuses a Google sign in create whose signed in account owns an inbox (AC-35)", () =>
+    inRollback(async (trx) => {
+      await clearGoogle(trx);
+      const actor = await makeUser(trx, { role: "admin" });
+      const fields = signInInput({ devInbox: "Hol.Sender+dev@googlemail.com" });
+      expect(
+        await createApiKey(
+          asConn(trx),
+          KEYRING,
+          fields,
+          actor.id,
+          googleStub().deps,
+        ),
+      ).toEqual({ ok: false, error: "google_dev_inbox_sender" });
+      expect(await keysNamed(trx, fields.name)).toEqual([]);
+    }));
+
+  it("refuses an edit with a new key file and a clashing Ops BCC before the Google call (AC-35)", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setup(trx);
+      const { calls, deps } = googleStub();
+      const before = await stored(trx, id);
+      expect(
+        await updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          edit(fields, {
+            opsBcc: "labs+ops@nile.example",
+            keyFile: fakeServiceAccountKey({ private_key_id: "new-key-id" }),
+          }),
+          actor.id,
+          deps,
+        ),
+      ).toEqual({ ok: false, error: "google_ops_bcc_sender" });
+      expect(calls).toEqual([]);
+      expect(await stored(trx, id)).toEqual(before);
+      expect((await auditsFor(trx, id)).map((a) => a.action)).toEqual([
+        "api_key.created",
+      ]);
+    }));
+
+  it("refuses any save of a clashing row saved before AC-35 until the inbox is fixed, and a no change edit still returns early (AC-35)", () =>
+    inRollback(async (trx) => {
+      const { actor, id, fields } = await setupSignIn(trx);
+      await trx
+        .updateTable("api_keys")
+        .set({ ops_bcc: "hol.sender+holops@gmail.com" })
+        .where("id", "=", id)
+        .execute();
+      const clashing = { ...fields, opsBcc: "hol.sender+holops@gmail.com" };
+      const before = await stored(trx, id);
+      const save = (changes: Partial<SignInUpdate>) =>
+        updateApiKey(
+          asConn(trx),
+          KEYRING,
+          id,
+          editSignIn(clashing, changes),
+          actor.id,
+          googleStub().deps,
+        );
+
+      expect(await save({})).toEqual({ ok: true, value: undefined });
+      expect(await save({ name: `Renamed ${unique()}` })).toEqual({
+        ok: false,
+        error: "google_ops_bcc_sender",
+      });
+      expect(await stored(trx, id)).toEqual(before);
+      expect((await auditsFor(trx, id)).map((a) => a.action)).toEqual([
+        "api_key.created",
+      ]);
+
+      expect(await save({ opsBcc: null })).toEqual({
+        ok: true,
+        value: undefined,
+      });
+      expect((await stored(trx, id)).ops_bcc).toBeNull();
+    }));
 });

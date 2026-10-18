@@ -261,7 +261,7 @@ function MailboxFields({ defaults }: { readonly defaults: ApiKeyDefaults }) {
       <Field
         path="devInbox"
         label="Dev inbox"
-        description="Test and dev- bookings are sent here. Leave blank to not send them."
+        description="Test and dev- bookings are sent here. Leave blank to not send them. Use a mailbox outside the sender's account."
       >
         <Input
           name="devInbox"
@@ -274,7 +274,7 @@ function MailboxFields({ defaults }: { readonly defaults: ApiKeyDefaults }) {
       <Field
         path="opsBcc"
         label="Ops BCC"
-        description="Gets a copy of every learner email."
+        description="Gets a copy of every learner email. Use a mailbox outside the sender's account."
       >
         <Input
           name="opsBcc"

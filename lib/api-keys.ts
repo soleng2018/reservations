@@ -57,6 +57,11 @@ export const API_KEY_MESSAGES = {
   signInRequired: "Sign in with Google again to change the calendar.",
   signInSwitch: "Sign in with Google to switch to Google sign in.",
   fileSwitch: "Upload the key file to switch to Service account.",
+  // Spec 0013 AC-35 (amended 2026-10-17), an inbox in the sender's mailbox.
+  opsBccSender:
+    "Use a mailbox outside the sender's account. Every email is already in the sender's Sent folder.",
+  devInboxSender:
+    "Use a mailbox outside the sender's account, so test invites reach a calendar the way a learner's do.",
 } as const;
 
 // Spec 0013 AC-32: the API Keys list's words for a GOOGLE key.

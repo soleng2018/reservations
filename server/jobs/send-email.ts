@@ -66,7 +66,7 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
   if (new Date(details.data.endsAt) <= (await dbNow(trx)))
     return suppress(STALE);
 
-  // AC-16.
+  // AC-16, AC-36.
   const route = routeEmail(row.to_address, ctx.cfg);
   if (route.kind === "suppress") return suppress(route.reason);
 

@@ -563,6 +563,11 @@ const apiKeyError = (
         message: API_KEY_MESSAGES.googleUnavailable,
         fields: {},
       };
+    // Spec 0013 AC-35.
+    case "google_ops_bcc_sender":
+      return fieldError("opsBcc", API_KEY_MESSAGES.opsBccSender);
+    case "google_dev_inbox_sender":
+      return fieldError("devInbox", API_KEY_MESSAGES.devInboxSender);
     default: {
       const never: never = e;
       return never;
@@ -693,6 +698,8 @@ function updateError(
     case "google_delegation":
     case "google_calendar":
     case "google_unavailable":
+    case "google_ops_bcc_sender":
+    case "google_dev_inbox_sender":
       return apiKeyError(e, googleContext(input));
     case "cloudflare_retype":
       return fieldError("secret", API_KEY_MESSAGES.cloudflareRetype);
