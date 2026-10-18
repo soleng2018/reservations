@@ -3,10 +3,16 @@ import type {
   DetailsFields,
   DetailsResult,
   PreviewResult,
-  StartsResult,
 } from "@/app/book/actions";
 import { BOOK_ERRORS } from "./booking-input";
 import type { FieldErrors } from "./form-errors";
+import { firstName } from "./manage-reservations";
+import {
+  CLEAR_TIME,
+  timeReducer,
+  type TimeEvent,
+  type TimeSlice,
+} from "./time-pick";
 
 // The /book client flow (spec 0010 AC-2 to AC-12, the state transition
 // table). Pure: the component dispatches events and does the side effects
@@ -48,19 +54,23 @@ export const historyPos = (s: FlowState): number =>
 
 export type Booked = Extract<BookState, { kind: "booked" }>;
 
-export type StartsList = {
-  readonly starts: readonly string[]; // ISO UTC
-  readonly durationMs: number;
-  readonly now: string; // DB now(), ISO
-  readonly loadedAt: number; // browser time, display freshness only
-};
-
-// The Step 1 notice inside the card (AC-3).
+// The Step 1 notice inside the card (AC-3). `signed_out`: a signed in
+// learner's session ended (spec 0011 AC-13); it links to sign in again.
 export type DetailsNotice =
   | { readonly kind: "none" }
   | { readonly kind: "has_live_booking" }
   | { readonly kind: "type_unavailable" }
+  | { readonly kind: "signed_out" }
   | { readonly kind: "alert"; readonly message: string };
+
+// The signed in learner booking for themselves (spec 0011 AC-13): their
+// stored details, shown read only, with only the lab type to pick.
+export type Account = {
+  readonly name: string;
+  readonly company: string | null;
+  readonly email: string;
+  readonly timezone: string;
+};
 
 export type Preview =
   | { readonly kind: "loading" }
@@ -71,7 +81,7 @@ export type Preview =
     }
   | { readonly kind: "fallback" }; // "Assigned when you confirm"
 
-export type FlowState = {
+export type FlowState = TimeSlice & {
   readonly step: Step;
   readonly phase: Phase;
   readonly form: DetailsFields;
@@ -81,11 +91,6 @@ export type FlowState = {
   readonly checking: boolean;
   readonly fields: FieldErrors;
   readonly notice: DetailsNotice;
-  readonly starts: StartsList | null;
-  readonly startsStatus: "idle" | "loading" | "failed";
-  readonly day: string | null; // yyyy-mm-dd in the zone
-  readonly pick: string | null; // ISO start
-  readonly dropped: boolean; // AC-6 "That time is no longer available"
   readonly preview: Preview;
   readonly token: string | null;
   readonly confirmLimited: boolean;
@@ -110,19 +115,27 @@ const EMPTY_FORM: DetailsFields = {
   testbedTypeId: "",
 };
 
-export const initialFlow = (timezone: string): FlowState => ({
+// An account seeds the details, so Step 3 shows them as stored.
+export const initialFlow = (
+  timezone: string,
+  account?: Account,
+): FlowState => ({
   step: "details",
   phase: "editing",
-  form: { ...EMPTY_FORM, timezone },
+  form: account
+    ? {
+        ...EMPTY_FORM,
+        name: account.name,
+        company: account.company ?? "",
+        email: account.email,
+        timezone: account.timezone,
+      }
+    : { ...EMPTY_FORM, timezone },
   details: null,
   checking: false,
   fields: {},
   notice: { kind: "none" },
-  starts: null,
-  startsStatus: "idle",
-  day: null,
-  pick: null,
-  dropped: false,
+  ...CLEAR_TIME,
   preview: { kind: "loading" },
   token: null,
   confirmLimited: false,
@@ -147,14 +160,8 @@ export type FlowEvent =
       readonly form: DetailsFields;
       readonly result: DetailsResult | "thrown";
     }
-  | { readonly type: "starts_loading" }
-  | {
-      readonly type: "starts_done";
-      readonly result: StartsResult | "thrown";
-      readonly at: number;
-    }
-  | { readonly type: "pick_day"; readonly key: string }
-  | { readonly type: "pick_start"; readonly iso: string }
+  // The Step 2 events (lib/time-pick.ts).
+  | TimeEvent
   // In app Back, browser Back and Forward, and Continue from Step 2.
   | { readonly type: "go"; readonly step: Step }
   | { readonly type: "preview_done"; readonly result: PreviewResult | "thrown" }
@@ -180,14 +187,6 @@ export const reachableStep = (s: FlowState, step: Step): Step =>
     : step === "confirm" && !s.pick
       ? "time"
       : step;
-
-const clearTime = {
-  starts: null,
-  startsStatus: "idle",
-  day: null,
-  pick: null,
-  dropped: false,
-} as const;
 
 const enterStep = (s: FlowState, step: Step): FlowState => ({
   ...s,
@@ -225,10 +224,12 @@ function checkDone(
       return { ...done, fields: result.fields };
     case "has_live_booking":
       return { ...done, notice: { kind: "has_live_booking" } };
+    case "signed_out":
+      return { ...done, notice: { kind: "signed_out" } };
     case "type_unavailable":
       return {
         ...done,
-        ...clearTime,
+        ...CLEAR_TIME,
         form: { ...s.form, testbedTypeId: "" },
         notice: { kind: "type_unavailable" },
       };
@@ -242,24 +243,6 @@ function checkDone(
       return never;
     }
   }
-}
-
-function startsDone(
-  s: FlowState,
-  result: StartsResult | "thrown",
-  at: number,
-): FlowState {
-  if (result === "thrown" || "limited" in result)
-    return { ...s, startsStatus: "failed" };
-  const starts: StartsList = { ...result, loadedAt: at };
-  const kept = s.pick !== null && result.starts.includes(s.pick);
-  return {
-    ...s,
-    starts,
-    startsStatus: "idle",
-    pick: kept ? s.pick : null,
-    dropped: s.dropped || (s.pick !== null && !kept),
-  };
 }
 
 // AC-9: every bookAction reply lands by cause.
@@ -282,6 +265,8 @@ function bookDone(s: FlowState, result: BookState | "thrown"): FlowState {
       return { ...editing, step: "time", pick: null, dropped: true };
     case "has_live_booking":
       return { ...toDetails, notice: { kind: "has_live_booking" } };
+    case "signed_out":
+      return { ...toDetails, notice: { kind: "signed_out" } };
     case "booking_pending":
     case "admin_email":
       return { ...toDetails, notice: alert(BOOK_ERRORS[result.code]) };
@@ -290,7 +275,7 @@ function bookDone(s: FlowState, result: BookState | "thrown"): FlowState {
     case "type_unavailable":
       return {
         ...toDetails,
-        ...clearTime,
+        ...CLEAR_TIME,
         form: { ...s.form, testbedTypeId: "" },
         notice: { kind: "type_unavailable" },
       };
@@ -319,7 +304,7 @@ export function flowReducer(s: FlowState, e: FlowEvent): FlowState {
           : s.notice;
       // AC-11: a new lab type or timezone clears the time step.
       return e.field === "testbedTypeId" || e.field === "timezone"
-        ? { ...base, ...clearTime, notice }
+        ? { ...base, ...CLEAR_TIME, notice }
         : { ...base, notice };
     }
     case "check_started":
@@ -333,13 +318,11 @@ export function flowReducer(s: FlowState, e: FlowEvent): FlowState {
     case "check_done":
       return checkDone(s, e.form, e.result);
     case "starts_loading":
-      return { ...s, startsStatus: "loading" };
-    case "starts_done":
-      return s.phase === "editing" ? startsDone(s, e.result, e.at) : s;
     case "pick_day":
-      return { ...s, day: e.key, pick: null, dropped: false };
     case "pick_start":
-      return { ...s, pick: e.iso, dropped: false };
+      return timeReducer(s, e);
+    case "starts_done":
+      return s.phase === "editing" ? timeReducer(s, e) : s;
     case "go":
       return s.phase === "editing" ? enterStep(s, reachableStep(s, e.step)) : s;
     case "preview_done": {
@@ -387,7 +370,7 @@ export function flowReducer(s: FlowState, e: FlowEvent): FlowState {
         booked: s.booked,
         resetSignal: s.resetSignal,
         success: {
-          firstName: details.name.trim().split(/\s+/)[0] ?? "",
+          firstName: firstName(details.name),
           email: details.email.trim(),
         },
       };

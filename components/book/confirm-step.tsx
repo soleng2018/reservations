@@ -5,6 +5,7 @@ export type ConfirmRow = {
   readonly label: string;
   readonly value: string;
   readonly accent?: boolean; // Nile Blue, for the new times
+  readonly struck?: boolean; // muted and struck through: the time it replaces
 };
 
 export type ConfirmSummary = {
@@ -15,9 +16,15 @@ export type ConfirmSummary = {
 };
 
 // The Step 3 summary card (spec 0010 AC-7). A plain summary object, so
-// feature 13's reschedule reuses it with its own rows and labels. The
-// actions sit outside it, in the flow.
-export function ConfirmStep({ summary }: { readonly summary: ConfirmSummary }) {
+// feature 13's reschedule reuses it with its own rows and labels, and an
+// optional note under the card. The actions sit outside it, in the flow.
+export function ConfirmStep({
+  summary,
+  note,
+}: {
+  readonly summary: ConfirmSummary;
+  readonly note?: string;
+}) {
   return (
     <>
       <StepHeading eyebrow={summary.eyebrow} title={summary.title} />
@@ -26,6 +33,7 @@ export function ConfirmStep({ summary }: { readonly summary: ConfirmSummary }) {
         <hr className="my-1 border-border" />
         <Rows rows={summary.when} />
       </div>
+      {note ? <p className="mt-3 text-sub text-fg2">{note}</p> : null}
     </>
   );
 }
@@ -39,10 +47,16 @@ function Rows({ rows }: { readonly rows: readonly ConfirmRow[] }) {
           className="flex flex-wrap justify-between gap-x-4 gap-y-0.5"
         >
           <dt className="text-fg3">{row.label}</dt>
+          {/* The mock dims a struck row to 60%, which fails AA; fg2 mutes
+              it with a passing pair instead. */}
           <dd
             className={cn(
-              "min-w-0 text-right font-bold wrap-anywhere",
-              row.accent ? "text-nile-blue" : "text-fg1",
+              "min-w-0 text-right wrap-anywhere",
+              row.struck
+                ? "text-fg2 line-through"
+                : row.accent
+                  ? "font-bold text-nile-blue"
+                  : "font-bold text-fg1",
             )}
           >
             {row.value}

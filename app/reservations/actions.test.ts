@@ -6,11 +6,28 @@ const ctx = vi.hoisted(() => ({
   conn: undefined as Kysely<DB> | undefined,
   ip: "203.0.113.7",
   human: true,
+  // The signed in learner's users.id; undefined is anyone else, whom
+  // requireLearner() redirects.
+  learnerId: undefined as string | undefined,
+  revalidated: [] as string[],
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ "cf-connecting-ip": ctx.ip }),
+}));
+vi.mock("next/cache", () => ({
+  revalidatePath: (path: string) => ctx.revalidated.push(path),
+}));
+vi.mock("@/server/env", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  trustProxyHeaders: () => true,
+}));
+vi.mock("@/server/auth/require", () => ({
+  requireLearner: async () => {
+    if (!ctx.learnerId) throw new Error("NEXT_REDIRECT");
+    return { user: { id: ctx.learnerId } };
+  },
 }));
 vi.mock("@/server/turnstile", () => ({
   verifyTurnstile: async () =>
@@ -21,9 +38,11 @@ vi.mock("@/server/db", async (importOriginal) => {
   return { ...real, db: () => ctx.conn ?? real.db() };
 });
 
-const { resendSetPassword } = await import("./actions");
-const { asConn, hasDb, inRollback, makeUser } =
+const { cancelReservationAction, resendSetPassword } =
+  await import("./actions");
+const { asConn, hasDb, inRollback, makeTestbed, makeType, makeUser, slot } =
   await import("@/server/db/testing");
+const { appUrl } = await import("@/server/env");
 
 const GENERIC =
   "If that email has a reservation waiting for a password, we've sent a new link. Check your inbox.";
@@ -142,5 +161,104 @@ describe.skipIf(!hasDb)("resendSetPassword (AC-8)", () => {
       await resendSetPassword(undefined, form(u.email));
       expect(await resendJobs(trx, u.id)).toEqual([]);
       expect(await audited(trx, u.id)).toBe(0);
+    }));
+
+  // covers: spec 0014 AC-15
+  it("puts this app's own origin in the job, so the link comes back here", () =>
+    withConn(async (trx) => {
+      const u = await makeUser(trx, { set_password_pending: true });
+      await resendSetPassword(undefined, form(u.email));
+      const [job] = await trx
+        .selectFrom("jobs")
+        .select("payload")
+        .where("kind", "=", "send_welcome")
+        .where("payload", "@>", JSON.stringify({ userId: u.id }))
+        .execute();
+      expect(job?.payload).toEqual({ userId: u.id, appUrl: appUrl() });
+    }));
+});
+
+// A learner with one Upcoming booking.
+async function upcoming(trx: Kysely<DB>) {
+  const type = await makeType(trx);
+  const testbed = await makeTestbed(trx, type.id);
+  const user = await makeUser(trx);
+  const booking = await trx
+    .insertInto("bookings")
+    .values({
+      user_id: user.id,
+      testbed_id: testbed.id,
+      testbed_type_id: type.id,
+      starts_at: slot(48),
+      ends_at: slot(50),
+      status: "confirmed",
+    })
+    .returningAll()
+    .executeTakeFirstOrThrow();
+  return { user, booking };
+}
+
+const statusOf = async (trx: Kysely<DB>, id: string) =>
+  (
+    await trx
+      .selectFrom("bookings")
+      .select("status")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+  ).status;
+
+// covers: spec 0011 AC-4, AC-5, AC-15
+describe.skipIf(!hasDb)("cancelReservationAction (spec 0011)", () => {
+  beforeEach(() => {
+    ctx.learnerId = undefined;
+    ctx.revalidated = [];
+  });
+
+  it("cancels the learner's own booking and refreshes the list", () =>
+    withConn(async (trx) => {
+      const { user, booking } = await upcoming(trx);
+      ctx.learnerId = user.id;
+      expect(
+        await cancelReservationAction(booking.id, booking.version),
+      ).toEqual({ ok: true, value: undefined });
+      expect(await statusOf(trx, booking.id)).toBe("cancelled");
+      expect(ctx.revalidated).toEqual(["/reservations"]);
+    }));
+
+  it("answers stale for another learner's booking and changes nothing", () =>
+    withConn(async (trx) => {
+      const { booking } = await upcoming(trx);
+      const other = await makeUser(trx);
+      ctx.learnerId = other.id;
+      expect(
+        await cancelReservationAction(booking.id, booking.version),
+      ).toEqual({ ok: false, error: "stale" });
+      expect(await statusOf(trx, booking.id)).toBe("confirmed");
+      expect(ctx.revalidated).toEqual(["/reservations"]);
+    }));
+
+  it("answers stale for a malformed id or version", () =>
+    withConn(async (trx) => {
+      const { user, booking } = await upcoming(trx);
+      ctx.learnerId = user.id;
+      expect(await cancelReservationAction("nope", booking.version)).toEqual({
+        ok: false,
+        error: "stale",
+      });
+      expect(await cancelReservationAction(booking.id, 1.5)).toEqual({
+        ok: false,
+        error: "stale",
+      });
+      expect(await statusOf(trx, booking.id)).toBe("confirmed");
+    }));
+
+  it("writes nothing when nobody is signed in as a learner", () =>
+    withConn(async (trx) => {
+      const { booking } = await upcoming(trx);
+      await expect(
+        cancelReservationAction(booking.id, booking.version),
+      ).rejects.toThrow("NEXT_REDIRECT");
+      expect(await statusOf(trx, booking.id)).toBe("confirmed");
+      expect(ctx.revalidated).toEqual([]);
     }));
 });

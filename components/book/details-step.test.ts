@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { DetailsFields } from "@/app/book/actions";
 import type { SelectOption } from "@/components/form-select";
-import type { DetailsNotice } from "@/lib/booking-flow";
+import type { Account, DetailsNotice } from "@/lib/booking-flow";
 import type { FieldErrors } from "@/lib/form-errors";
 import { DetailsStep } from "./details-step";
 
@@ -24,16 +24,19 @@ const render = ({
   fields = {},
   notice = { kind: "none" },
   checking = false,
+  account,
 }: {
   readonly types?: readonly SelectOption[];
   readonly fields?: FieldErrors;
   readonly notice?: DetailsNotice;
   readonly checking?: boolean;
+  readonly account?: Account;
 } = {}) =>
   renderToStaticMarkup(
     createElement(DetailsStep, {
       types,
       zones: ["America/New_York", "UTC"],
+      account,
       form: FORM,
       fields,
       notice,
@@ -136,5 +139,38 @@ describe("DetailsStep while the check runs (AC-2)", () => {
   it("enables Continue otherwise", () => {
     const html = render();
     expect(html).not.toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);
+  });
+});
+
+const ACCOUNT: Account = {
+  name: "Priya Shah",
+  company: "Acme University",
+  email: "priya@example.test",
+  timezone: "America/New_York",
+};
+
+// covers: spec 0011 AC-13
+describe("DetailsStep for a signed in learner (spec 0011 AC-13)", () => {
+  it("shows the account read only, with Lab type the only input", () => {
+    const html = render({ account: ACCOUNT });
+    expect(html).toContain("Booking as");
+    expect(html).toContain("Priya Shah");
+    expect(html).toContain("Acme University");
+    expect(html).toContain("priya@example.test");
+    expect(html).toMatch(/America\/New York \(GMT-[45]\)/);
+    expect(html).toContain('name="testbedTypeId"');
+    for (const field of ["name", "company", "email", "timezone"])
+      expect(html).not.toContain(`name="${field}"`);
+  });
+
+  it("hides Company when the account has none", () => {
+    const html = render({ account: { ...ACCOUNT, company: null } });
+    expect(html).not.toContain("Company");
+  });
+
+  it("tells a signed out learner to sign in again", () => {
+    const html = render({ account: ACCOUNT, notice: { kind: "signed_out" } });
+    expect(html).toContain("You were signed out. Sign in again to book.");
+    expect(html).toContain('href="/reservations"');
   });
 });

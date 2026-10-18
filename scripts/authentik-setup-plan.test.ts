@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
   CALLBACK_PATH,
+  LAB_AUTHORIZATION_FLOW_SLUG,
+  LABS_PROVIDER_NAME,
   PROVISIONING_PERMISSIONS,
+  desiredHolAuthorizationFlow,
+  desiredLabAuthorizationFlow,
+  desiredLabsProvider,
   desiredProvider,
   diffFields,
   holFlowProblems,
   isolationExpression,
   isolationFlowProblems,
+  labsAccessExpression,
+  labsAppProblems,
   parseAppUrls,
+  parseTeamDomain,
   planPermissions,
   uncoveredProviders,
+  desiredRecoveryLoginStage,
+  RECOVERY_STAGE_ORDER,
 } from "./authentik-setup-plan";
 
 describe("isolationExpression (AC-17)", () => {
@@ -133,10 +143,15 @@ describe("desiredProvider", () => {
     expect(p.sub_mode).toBe("user_id");
     expect(p.authorization_flow).toBe("hol-auth");
     expect(p.redirect_uris).toEqual([
-      { matching_mode: "strict", url: `https://hol.example${CALLBACK_PATH}` },
+      {
+        matching_mode: "strict",
+        url: `https://hol.example${CALLBACK_PATH}`,
+        redirect_uri_type: "authorization",
+      },
       {
         matching_mode: "regex",
         url: "^http:\\/\\/localhost:3000\\/api\\/auth\\/callback\\/authentik$",
+        redirect_uri_type: "authorization",
       },
     ]);
   });
@@ -146,6 +161,87 @@ describe("desiredProvider", () => {
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}`)).toBe(true);
     expect(re.test(`http://localhost:3000${CALLBACK_PATH}/x`)).toBe(false);
     expect(re.test(`http://localhostX3000${CALLBACK_PATH}`)).toBe(false);
+  });
+});
+
+// covers: spec 0003 AC-19 (HOL Labs, spec 0012 AC-9)
+describe("HOL Labs", () => {
+  it("parses the Cloudflare team domain as a bare host", () => {
+    expect(parseTeamDomain(" Soleng2018.CloudflareAccess.com ")).toEqual({
+      ok: true,
+      domain: "soleng2018.cloudflareaccess.com",
+    });
+    for (const bad of [
+      undefined,
+      "",
+      "https://soleng2018.cloudflareaccess.com",
+      "soleng2018.cloudflareaccess.com/cdn-cgi",
+      "evil.example",
+      "soleng2018.cloudflareaccess.com.evil.example",
+    ])
+      expect(parseTeamDomain(bad).ok).toBe(false);
+  });
+
+  it("gives HOL Labs its own empty authorization flow, like HOL's", () => {
+    expect(desiredLabAuthorizationFlow).toEqual({
+      ...desiredHolAuthorizationFlow,
+      name: "HOL lab authorization",
+      slug: LAB_AUTHORIZATION_FLOW_SLUG,
+    });
+    expect(
+      holFlowProblems(
+        { designation: "authorization", policyBindings: 1, stageBindings: 0 },
+        LAB_AUTHORIZATION_FLOW_SLUG,
+      ),
+    ).toEqual([`${LAB_AUTHORIZATION_FLOW_SLUG}: has 1 policy binding(s)`]);
+  });
+
+  it("wants one strict Cloudflare callback, a hashed sub, and the groups scope", () => {
+    const p = desiredLabsProvider({
+      teamDomain: "team.cloudflareaccess.com",
+      authorizationFlow: "lab-auth",
+      invalidationFlow: "inv",
+      signingKey: "key",
+      scopeMappings: ["profile", "openid", "email"],
+    });
+    expect(p).toMatchObject({
+      name: LABS_PROVIDER_NAME,
+      client_type: "confidential",
+      grant_types: ["authorization_code", "refresh_token"],
+      sub_mode: "hashed_user_id",
+      issuer_mode: "per_provider",
+      authorization_flow: "lab-auth",
+      property_mappings: ["email", "openid", "profile"],
+      redirect_uris: [
+        {
+          matching_mode: "strict",
+          url: "https://team.cloudflareaccess.com/cdn-cgi/access/callback",
+          redirect_uri_type: "authorization",
+        },
+      ],
+    });
+  });
+
+  it("passes staff, and a learner only while in some pod-* group", () => {
+    const text = labsAccessExpression();
+    expect(text).toContain('path == "hol/learners"');
+    expect(text).toContain('path.startswith("hol/learners/")');
+    expect(text).toContain('name__startswith="pod-"');
+    // Like isolation, its code never reads the app or the VM being opened.
+    const code = text
+      .split("\n")
+      .filter((l) => !l.startsWith("#"))
+      .join("\n");
+    expect(code).not.toMatch(/context|application|slug/);
+  });
+
+  it("refuses an app with any binding but hol-labs-access", () => {
+    expect(labsAppProblems([], "p1")).toEqual([]);
+    expect(labsAppProblems([{ policy: "p1" }], "p1")).toEqual([]);
+    expect(
+      labsAppProblems([{ policy: "p1" }, { policy: null }], "p1"),
+    ).toHaveLength(1);
+    expect(labsAppProblems([{ policy: "p1" }], undefined)).toHaveLength(1);
   });
 });
 
@@ -190,5 +286,16 @@ describe("planPermissions", () => {
         ),
       ),
     ).toBe(true);
+  });
+});
+
+// covers: spec 0014 AC-11
+describe("hol-recovery stages (spec 0014 AC-11)", () => {
+  it("signs the learner in after the password, with a browser session", () => {
+    expect(desiredRecoveryLoginStage).toEqual({
+      name: "hol-recovery-login",
+      session_duration: "seconds=0",
+    });
+    expect(RECOVERY_STAGE_ORDER).toEqual({ prompt: 10, write: 20, login: 30 });
   });
 });

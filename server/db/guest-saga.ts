@@ -10,6 +10,10 @@ import {
   dbNow,
   lockBookableTestbed,
 } from "./bookings";
+import {
+  queueBookingNotice,
+  type ShownAtBooking,
+} from "@/server/jobs/booking-notice";
 import type { DB } from "./types";
 
 // The rows the guest booking saga writes (spec 0001's saga, spec 0002's data
@@ -191,17 +195,21 @@ export async function recordAuthentikUser(
 }
 
 // Step 3. "gone" means the sweeper already removed the booking: compensate
-// and tell the user to try again.
+// and tell the user to try again. The booked notice is queued here, in the
+// same transaction (spec 0013 AC-6), with the zone the booking screen showed
+// and whether this saga created the account. The version is always 1, since
+// bookings_version_bump skips provisioning to confirmed.
 export async function confirmGuestBooking(
   trx: Kysely<DB>,
   ref: SagaRef,
-): Promise<Result<void, "gone">> {
+  shown: ShownAtBooking,
+): Promise<Result<{ version: number }, "gone">> {
   const confirmed = await trx
     .updateTable("bookings")
     .set({ status: "confirmed" })
     .where("id", "=", ref.bookingId)
     .where("status", "=", "provisioning")
-    .returning("id")
+    .returning("version")
     .executeTakeFirst();
   if (!confirmed) return err("gone");
   await trx
@@ -209,7 +217,14 @@ export async function confirmGuestBooking(
     .set({ authentik_pending_saga: false })
     .where("id", "=", ref.userId)
     .execute();
-  return ok(undefined);
+  await queueBookingNotice(
+    trx,
+    ref.bookingId,
+    confirmed.version,
+    "booked",
+    shown,
+  );
+  return ok(confirmed);
 }
 
 // Undoes a saga that did not confirm (AC-13). Deletes the provisioning

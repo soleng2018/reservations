@@ -198,7 +198,7 @@ Tracer Bullet: prove the admin, then the guest, then the access thread end to en
 - One host is both dev and prod, so the hand started worker **is** the production worker. Starting it in a dev shell reconciles real groups. The advisory lock prevents two, but someone has to keep it running until the image and compose service exist.
 - Until feature 15, `send_welcome` jobs pile up as `pending` and new guests receive no set password email. A new guest can't sign in to manage the booking yet. The confirmation says to check their email, and that email arrives only once the job runner ships.
 - Access starts up to 30 seconds after the booking's start time and ends up to 30 seconds after its end (the tick).
-- Cloudflare Access revoke is not done yet, so an open browser rendered VM session runs on until its 1 hour Access session expires.
+- Cloudflare Access revoke is not done yet, so an open browser rendered VM session runs on until its 1 hour Access session expires. (Corrected 2026-10-15: the session limit bounds only new requests, and an open stream outlives even the revoke that spec 0012 added; see spec 0012 AC-10.)
 - A testbed whose create was undone frees its slug for reuse. This slightly loosens spec 0002's "never reused" rule, which is safe only because that testbed never had a group or a booking.
 - The admin UI here is throwaway; slice 2 replaces it.
 - Anyone who knows an email can use up its 3 per hour booking bucket (accepted; Turnstile and the IP bucket blunt it). In dev, with `TRUST_PROXY_HEADERS` off, every request shares one IP bucket.

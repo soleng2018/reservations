@@ -69,6 +69,12 @@ test("an admin adds, finds, edits, deactivates, and reactivates a learner", asyn
   await expect(page).toHaveURL(/\/admin\/users\/[0-9a-f-]{36}$/);
   await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
   await expect(page.getByText("No reservations yet.")).toBeVisible();
+  // Spec 0013 AC-21: the Emails section, empty for a new learner.
+  const emails = page
+    .getByRole("region", { name: "Emails" })
+    .or(page.locator("section[aria-labelledby='emails-heading']"));
+  await expect(emails.getByRole("heading", { name: "Emails" })).toBeVisible();
+  await expect(emails.getByText("No emails yet.")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Resend set password email" }),
   ).toBeVisible();

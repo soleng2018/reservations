@@ -49,6 +49,18 @@
       "skillPath": "skills/document/SKILL.md",
       "computedHash": "90933443f204d2ed29c84730be87b7b5470f6819fccde6129aedad1df517fb92"
     },
+    "gws-calendar": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "skillPath": "skills/gws-calendar/SKILL.md",
+      "computedHash": "0c5956e1069552444b00bf45381f08ffa9a7bca9810fefb1801866216008bcfc"
+    },
+    "gws-gmail": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "skillPath": "skills/gws-gmail/SKILL.md",
+      "computedHash": "5e5b5fdb4b4f347310d929657ed773abcaf528b5ac0a68deee12d3d38d307642"
+    },
     "kysely": {
       "source": "mindrally/skills",
       "sourceType": "github",
@@ -66,6 +78,12 @@
       "sourceType": "github",
       "skillPath": "skills/playwright-cli/SKILL.md",
       "computedHash": "ffbd59a973d4e2c19c6ecc31254a14497069c362f1d1820b6a6cfbe62de34a73"
+    },
+    "react-email": {
+      "source": "resend/react-email",
+      "sourceType": "github",
+      "skillPath": "skills/react-email/SKILL.md",
+      "computedHash": "da0feefc6ddf4aaeff930ab203d269774da464429e35b178d2403d69d2dc2fb3"
     },
     "scope": {
       "source": "jsmastery-pro/skills",

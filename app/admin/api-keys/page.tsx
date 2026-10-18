@@ -15,7 +15,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { API_KEY_MESSAGES, SECRET_MASK } from "@/lib/api-keys";
+import {
+  API_KEY_MESSAGES,
+  GOOGLE_METHOD_LABEL,
+  GOOGLE_REJECTED_LINE,
+  SECRET_MASK,
+} from "@/lib/api-keys";
 import type { ApiKeyType } from "@/lib/db-enums";
 import { formatDay } from "@/lib/format-time";
 import { requireAdmin } from "@/server/auth/require";
@@ -31,15 +36,19 @@ import {
 
 export const metadata: Metadata = { title: "API Keys" };
 
-// The mock's blue for IDP, violet for AI.
+// The mock's blue for IDP, violet for AI; grey for the Cloudflare key
+// (spec 0006 AC-12) and the Google key (spec 0013 AC-1).
 const TYPE_TONE = {
   IDP: "info",
   AI: "accent",
-} as const satisfies Record<ApiKeyType, "info" | "accent">;
+  CLOUDFLARE: "neutral",
+  GOOGLE: "neutral",
+} as const satisfies Record<ApiKeyType, "info" | "accent" | "neutral">;
 
-// Spec 0006: list, search, add, edit, and delete IDP and AI credentials. The
-// secret never leaves the server: rows carry no secret field, the Key value
-// cell is a fixed mask, and there is no reveal or copy anywhere (AC-1, AC-8).
+// Spec 0006: list, search, add, edit, and delete IDP, AI, Cloudflare, and
+// Google credentials. The secret never leaves the server: rows carry no secret
+// field, the Key value cell is a fixed mask, and there is no reveal or copy
+// anywhere (AC-1, AC-8).
 export default async function ApiKeysPage() {
   const { user } = await requireAdmin();
   const encryption = assertEncryptionEnv();
@@ -52,18 +61,38 @@ export default async function ApiKeysPage() {
   const keys = await listApiKeys(db());
   const rows = keys.map((k) => {
     const changed = formatDay(k.secretUpdatedAt, user.timezone);
+    // A GOOGLE key's Base URL is a constant; its sender says more.
+    const shownUrl = k.senderEmail ?? k.baseUrl;
     return {
       id: k.id,
       label: k.name,
-      search: `${k.name} ${k.type} ${k.baseUrl}`,
+      search: `${k.name} ${k.type} ${shownUrl}${k.googleAuth ? ` ${GOOGLE_METHOD_LABEL[k.googleAuth]}` : ""}`,
       cells: {
         name: (
           <span className="text-cell font-semibold text-fg1">{k.name}</span>
         ),
-        type: <Badge tone={TYPE_TONE[k.type]}>{k.type}</Badge>,
+        type: (
+          <div className="flex flex-col items-start gap-1.5">
+            <Badge tone={TYPE_TONE[k.type]}>{k.type}</Badge>
+            {k.googleAuth ? (
+              <span className="text-xs text-fg3">
+                {GOOGLE_METHOD_LABEL[k.googleAuth]}
+              </span>
+            ) : null}
+            {k.googleAuth && k.googleRejectedAt ? (
+              <>
+                <Badge tone="accent">Needs attention</Badge>
+                <span className="max-w-56 text-xs text-fg2">
+                  Since {formatDay(k.googleRejectedAt, user.timezone)}:{" "}
+                  {GOOGLE_REJECTED_LINE[k.googleAuth]}
+                </span>
+              </>
+            ) : null}
+          </div>
+        ),
         baseUrl: (
           <span className="font-mono text-sm break-all text-fg2">
-            {k.baseUrl}
+            {shownUrl}
           </span>
         ),
         secret: (
@@ -92,7 +121,16 @@ export default async function ApiKeysPage() {
             action={updateApiKeyAction.bind(null, k.id)}
           >
             <ApiKeyFields
-              defaults={{ name: k.name, type: k.type, baseUrl: k.baseUrl }}
+              defaults={{
+                name: k.name,
+                type: k.type,
+                baseUrl: k.baseUrl,
+                googleAuth: k.googleAuth ?? "service_account",
+                senderEmail: k.senderEmail ?? "",
+                calendarId: k.calendarId ?? "",
+                devInbox: k.devInbox ?? "",
+                opsBcc: k.opsBcc ?? "",
+              }}
               lastChanged={changed}
             />
           </FormDialog>

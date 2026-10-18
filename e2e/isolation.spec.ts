@@ -42,7 +42,7 @@ async function otherApps(): Promise<readonly OtherApp[]> {
           launch_url: z.string().nullable().optional(),
         }),
       ),
-      "/core/applications/?page_size=100",
+      "/core/applications/?superuser_full_list=true&page_size=100",
     )
   ).results;
   return Promise.all(

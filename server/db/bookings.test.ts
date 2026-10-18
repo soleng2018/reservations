@@ -536,6 +536,7 @@ describe("mapConstraintError", () => {
     ["23505", "testbed_types_name_lower_uq", "duplicate_name"],
     ["23505", "testbeds_name_lower_uq", "duplicate_name"],
     ["23505", "api_keys_name_lower_uq", "duplicate_name"],
+    ["23505", "api_keys_one_cloudflare_uq", "cloudflare_exists"],
   ])("maps %s on %s to %s", (code, constraint, error) => {
     expect(mapConstraintError({ code, constraint })).toEqual({
       ok: false,

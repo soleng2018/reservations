@@ -1,4 +1,5 @@
 import type { CancelSource, UserStatus } from "./db-enums";
+import { firstName } from "./manage-reservations";
 
 // Learner admin (spec 0008), safe on both sides.
 
@@ -63,8 +64,6 @@ export const learnerSearchText = (row: {
 
 // AC-2: the line under a Cancelled badge.
 export const cancelledByLabel = (source: CancelSource) => `by ${source}`;
-
-const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 
 // AC-6: the helper under a locked email field.
 export const emailLockedHelper = (name: string) =>

@@ -5,7 +5,7 @@ import {
   findOrCreateLearner,
   issueSetPasswordLink,
 } from "./learners";
-import { ADMINS, fakeAuthentik, fakeUser, POD } from "./testing";
+import { ADMINS, FAKE_NEW_PK, fakeAuthentik, fakeUser, POD } from "./testing";
 
 const user = fakeUser;
 
@@ -17,7 +17,12 @@ describe("findOrCreateLearner (AC-5)", () => {
     const r = await findOrCreateLearner(ak.api, input);
     expect(r).toEqual({
       ok: true,
-      value: { pk: 100, created: true, tagged: false, neverLoggedIn: true },
+      value: {
+        pk: FAKE_NEW_PK,
+        created: true,
+        tagged: false,
+        neverLoggedIn: true,
+      },
     });
     expect(ak.writes).toEqual(["POST /core/users/"]);
     expect(ak.users[0]).toMatchObject({
@@ -175,18 +180,18 @@ describe("guarded writes (AC-4, AC-6)", () => {
 
   it("never issues a recovery link for an admin or an untagged user", async () => {
     const ak = fakeAuthentik([admin, plain, learner]);
-    expect(await issueSetPasswordLink(ak.api, 1)).toEqual({
+    expect(await issueSetPasswordLink(ak.api, 1, "minutes=10")).toEqual({
       ok: false,
       error: "is_admin",
     });
-    expect(await issueSetPasswordLink(ak.api, 2)).toEqual({
+    expect(await issueSetPasswordLink(ak.api, 2, "minutes=10")).toEqual({
       ok: false,
       error: "not_learner",
     });
-    expect(await issueSetPasswordLink(ak.api, 3)).toEqual({
+    expect(await issueSetPasswordLink(ak.api, 3, "minutes=10")).toEqual({
       ok: true,
-      // AC-6: 72 hours, not Authentik's default token duration.
-      value: "https://auth.test/recover/3?for=hours=72",
+      // Spec 0014 AC-10: the caller's duration, not Authentik's default.
+      value: "https://auth.test/recover/3?for=minutes=10",
     });
     expect(ak.writes).toEqual(["POST /core/users/3/recovery/"]);
   });

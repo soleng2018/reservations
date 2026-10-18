@@ -1,7 +1,7 @@
-import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
 import { ADMIN_ENTRY, haveSecrets } from "./authentik";
+import { expectNoSeriousViolations } from "./axe";
 import {
   answerBook,
   booked,
@@ -16,24 +16,6 @@ import {
 // Spec 0005 AC-14: no serious or critical axe violation on the shell, the
 // sign in card, /book, and the gallery's dialogs.
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
-
-const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
-
-async function expectNoSeriousViolations(
-  page: Page,
-  exclude: readonly string[] = [],
-) {
-  const results = await exclude
-    .reduce((axe, sel) => axe.exclude(sel), new AxeBuilder({ page }))
-    .withTags(TAGS)
-    .analyze();
-  const serious = results.violations
-    .filter((v) => v.impact === "serious" || v.impact === "critical")
-    .map(
-      (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`,
-    );
-  expect(serious).toEqual([]);
-}
 
 // covers: AC-14
 test("the shell at 1280px", async ({ adminPage: page }) => {

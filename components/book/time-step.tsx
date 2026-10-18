@@ -20,7 +20,9 @@ import { cn } from "@/lib/utils";
 // The time picker of Step 2 (spec 0010 AC-4, AC-5, AC-6). Plain props, so
 // feature 13's reschedule reuses it: the server's free starts (ISO), the
 // type's length, the DB clock, and the chosen zone. It never reads the
-// browser clock.
+// browser clock. A reschedule passes the booking's `currentStart`, shown as
+// "Current" and never pickable, and the calendar opens on its month when
+// that month is in range (spec 0011 AC-7).
 export function TimeStep({
   starts,
   durationMs,
@@ -29,6 +31,7 @@ export function TimeStep({
   timezone,
   day,
   picked,
+  currentStart,
   onPickDay,
   onPick,
 }: {
@@ -39,6 +42,7 @@ export function TimeStep({
   readonly timezone: string;
   readonly day: string | null;
   readonly picked: string | null;
+  readonly currentStart?: string;
   readonly onPickDay: (key: string) => void;
   readonly onPick: (iso: string) => void;
 }) {
@@ -54,12 +58,21 @@ export function TimeStep({
   );
   const months = monthRange(nowDate, HORIZON_MS, timezone);
   const firstFree = starts[0];
+  const currentMonth = currentStart
+    ? dayKey(new Date(currentStart), timezone).slice(0, 7)
+    : null;
+  const currentInRange =
+    currentMonth !== null &&
+    currentMonth >= months.first &&
+    currentMonth <= months.last;
 
-  // Opens on the picked day's month, else the first free start's, else now's.
+  // Opens on the picked day's month, else the current booking's (when in
+  // range), else the first free start's, else now's.
   const [month, setMonth] = useState(() =>
     keyToLocalDate(
       (
         day ??
+        (currentInRange ? currentMonth : null) ??
         (firstFree ? dayKey(new Date(firstFree), timezone) : null) ??
         dayKey(nowDate, timezone)
       ).slice(0, 7),
@@ -148,7 +161,8 @@ export function TimeStep({
                     <div className="flex flex-1 gap-1.25">
                       {row.starts.map((s) => {
                         const iso = s.toISOString();
-                        const open = free.has(iso);
+                        const isCurrent = iso === currentStart;
+                        const open = free.has(iso) && !isCurrent;
                         return (
                           <label
                             key={iso}
@@ -168,15 +182,22 @@ export function TimeStep({
                             />
                             <span
                               className={cn(
-                                "flex min-h-8 items-center justify-center rounded-[0.375rem] px-1 py-1.5 text-[0.71875rem] font-semibold transition-colors duration-120 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring",
+                                "flex min-h-8 flex-col items-center justify-center rounded-[0.375rem] px-1 py-1.5 text-[0.71875rem] leading-tight font-semibold transition-colors duration-120 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring",
                                 inReservation(s)
                                   ? "bg-primary text-primary-foreground"
-                                  : open
-                                    ? "bg-card text-fg1 ring-1 ring-border hover:bg-nile-blue-050"
-                                    : "bg-bg-inset text-fg3",
+                                  : isCurrent
+                                    ? "bg-nile-blue-050 text-nile-blue"
+                                    : open
+                                      ? "bg-card text-fg1 ring-1 ring-border hover:bg-nile-blue-050"
+                                      : "bg-bg-inset text-fg3",
                               )}
                             >
                               {formatTime(s, timezone)}
+                              {isCurrent ? (
+                                <span className="text-[0.625rem] font-bold tracking-[0.04em] uppercase">
+                                  Current
+                                </span>
+                              ) : null}
                             </span>
                           </label>
                         );

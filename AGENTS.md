@@ -34,6 +34,7 @@ npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
 npm run worker       # background worker; exits unless WORKER_ENABLED=true; shared DB, so it IS the prod worker (one at a time)
+npm run calendar:backfill # queues a calendar job for every confirmed booking not yet ended; dry run, -- --apply writes
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
@@ -41,6 +42,7 @@ npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
 - Dev runs on the LAN IP (`http://10.1.255.18:3000`), because the Authentik proxy refuses requests that mention localhost. `APP_URL` must match the URL the browser uses, or sign in fails with `state_mismatch`.
+- A Better Auth config change in `server/auth/index.ts` needs a dev server restart: `auth()` is cached on `globalThis`, so a hot reload keeps the old instance.
 - `db/bootstrap.sql` is a one time setup run by hand as `postgres` (creates the `hol_app` role and schemas), not a migration; its header has the exact command.
 
 ## Specs
@@ -70,6 +72,11 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
 - Test helpers: `asConn(trx)` in `server/db/testing.ts` lets code that opens its own `conn.transaction()` run inside `inRollback`; `server/authentik/testing.ts` is the in memory fake Authentik behind the real SDK.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
+- Signed in learner on a public path (`/book`): read the session with `currentSession()` (never `requireLearner()`, which redirects) and take identity from the session's `users` row, never from the post; `sessionAccount` in `server/booking/account.ts` is the reference.
+- Learner booking changes (cancel, reschedule): the page binds the booking id and the `version` it showed; the action locks the learner `FOR SHARE`, then the booking `FOR UPDATE` by id, session learner, `ends_at > now()`, and version, and a miss is `stale`. Every learner booking read filters by the session learner's `user_id`; `server/booking/manage.ts` is the reference.
+- Set password links (spec 0014): the app stores only `sha256(token)` in `set_password_links`. The page and the `startSetPassword` action read state through one function, `linkState` in `server/auth/set-password-links.ts` (a GET changes nothing); the action locks the user `FOR SHARE`, then the link `FOR UPDATE`, as the lock first pattern does. Only misses count toward the per IP limit, and every dead case shows the same message.
+- Lab links (Nile Portal, LMS, client URLs) reach a learner only through `ownLabAccess` in `server/booking/lab-access.ts`: the session learner's own verified booking, every miss is `missing` (a 404), and a guest reply never carries them.
+- Email and calendar: a booking change queues its notice with `queueBookingNotice` (`server/jobs/booking-notice.ts`) in the same transaction; the web process never calls Google for a booking, the worker sends.
 - Search indexing: every page is `noindex, nofollow` by default (root layout metadata), and a page opts in explicitly (today only `/`). A page whose metadata uses relative URLs sets `metadataBase` from `appUrl()` in `server/env.ts` and is `force-dynamic`, so `next build` reads no env. Nothing public (`robots.txt`, sitemap, learner pages) names `ADMIN_ENTRY_PATH`.
 
 ## Tooling
@@ -102,6 +109,9 @@ Installed:
 - [shadcn-errors-react-day-picker-v9](.claude/skills/shadcn-errors-react-day-picker-v9/): `impertio-studio/shadcn-ui-claude-skill-package`, react-day-picker v9 errors and v8 props that no longer exist
 - [base-ui](.claude/skills/base-ui/): `itechmeat/llm-code`, Base UI (`@base-ui/react`) components, render props, forms, overlays
 - [shadcn-baseui](.claude/skills/shadcn-baseui/): `thunderboltdev/shadcn-baseui`, Base UI patterns in shadcn (no Radix `asChild`)
+- [react-email](.claude/skills/react-email/): `resend/react-email`, React Email templates and rendering (the booking emails in `server/email/`)
+- [gws-gmail](.claude/skills/gws-gmail/): `googleworkspace/cli`, Gmail send and read
+- [gws-calendar](.claude/skills/gws-calendar/): `googleworkspace/cli`, Google Calendar events
 - Declined: `morksen123/base-ui-mcp-server` (third party Base UI MCP server), 2026-10-11
 
 MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setup help (connected; `npx auth@latest mcp --claude-code`), next-devtools-mcp (recommended), github-mcp-server (recommended), pg-mcp-server in read only mode (recommended; dev and prod share one database)
@@ -112,5 +122,7 @@ MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setu
 - [server/authentik/AGENTS.md](server/authentik/AGENTS.md): Authentik API client, the write guard, learner provisioning, and token rules
 - [server/worker/AGENTS.md](server/worker/AGENTS.md): the background worker, its lock, tick loop, sweepers, and the access reconciler
 - [server/users/AGENTS.md](server/users/AGENTS.md): learner admin from the console, the add saga, the lock first pattern, and the admin timezone
+- [server/jobs/AGENTS.md](server/jobs/AGENTS.md): the job queue, booking emails and the calendar mirror, the breaker, and the email templates in `server/email/`
+- [server/google/AGENTS.md](server/google/AGENTS.md): every Google call, the two sign in methods, the token, the key save check, and the sign in cookie
 
 _Drafted by /audit from the repo, worth a quick human pass. Edit freely: once a line stops matching this draft, later runs treat it as curated and will flag rather than overwrite it._

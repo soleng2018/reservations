@@ -36,6 +36,10 @@ export const DetailsInput = BookInput.pick({
 });
 export type DetailsInput = z.infer<typeof DetailsInput>;
 
+// What the /book flow rendered for a signed in learner posts as
+// `asAccount` (spec 0011 AC-13).
+export const AS_ACCOUNT = "1";
+
 // Every outcome /book can show, as a code the client turns into a message.
 export const BOOK_ERRORS = {
   invalid: "Please fix the fields marked below.",
@@ -50,6 +54,9 @@ export const BOOK_ERRORS = {
   refused: "We couldn't complete this booking.",
   unavailable: "Sign in is temporarily unavailable, try again shortly",
   gone: "Your booking took too long to finish. Please try again.",
+  // A post made as the signed in learner whose session is gone (spec 0011
+  // AC-13); the Step 1 Alert links to /reservations.
+  signed_out: "You were signed out. Sign in again to book.",
 } as const;
 export type BookErrorCode = keyof typeof BOOK_ERRORS;
 
@@ -63,4 +70,22 @@ export type DetailsErrorCode = Extract<
   | "has_live_booking"
   | "booking_pending"
   | "type_unavailable"
+  | "signed_out"
 >;
+
+// What a reschedule can answer besides `rescheduled` (spec 0011 AC-9).
+export type RescheduleErrorCode =
+  "limited" | "invalid" | "stale" | "slot_taken" | "same_time" | "unavailable";
+
+// The manage pages' copy (spec 0011 AC-4, AC-5, AC-7, AC-8, AC-10), one place.
+export const RESCHEDULE_MESSAGES = {
+  // A cancel or reschedule that found the booking changed (AC-5).
+  stale: "This reservation already changed. The list has been refreshed.",
+  slot_taken: BOOK_ERRORS.slot_taken,
+  same_time: "That's already your reservation time. Please pick another.",
+  limited: BOOK_ERRORS.limited,
+  // `invalid` and `unavailable`: nothing changed.
+  unchanged:
+    "We couldn't change your reservation. Your original time is unchanged.",
+  generic: "Something went wrong. Try again.",
+} as const;

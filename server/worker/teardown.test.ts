@@ -15,6 +15,9 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import { reconcileAccess } from "./reconcile";
+
+// No CLOUDFLARE key: the revoke is off (spec 0012 AC-11).
+const OFF = async () => ({ kind: "off" }) as const;
 import { teardownDeletedTestbeds } from "./teardown";
 
 // pk numbers high enough never to meet a real Authentik pk in the shared DB.
@@ -78,7 +81,7 @@ describe.skipIf(!hasDb)("teardownDeletedTestbeds (AC-7)", () => {
         expect.stringMatching(new RegExp(`${tb.id}.*2 tagged learner`)),
       );
 
-      await reconcileAccess(ak.api, asConn(trx));
+      await reconcileAccess(ak.api, asConn(trx), OFF);
       await teardownDeletedTestbeds(ak.api, asConn(trx));
       expect(ak.groups.some((g) => g.pk === pk)).toBe(false);
       expect(await stampOf(trx, tb.id)).not.toBeNull();
@@ -94,7 +97,7 @@ describe.skipIf(!hasDb)("teardownDeletedTestbeds (AC-7)", () => {
       // A stamped row is never looked at again, by teardown or reconciler.
       const writes = ak.writes.length;
       await teardownDeletedTestbeds(ak.api, asConn(trx));
-      await reconcileAccess(ak.api, asConn(trx));
+      await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.writes).toHaveLength(writes);
       expect(await teardownAudits(trx, pk)).toHaveLength(1);
     }));

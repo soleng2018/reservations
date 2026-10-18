@@ -2,9 +2,26 @@
 // share one database, so a worker started anywhere IS the production worker;
 // the advisory lock keeps it to one.
 import { setTimeout as sleep } from "node:timers/promises";
+import { revokeStateLine, type RevokeKind } from "@/lib/reconcile";
 import { authentik } from "@/server/authentik/client";
+import {
+  cloudflareRevokeConfig,
+  googleMailConfig,
+} from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
-import { dbEnv, workerEnv } from "@/server/env";
+import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
+import { purgeSetPasswordLinks } from "@/server/auth/set-password-links";
+import { renderBookingEmail, renderWelcomeEmail } from "@/server/email/compose";
+import { SAMPLE_BOOKING_DETAILS, SAMPLE_WELCOME } from "@/server/email/sample";
+import {
+  breakerLogLine,
+  purgeDoneJobs,
+  runJobs,
+  type Handlers,
+} from "@/server/jobs/runner";
+import { syncBookingEvent } from "@/server/jobs/calendar-sync";
+import { runSendEmail } from "@/server/jobs/send-email";
+import { runSendWelcome } from "@/server/jobs/send-welcome";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
   purgeDue,
@@ -26,6 +43,14 @@ import { teardownDeletedTestbeds } from "@/server/worker/teardown";
 
 const PURGE = "purge rate limits";
 
+// Spec 0013 AC-8, spec 0014 AC-1: the job kinds this worker runs.
+const HANDLERS: Handlers = {
+  send_email: runSendEmail,
+  calendar_upsert: syncBookingEvent,
+  calendar_delete: syncBookingEvent,
+  send_welcome: runSendWelcome,
+};
+
 const log = (line: string) =>
   console.log(`${new Date().toISOString()} ${line}`);
 
@@ -33,6 +58,23 @@ async function main(): Promise<number> {
   if (!workerEnv().WORKER_ENABLED) {
     log("worker: WORKER_ENABLED is not true, so the worker is not starting");
     return 0;
+  }
+
+  // Spec 0013 AC-22, spec 0014 AC-17: the smoke check. Email needs
+  // react-dom/server, which only loads without the react-server condition
+  // (the server-only hook).
+  try {
+    await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
+    await renderWelcomeEmail(
+      SAMPLE_WELCOME.details,
+      SAMPLE_WELCOME.email,
+      SAMPLE_WELCOME.url,
+    );
+  } catch (e) {
+    log(
+      `worker: the email renderer failed to load (${e instanceof Error ? e.message : String(e)}), exiting`,
+    );
+    return 1;
   }
 
   const lock = lockClient(dbEnv());
@@ -66,6 +108,39 @@ async function main(): Promise<number> {
   // A loop, not recursion: the process runs for days, and a promise chain
   // per tick would grow without bound.
   let lastPurge: number | undefined;
+  let lastRevokeKind: RevokeKind | undefined;
+  // Spec 0012 AC-11: read at the start of each reconciler run from the live
+  // CLOUDFLARE API key, so a rotated token works on the next tick. The
+  // keyring is read only while that key exists. The state is logged on the
+  // first run and again only when it changes.
+  const revokeSource = async () => {
+    const source = await cloudflareRevokeConfig(
+      conn,
+      () => encryptionEnv().keyring,
+    );
+    const line = revokeStateLine(lastRevokeKind, source.kind);
+    if (line) log(`worker: ${line}`);
+    lastRevokeKind = source.kind;
+    return source;
+  };
+  // Spec 0013 AC-9: the "no Google key" wait is logged when it starts, not
+  // every tick.
+  let googleWaiting = false;
+  const jobs = async () => {
+    const step = await runJobs(conn, {
+      handlers: HANDLERS,
+      config: () => googleMailConfig(conn, () => encryptionEnv().keyring),
+    });
+    if (step.kind === "no_key") {
+      if (!googleWaiting)
+        log("jobs: no Google key, email and calendar jobs wait");
+      googleWaiting = true;
+      return;
+    }
+    googleWaiting = false;
+    for (const f of step.failed) console.error(`jobs: ${f} failed`);
+    if (step.breaker) console.error(breakerLogLine(step.method));
+  };
   while (!stop.signal.aborted) {
     // A dead lock connection is noticed here even when idle.
     await lock.query("select 1").catch((e: Error) => lost(e.message));
@@ -81,13 +156,24 @@ async function main(): Promise<number> {
         name: "testbed create sweeper",
         run: () => sweepTestbedCreates(api, conn),
       },
-      { name: "access reconciler", run: () => reconcileAccess(api, conn) },
+      {
+        name: "access reconciler",
+        run: () => reconcileAccess(api, conn, revokeSource),
+      },
       {
         name: "testbed teardown",
         run: () => teardownDeletedTestbeds(api, conn),
       },
+      { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
-        ? [{ name: PURGE, run: () => purgeRateLimits(conn) }]
+        ? [
+            { name: PURGE, run: () => purgeRateLimits(conn) },
+            { name: "purge done jobs", run: () => purgeDoneJobs(conn) },
+            {
+              name: "purge set password links",
+              run: () => purgeSetPasswordLinks(conn),
+            },
+          ]
         : []),
     ];
     const outcomes = await runTick(steps, {

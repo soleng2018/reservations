@@ -22,7 +22,7 @@ _Steps derived from spec 0008 acceptance criteria and its Value sourcing table. 
 - [x] Deactivate a learner with an Upcoming booking → the confirm lists `<testbed> — Upcoming reservation, <start in your zone>`; toast `Deactivated <name> and cancelled 1 reservation.`; Authentik `is_active = false`; their sign in is refused → AC-8
 - [x] Deactivate a learner whose booking is still provisioning → `A booking for this user is being set up. Try again in a minute.` and nothing changes → AC-8
 - [x] Reactivate → toast `Reactivated <name>.`; Authentik active again; the cancelled booking stays cancelled → AC-9
-- [x] Cancel an Upcoming and a Current booking from the detail page → the confirm text (Current adds ` The learner's lab access ends now.`), toast `Reservation cancelled.`, the row shows `Cancelled` `by admin`; the same Cancel from a stale second tab → `This reservation already changed. The page has been refreshed.` → AC-10
+- [x] Cancel an Upcoming and a Current booking from the detail page → the confirm text (Current adds ` The learner's lab access ends within a minute.`, spec 0012 AC-14), toast `Reservation cancelled.`, the row shows `Cancelled` `by admin`; the same Cancel from a stale second tab → `This reservation already changed. The page has been refreshed.` → AC-10
 - [x] With the worker running, deactivate (or cancel) a learner with a Current booking → within about 30 seconds they leave the testbed's `pod-*` group and their Authentik sessions end → AC-11
 
 ## Commands

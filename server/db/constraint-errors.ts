@@ -8,6 +8,8 @@ export type ConstraintError =
   | "duplicate_name"
   | "duplicate_email"
   | "duplicate_slug"
+  | "cloudflare_exists"
+  | "google_exists"
   | "in_use";
 
 // Constraint names are a contract with db/migrations: renaming one there is a
@@ -20,6 +22,8 @@ const byConstraint: Readonly<Record<string, ConstraintError>> = {
   testbed_types_name_lower_uq: "duplicate_name",
   testbeds_name_lower_uq: "duplicate_name",
   api_keys_name_lower_uq: "duplicate_name",
+  api_keys_one_cloudflare_uq: "cloudflare_exists",
+  api_keys_one_google_uq: "google_exists",
 };
 
 const PgError = z.object({

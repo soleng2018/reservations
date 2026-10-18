@@ -252,7 +252,7 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
         errorsOf(ApiKeyCreateInput.safeParse({ ...valid, secret: undefined })),
       ),
     ).toEqual({ secret: "Enter the key." });
-    expect(ApiKeyUpdateInput.parse(blank).secret).toBe("");
+    expect(ApiKeyUpdateInput.parse(blank)).toMatchObject({ secret: "" });
   });
 
   it("caps the key at 4096 characters on add and edit", () => {
@@ -262,8 +262,8 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
         secret: "Use at most 4096 characters.",
       });
     expect(
-      ApiKeyCreateInput.parse({ ...valid, secret: "x".repeat(4096) }).secret,
-    ).toHaveLength(4096);
+      ApiKeyCreateInput.parse({ ...valid, secret: "x".repeat(4096) }),
+    ).toMatchObject({ secret: "x".repeat(4096) });
   });
 
   it("never puts the key's value in an issue", () => {
@@ -296,6 +296,64 @@ describe("ApiKeyCreateInput and ApiKeyUpdateInput (spec 0006 AC-3)", () => {
   });
 });
 
+// covers: spec 0006 AC-12, spec 0012 AC-11 (the CLOUDFLARE base URL)
+describe("a CLOUDFLARE key's base URL", () => {
+  const ACCOUNT = "0123456789abcdef0123456789abcdef";
+  const ROUTE = `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}`;
+  const RULE =
+    "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.";
+  const key = (baseUrl: string) => ({
+    name: "Cloudflare",
+    type: "CLOUDFLARE",
+    baseUrl,
+    secret: "cf-token",
+  });
+
+  it("accepts the account route, trimmed, on add and edit", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(schema.parse(key(`  ${ROUTE}  `))).toMatchObject({
+        baseUrl: ROUTE,
+      });
+  });
+
+  it.each([
+    [`${ROUTE}/`, "a trailing slash"],
+    [ROUTE.toUpperCase().replace("HTTPS", "https"), "an upper case id"],
+    [`${ROUTE}/access/organizations`, "a longer path"],
+    [ROUTE.slice(0, -1), "a short account id"],
+    ["https://api.cloudflare.com/client/v4", "no account"],
+    [
+      `https://cloudflare.example/client/v4/accounts/${ACCOUNT}`,
+      "another host",
+    ],
+  ])("refuses %s (%s)", (baseUrl) => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(fieldErrors(errorsOf(schema.safeParse(key(baseUrl))))).toEqual({
+        baseUrl: RULE,
+      });
+  });
+
+  it("shows only the URL's own error when it is not an https URL", () => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse(key("api.cloudflare.com")));
+    expect(e.issues.map((i) => i.message)).toEqual(["Enter an https:// URL."]);
+  });
+
+  it("still checks the URL when another field fails", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({ ...key(`${ROUTE}/`), name: "" }),
+    );
+    expect(fieldErrors(e)).toEqual({ name: "Enter a name.", baseUrl: RULE });
+  });
+
+  it("leaves IDP and AI base URLs alone", () => {
+    for (const type of ["IDP", "AI"])
+      expect(
+        ApiKeyCreateInput.safeParse({ ...key("https://acme.example"), type })
+          .success,
+      ).toBe(true);
+  });
+});
+
 describe("HttpsUrl", () => {
   it("caps every catalog URL at 2048 characters", () => {
     expect(
@@ -305,4 +363,89 @@ describe("HttpsUrl", () => {
       true,
     );
   });
+});
+
+// covers: spec 0013 AC-1, AC-4 (the GOOGLE key's fields)
+describe("a GOOGLE key's fields (spec 0013 AC-1, AC-25)", () => {
+  const valid = {
+    name: "Google",
+    type: "GOOGLE",
+    googleAuth: "service_account",
+    senderEmail: "  labs@nile.example ",
+    calendarId: " c_abc123@group.calendar.google.com ",
+    devInbox: "",
+    opsBcc: "ops@nile.example",
+  };
+
+  it("trims, turns blanks into null, and drops Base URL and Key value", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(
+        schema.parse({ ...valid, baseUrl: "https://x.example", secret: "s" }),
+      ).toEqual({
+        name: "Google",
+        type: "GOOGLE",
+        googleAuth: "service_account",
+        senderEmail: "labs@nile.example",
+        calendarId: "c_abc123@group.calendar.google.com",
+        devInbox: null,
+        opsBcc: "ops@nile.example",
+      });
+  });
+
+  it("refuses bad addresses and calendar ids with the admin's messages", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({
+        ...valid,
+        senderEmail: "labs",
+        calendarId: "my calendar/1",
+        devInbox: "nope",
+        opsBcc: "also nope",
+      }),
+    );
+    expect(fieldErrors(e)).toEqual({
+      senderEmail: "Enter an email address.",
+      calendarId: "Enter the calendar ID from the calendar's settings.",
+      devInbox: "Enter an email address.",
+      opsBcc: "Enter an email address.",
+    });
+  });
+
+  it.each([
+    ["", "a blank id"],
+    ["x".repeat(256), "an id over 255 characters"],
+  ])("refuses %#: %s", (calendarId) => {
+    const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, calendarId }));
+    expect(fieldErrors(e)).toEqual({
+      calendarId: "Enter the calendar ID from the calendar's settings.",
+    });
+  });
+
+  it("requires the sender mailbox", () => {
+    const e = errorsOf(
+      ApiKeyCreateInput.safeParse({ ...valid, senderEmail: undefined }),
+    );
+    expect(Object.keys(fieldErrors(e))).toEqual(["senderEmail"]);
+  });
+
+  it("takes no sender under Google sign in, since the account is the sender (AC-25)", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(schema.parse({ ...valid, googleAuth: "oauth" })).toEqual({
+        name: "Google",
+        type: "GOOGLE",
+        googleAuth: "oauth",
+        calendarId: "c_abc123@group.calendar.google.com",
+        devInbox: null,
+        opsBcc: "ops@nile.example",
+      });
+  });
+
+  it.each([undefined, "", "magic"])(
+    "asks for a sign in method when it is %j (AC-25)",
+    (googleAuth) => {
+      const e = errorsOf(ApiKeyCreateInput.safeParse({ ...valid, googleAuth }));
+      expect(fieldErrors(e)).toEqual({
+        googleAuth: "Choose a sign in method.",
+      });
+    },
+  );
 });

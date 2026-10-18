@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { PlusIcon, SearchIcon } from "lucide-react";
 import type { AdminFormState } from "@/app/admin/actions";
 import { DataTable, type DataTableRow } from "@/components/admin/data-table";
@@ -9,8 +10,11 @@ import { FormDialog } from "@/components/admin/form-dialog";
 import { Field } from "@/components/field";
 import { FormSelect } from "@/components/form-select";
 import { notifyError, notifySuccess } from "@/components/notify";
+import { CancelReservationButton } from "@/components/reservations/cancel-reservation-button";
+import { LabAccessCard } from "@/components/reservations/lab-access-card";
+import { ReservationCard } from "@/components/reservations/reservation-card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -20,6 +24,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { BADGE_TONES } from "@/lib/badge-tones";
+import {
+  labAccessView,
+  labCardRows,
+  SUCCESS_NOTE,
+  type LabLinks,
+} from "@/lib/lab-access";
 import type {
   Blocker,
   DeleteCheck,
@@ -27,6 +37,7 @@ import type {
   DeleteRemove,
 } from "@/lib/delete-flow";
 import { err, ok } from "@/lib/result";
+import { cn } from "@/lib/utils";
 
 // Every base piece with sample data (spec 0005 AC-13). The fakes below are
 // browser functions, not Server Actions: nothing here touches the server.
@@ -206,6 +217,62 @@ const sampleColumns = [
   { key: "status", header: "Status" },
 ] as const;
 
+// The learner's list cards (spec 0011 AC-1, AC-18): one real learner never
+// holds a Current and an Upcoming booking at once, so the states show here.
+const fakeCancel = async () => {
+  await wait(700);
+  return ok(undefined);
+};
+
+const SAMPLE_START = "Tue, Oct 13, 2026, 9:00 AM EDT";
+const SAMPLE_END = "Tue, Oct 13, 2026, 1:00 PM EDT";
+
+const SAMPLE_LINKS: LabLinks = {
+  portalUrl: "https://portal.example.test",
+  lmsUrl: "https://lms.example.test",
+  clients: [
+    { name: "Client 1", kind: "wired", url: "https://client1.example.test" },
+    { name: "Client 2", kind: "wireless", url: "https://client2.example.test" },
+  ],
+};
+
+const ViewAccess = () => (
+  <Link
+    href="#lab-access"
+    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+  >
+    View lab access
+  </Link>
+);
+
+function SampleActions({
+  reschedule,
+  current = false,
+}: {
+  readonly reschedule: boolean;
+  readonly current?: boolean;
+}) {
+  return (
+    <>
+      {reschedule ? (
+        <Link
+          href="#reservation-cards"
+          className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+        >
+          Reschedule
+        </Link>
+      ) : null}
+      {current ? <ViewAccess /> : null}
+      <CancelReservationButton
+        testbed="Lab bench 03"
+        start={SAMPLE_START}
+        current={current}
+        action={fakeCancel}
+      />
+    </>
+  );
+}
+
 function Section({
   title,
   description,
@@ -382,6 +449,72 @@ export function UiGallery() {
           noun={{ one: "delete sample", many: "delete samples" }}
           searchPlaceholder="Search delete samples…"
         />
+      </Section>
+
+      <Section
+        title="Reservation cards"
+        description="The learner's list: Current, Upcoming, one whose lab type can't be moved, and Past."
+      >
+        <ul id="reservation-cards" className="flex max-w-170 flex-col gap-3.5">
+          <ReservationCard
+            testbedName="Lab bench 03"
+            phase="Current"
+            typeName="White Belt Series"
+            start={SAMPLE_START}
+            end={SAMPLE_END}
+            actions={<SampleActions reschedule current />}
+          />
+          <ReservationCard
+            testbedName="Lab bench 04"
+            phase="Upcoming"
+            typeName="White Belt Series"
+            start={SAMPLE_START}
+            end={SAMPLE_END}
+            actions={<SampleActions reschedule />}
+          />
+          <ReservationCard
+            testbedName="Lab bench 05"
+            phase="Upcoming"
+            typeName="Retired Series"
+            start={SAMPLE_START}
+            end={SAMPLE_END}
+            actions={<SampleActions reschedule={false} />}
+            note="This lab type can't be rescheduled right now."
+          />
+          <ReservationCard
+            testbedName="Lab bench 01"
+            phase="Past"
+            typeName="White Belt Series"
+            start="Thu, Oct 1, 2026, 9:00 AM EDT"
+            end="Thu, Oct 1, 2026, 1:00 PM EDT"
+            actions={<ViewAccess />}
+          />
+        </ul>
+      </Section>
+
+      <Section
+        title="Lab access"
+        description="The success screens' card, then the detail page's card while Current and once Past (Ended tags, no links)."
+      >
+        <div id="lab-access" className="flex max-w-140 flex-col gap-5">
+          <LabAccessCard
+            variant="success"
+            note={SUCCESS_NOTE}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Upcoming"))}
+          />
+          <LabAccessCard
+            variant="detail"
+            note={labAccessView("Current").note}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Current"))}
+            testbedName="Lab bench 03"
+          />
+          <LabAccessCard
+            variant="detail"
+            note={labAccessView("Past").note}
+            rows={labCardRows(SAMPLE_LINKS, labAccessView("Past"))}
+            testbedName="Lab bench 01"
+          />
+        </div>
       </Section>
 
       <Section title="Toasts" description="One region, bottom center.">

@@ -41,10 +41,10 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 10 | Admin: Users & user detail | Slice 2 | done |
 | 11 | Public landing page | Slice 3 | done |
 | 12 | Availability & booking rules | Slice 3 | done |
-| 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | planned |
-| 14 | Lab access & booking result screens | Slice 3 | planned |
-| 15 | Email delivery & booking confirmations | Slice 4 | planned |
-| 16 | Set password / welcome email | Slice 4 | planned |
+| 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | done |
+| 14 | Lab access & booking result screens | Slice 3 | done |
+| 15 | Email delivery & booking confirmations | Slice 4 | done |
+| 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | planned |
 | 18 | Admin audit log | Slice 5 | planned |
 
@@ -208,28 +208,74 @@ Thicken slice 1's booking into the mock's full 3 step flow: details form with ti
 - [x] Test it: `/test availability & booking rules`
 spec [0010](../specs/0010-availability-booking-rules/index.md) · code in `app/book/`, `components/book/`, `lib/booking-flow.ts`, `lib/calendar-days.ts`, `lib/timezones.ts`, `server/booking/availability.ts`, `server/booking/details-check.ts`, `components/turnstile.tsx`, `components/timezone-combobox.tsx`, `components/ui/calendar.tsx`, `e2e/booking.spec.ts`, `e2e/book-flow.ts`
 
-### 13. Manage reservations: sign in, cancel & reschedule
+### 13. Manage reservations: sign in, cancel & reschedule · done
 "Manage an existing reservation" from the mock: sign in through Authentik, see all bookings with status, reserve another when none is active, and cancel or reschedule Upcoming and Current bookings through the same calendar.
 **Done when:** cancel frees the testbed at once (ending a Current booking early); reschedule either succeeds atomically or leaves the original untouched; Past bookings cannot be changed; a deactivated user cannot sign in.
-- [ ] Build it: `/develop manage reservations`
+- [x] Design it (spec): `/architect manage reservations`
+- [x] Build it: `/develop manage reservations`
+  - [x] List tracer: learner bookings read, cards, Reserve another rule (AC-1, 2, 3, 15)
+  - [x] Cancel: locked learner cancel with audit, confirm dialog, toasts (AC-4, 5, 15, 17)
+  - [x] Reschedule end to end: excluded own range, kept testbed, locked in place update, reschedule page and actions, bare flow (AC-6, 7, 9, 11, 15, 17)
+  - [x] Reschedule polish: preview, Current slot, progress and failure routing, history, per user buckets (AC-7, 8, 10, 12, 14)
+  - [x] Signed in `/book`, then guards and end to end: account summary, session override, `signed_out`, reconciler, Playwright journey, axe, screenshots (AC-3, 13, 15, 16, 18)
+- [x] Verify it: `/check verify manage reservations`
+- [x] Test it: `/test manage reservations`
+- [x] Review it (fresh model): `/check review manage reservations`
+spec [0011](../specs/0011-manage-reservations/index.md) · code in `app/reservations/`, `components/reservations/`, `server/booking/manage.ts`, `server/booking/account.ts`, `lib/manage-reservations.ts`, `lib/reschedule-flow.ts`, `lib/time-pick.ts`, `app/book/`, `components/book/`, `e2e/reservations.spec.ts`
 
-### 14. Lab access & booking result screens · needs a decision
+### 14. Lab access & booking result screens · done
 The success screen after booking or rescheduling, and the reservation detail page, both showing the testbed's Nile Portal, LMS course, and client links as in the mock.
 Access is enforced by Authentik: the learner is in the assigned testbed's group for the booking, and is removed right after the lab time ends.
 **Done when:** access details reach only the booking's own verified learner; a learner can open the testbed's URLs only during their booking window, and an open lab session stops working right after the lab time is over; cancel, reschedule to another testbed, and booking end update the group membership; Upcoming bookings show no detail link, Current and Past do; Past details show the links greyed out and unclickable with the "access is no longer active" note; the success screen tells a new learner to set their password from the email.
-- [ ] Design it (spec): `/architect lab access & booking result screens`
+- [x] Design it (spec): `/architect lab access & booking result screens`
+- [x] Build it: `/develop lab access & booking result screens`
+  - [x] Spike 3 with the owner: Cloudflare Access revoke ends an open browser VM session; surfaced the HOL Labs app and the API key move (AC-9, 10)
+  - [x] Tracer: `ownLabAccess`, the lab access card, the `/reservations/[id]` detail page, and View lab access on Current and Past cards (AC-1, 6, 7, 8)
+  - [x] Success screens: lab access card on book and reschedule success, guest and new learner copy (AC-2, 3, 4, 5)
+  - [x] Cloudflare key and revoke strand: the `CLOUDFLARE` API key (migration, Access probe on save), the revoker reading it per run, reconciler order and audit outcome (AC-9, 10, 11, 12)
+  - [x] HOL Labs in the setup script and its isolation checks: `authentik:setup` adopts the app, provider, flow, and policy (spec 0003 AC-19) (AC-9)
+  - [x] Guards and end to end: detail page auth, Playwright journey, axe, screenshots, `verify.md` (AC-2, 3, 7, 8, 9, 10, 12)
+  - [x] VM cut correction (spec 0012 task 9): the revoke blocks new requests only, so add the "close your lab tabs" copy (Current note, `cancelAccessLine` for the learner and admin cancel dialogs) and fix the revoke comments (AC-7, 10, 13, 14)
+- [x] Verify it: `/check verify lab access & booking result screens`
+- [x] Test it: `/test lab access & booking result screens`
+spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/reservations/[id]/`, `components/reservations/lab-access-card.tsx`, `components/reservations/cancel-reservation-button.tsx`, `components/admin/booking-cancel-button.tsx`, `server/booking/lab-access.ts`, `lib/lab-access.ts`, `lib/manage-reservations.ts`, `server/cloudflare/`, `server/catalog/api-keys.ts`, `server/worker/`, `worker/index.ts`, `db/migrations/0008_cloudflare_api_key.sql`, `scripts/authentik-setup.ts`, `app/book/`, `components/book/`, `e2e/lab-access.spec.ts`, `e2e/hol-labs.spec.ts`
 
 ## Slice 4: Notifications
 
-### 15. Email delivery & booking confirmations · needs a decision
+### 15. Email delivery & booking confirmations · done
 Set up email sending and shared templates (the umbrella that features 16 and 17 build on), then send a confirmation with a calendar invite on book, reschedule, and cancel, with times in the learner's timezone. Book, reschedule, and cancel use the mock's email templates.
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
-- [ ] Design it (spec): `/architect email delivery & booking confirmations`
+- [x] Design it (spec): `/architect email delivery & booking confirmations`
+- [x] Build it: `/develop email delivery & booking confirmations`
+  - [x] Foundations and tracer: worker render hook, migration `0009`, the `GOOGLE` service account key on create with its save check, the job runner, and one booked email end to end (AC-1, 2, 3, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 22, 24)
+  - [x] Reschedule, cancel, and failure strands: the other two emails, version order, no key wait, breaker, stale skip (AC-6, 8, 9, 10, 13, 17, 18)
+  - [x] Calendar mirror and backfill (AC-19, 20)
+  - [x] Key edit and the console Emails section (AC-4, 21)
+  - [x] Proof: snapshots, leak scans, Playwright, and the mail client matrix in `verify.md` (AC-5, 23)
+  - [x] Google sign in, for a personal Gmail sender (spec amended 2026-10-16): migration `0010`, the method radio, sign in with paste back, the refresh token mint, and one email to the dev inbox (AC-25, 26, 27, 28, 30, 34)
+  - [x] Google sign in thickened: edit and switch methods, the breaker by method with the Needs attention badge, and its proof (AC-29, 31, 32, 33)
+  - [x] Exchange outage keeps the sign in, so the same save can be retried (spec amended 2026-10-16, task 13) (AC-28)
+  - [x] Review fixes: the invite attached once outside `multipart/alternative` with a MIME tree test, the booked email in the zone `/book` showed, the rescheduled intro and the password box for new accounts only (spec amended 2026-10-16, task 14) (AC-6, 11, 12, 15, 17, 23)
+  - [x] One zone per booking and the UTC label: later emails reuse the booked email's zone through `bookingZone`, and emails print `UTC` instead of `GMT+0` (spec amended 2026-10-17, task 15) (AC-6, 11, 14)
+  - [x] The sender's own mailbox and Gmail's copy: a Dev inbox or Ops BCC in the sender's mailbox refused at save and dropped at send, and AC-15 restated for what Gmail delivers (spec amended 2026-10-17, task 16) (AC-15, 16, 17, 35, 36)
+- [x] Verify it: `/check verify email delivery & booking confirmations` (2026-10-18; the four live service account steps accepted on test coverage until a Workspace account exists, and the matrix on iOS Mail and Gmail web only, both by the owner)
+- [x] Test it: `/test email delivery & booking confirmations`
+spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `db/migrations/0010_google_sign_in.sql`, `lib/google-sign-in.ts`, `components/admin/api-key-fields.tsx`, `scripts/calendar-backfill.ts`
 
-### 16. Set password / welcome email
+### 16. Set password / welcome email · done
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
 **Done when:** each new user gets exactly one such email; the link expires, works once, and lands them signed in.
-- [ ] Build it: `/develop set password email`
+- [x] Design it (spec): `/architect set password / welcome email`
+- [x] Build it: `/develop set password email`
+  - [x] Authentik spike on dev: `next` on a token flow, token reuse, single use, origins; pick the main or fallback landing (AC-11, 12) (main path: Authentik keeps `next`)
+  - [x] Tracer: migration `0011`, the welcome template, the handler, the `hol-recovery-login` stage, and one email clicked through to signed in (AC-1, 4, 7, 8, 9, 10, 11, 15)
+  - [x] Failure strands: Dead, Already set, unavailable, the miss limit, Gmail outcomes, stale jobs, no BCC (AC-2, 5, 6, 9, 10, 12)
+  - [x] One send and revocation: the covered check, `other_used`, email change ends links, purge, smoke render (AC-3, 13, 14, 16, 17)
+  - [x] Proof: snapshots, leak scans, allow list, Playwright, and `verify.md` (AC-5, 7, 11, 12, 18, 19)
+  - [x] Timed out view: `onAPIError.errorURL`, the "Sign in timed out" view with a Sign in button on `/auth/error` (AC-19)
+- [x] Verify it: `/check verify set password / welcome email`
+- [x] Test it: `/test set password / welcome email`
+spec [0014](../specs/0014-set-password-welcome-email/index.md) · code in `server/jobs/send-welcome.ts`, `server/jobs/welcome-queue.ts`, `server/auth/set-password-links.ts`, `server/auth/start-set-password.ts`, `server/email/templates/welcome-email.tsx`, `app/set-password/`, `components/auth/`, `lib/welcome-email.ts`, `lib/set-password-link.ts`, `db/migrations/0011_set_password_links.sql`, `scripts/authentik-setup.ts`, `lib/auth-errors.ts`, `app/auth/error/`, `server/auth/index.ts`
 
 ### 17. Reminder before start · needs a decision
 A scheduled reminder email shortly before a booking starts.
@@ -252,8 +298,11 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Booking controls**: admin approval of new learners, or booking limited to allowed email domains
 - **Admin table sorting and pagination**: revisit search, sort, and paging once an admin list passes about 200 rows (Users is the likely first) · from spec 0005
 - **Admin timezone setting**: let an admin change their own console timezone after it is set once from the browser · from spec 0008
+- **Learner timezone setting**: let a learner change their account timezone from the manage page (today it is fixed at first booking or by an admin) · from spec 0011
 - **Social card with headline text**: draw the landing headline into the link preview image (`opengraph-image.tsx` with a committed Inter font) if marketing wants text in previews · from spec 0009
 - **Secret rotation script**: `secrets:rotate` encrypts every stored secret again under the active keyring key in one transaction; needed once something decrypts them · from spec 0006
+- **Per mailbox Google grant**: replace the `GOOGLE` service account key (domain wide reach) with a refresh token for the HOL mailbox only · from spec 0013
+- **Email breaker alert**: tell someone (a console banner or a note to the Ops BCC) when Google has rejected the HOL mailbox key for over an hour · from spec 0013
 
 ## Legend
 

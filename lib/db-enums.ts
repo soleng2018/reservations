@@ -16,8 +16,14 @@ export type DurationUnit = z.infer<typeof DurationUnit>;
 export const TestbedClientKind = z.enum(["wired", "wireless"]);
 export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 
-export const ApiKeyType = z.enum(["IDP", "AI"]);
+export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE", "GOOGLE"]);
 export type ApiKeyType = z.infer<typeof ApiKeyType>;
+
+// Spec 0013 AC-25, AC-34: how a GOOGLE key signs in.
+export const GoogleAuthMethod = z.enum(["service_account", "oauth"], {
+  error: "Choose a sign in method.",
+});
+export type GoogleAuthMethod = z.infer<typeof GoogleAuthMethod>;
 
 export const BookingStatus = z.enum([
   "provisioning",
@@ -40,6 +46,27 @@ export type JobKind = z.infer<typeof JobKind>;
 
 export const JobStatus = z.enum(["pending", "running", "done", "failed"]);
 export type JobStatus = z.infer<typeof JobStatus>;
+
+// Spec 0013: the email outbox.
+export const EmailKind = z.enum([
+  "welcome",
+  "booked",
+  "rescheduled",
+  "cancelled",
+  "reminder",
+]);
+export type EmailKind = z.infer<typeof EmailKind>;
+
+export const EmailStatus = z.enum(["queued", "sent", "failed", "suppressed"]);
+export type EmailStatus = z.infer<typeof EmailStatus>;
+
+// Spec 0014: why a set password link stopped working before it expired.
+export const SetPasswordLinkEndReason = z.enum([
+  "used",
+  "other_used",
+  "email_changed",
+]);
+export type SetPasswordLinkEndReason = z.infer<typeof SetPasswordLinkEndReason>;
 
 export const AuditTargetType = z.enum([
   "testbed_type",
@@ -64,9 +91,13 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "testbed_types.duration_unit": DurationUnit.options,
   "testbed_clients.kind": TestbedClientKind.options,
   "api_keys.type": ApiKeyType.options,
+  "api_keys.google_auth": GoogleAuthMethod.options,
   "bookings.status": BookingStatus.options,
   "bookings.cancel_source": CancelSource.options,
   "jobs.kind": JobKind.options,
   "jobs.status": JobStatus.options,
+  "email_messages.kind": EmailKind.options,
+  "email_messages.status": EmailStatus.options,
+  "set_password_links.ended_reason": SetPasswordLinkEndReason.options,
   "audit_events.target_type": AuditTargetType.options,
 };

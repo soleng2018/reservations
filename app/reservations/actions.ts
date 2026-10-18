@@ -1,12 +1,18 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { sql } from "kysely";
 import { z } from "zod";
+import { err, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
+import { requireLearner } from "@/server/auth/require";
+import { cancelOwnBooking } from "@/server/booking/manage";
 import { db } from "@/server/db";
-import { resendKey, enqueueWelcome } from "@/server/jobs/send-welcome";
+import { appUrl } from "@/server/env";
+import { resendKey, enqueueWelcome } from "@/server/jobs/welcome-queue";
 import { countHourlyAttempt } from "@/server/rate-limit";
+import { clientIp } from "@/server/request-ip";
 import { verifyTurnstile } from "@/server/turnstile";
 
 export type ResendState = { readonly message: string } | undefined;
@@ -33,18 +39,14 @@ export async function resendSetPassword(
   _prev: ResendState,
   form: FormData,
 ): Promise<ResendState> {
-  const ip = (await headers()).get("cf-connecting-ip") ?? undefined;
+  const ip = clientIp(await headers());
   const parsed = resendInput.safeParse({
     email: form.get("email"),
     token: form.get("cf-turnstile-response"),
   });
 
   const conn = db();
-  const ipAllowed = await countHourlyAttempt(
-    conn,
-    `resend:ip:${ip ?? "unknown"}`,
-    PER_IP,
-  );
+  const ipAllowed = await countHourlyAttempt(conn, `resend:ip:${ip}`, PER_IP);
   if (!parsed.success) return GENERIC;
   const { email, token } = parsed.data;
   const emailAllowed = await countHourlyAttempt(
@@ -54,7 +56,10 @@ export async function resendSetPassword(
   );
   if (!ipAllowed || !emailAllowed) return GENERIC;
 
-  const human = await verifyTurnstile(token, ip);
+  const human = await verifyTurnstile(
+    token,
+    ip === "untrusted" ? undefined : ip,
+  );
   if (!human.ok) return GENERIC;
 
   const learner = await conn
@@ -68,7 +73,12 @@ export async function resendSetPassword(
   if (!learner) return GENERIC;
 
   await conn.transaction().execute(async (trx) => {
-    await enqueueWelcome(trx, learner.id, resendKey(learner.id, new Date()));
+    await enqueueWelcome(
+      trx,
+      learner.id,
+      resendKey(learner.id, new Date()),
+      appUrl(),
+    );
     await audit(trx, {
       actorUserId: null,
       action: "set_password.resent",
@@ -78,4 +88,31 @@ export async function resendSetPassword(
     });
   });
   return GENERIC;
+}
+
+const CancelInput = z.object({
+  bookingId: z.uuid(),
+  version: z.number().int().positive(),
+});
+
+// Spec 0011 AC-4, AC-5: the learner cancels their own Upcoming or Current
+// booking. The page binds the id and the version it showed. Bad input, an
+// id that is not theirs, and a booking that changed meanwhile all read as
+// `stale`, so the reply reveals nothing about another learner's booking.
+export async function cancelReservationAction(
+  bookingId: string,
+  version: number,
+): Promise<Result<void, "stale">> {
+  const { user } = await requireLearner();
+  const input = CancelInput.safeParse({ bookingId, version });
+  const done: Result<void, "stale"> = input.success
+    ? await cancelOwnBooking(
+        db(),
+        user.id,
+        input.data.bookingId,
+        input.data.version,
+      )
+    : err("stale");
+  revalidatePath("/reservations");
+  return done;
 }

@@ -1,22 +1,29 @@
 import Link from "next/link";
 import { CheckIcon } from "lucide-react";
+import { LabAccessCard } from "@/components/reservations/lab-access-card";
 import { buttonVariants } from "@/components/ui/button";
 import type { Booked } from "@/lib/booking-flow";
 import { formatDateTime } from "@/lib/format-time";
+import { labRows, SUCCESS_NOTE } from "@/lib/lab-access";
 import { cn } from "@/lib/utils";
 import { BOOK_HEADING_ID } from "./step-heading";
 
 // The success card (spec 0010 AC-10), from the bookAction state and the
-// Step 1 name and email in memory, never from a URL. No lab links, Add to
-// calendar, or View email yet (features 14 and 15).
+// Step 1 name and email in memory, never from a URL. No Add to calendar or
+// View email yet (feature 15). A signed in learner (spec 0011 AC-13) gets
+// "View my reservations", and Done goes there. The lab access card shows
+// only when the reply carries links, which only the signed in learner who
+// booked gets (spec 0012 AC-2 to AC-4).
 export function BookingSuccess({
   booking,
   firstName,
   email,
+  signedIn = false,
 }: {
   readonly booking: Booked;
   readonly firstName: string;
   readonly email: string;
+  readonly signedIn?: boolean;
 }) {
   const rows = [
     ["Testbed", booking.testbedName],
@@ -64,11 +71,30 @@ export function BookingSuccess({
             Check your inbox for a link to set your password. You&apos;ll use it
             with your email to manage this reservation later.
           </p>
+          <p className="mt-2 text-[0.8125rem] text-fg1">
+            After you set your password, sign in to{" "}
+            <Link
+              href="/reservations"
+              className="font-semibold text-primary underline underline-offset-4"
+            >
+              Manage my reservation
+            </Link>
+            . Your lab access shows there once your lab starts.
+          </p>
         </div>
+      ) : signedIn ? (
+        <p className="mb-2.5 rounded-lg bg-bg-inset px-4 py-2.75 text-pill text-fg2">
+          <Link
+            href="/reservations"
+            className="font-semibold text-primary underline underline-offset-4"
+          >
+            View my reservations
+          </Link>
+        </p>
       ) : (
         <p className="mb-2.5 rounded-lg bg-bg-inset px-4 py-2.75 text-pill text-fg2">
           Sign in with your existing credentials anytime to manage this
-          reservation.{" "}
+          reservation. Your lab access shows there once your lab starts.{" "}
           <Link
             href="/reservations"
             className="font-semibold text-primary underline underline-offset-4"
@@ -78,8 +104,16 @@ export function BookingSuccess({
         </p>
       )}
 
+      {!booking.newUser && booking.access ? (
+        <LabAccessCard
+          variant="success"
+          note={SUCCESS_NOTE}
+          rows={{ kind: "active", rows: labRows(booking.access) }}
+        />
+      ) : null}
+
       <Link
-        href="/"
+        href={signedIn ? "/reservations" : "/"}
         className={cn(buttonVariants({ size: "lg" }), "mt-1 w-full")}
       >
         Done

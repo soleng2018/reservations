@@ -15,6 +15,11 @@ const TONE_OF: Readonly<Record<string, BadgeTone>> = {
   deactivated: "neutral",
   cancelled: "neutral",
   "not ready": "neutral",
+  // Spec 0013 AC-21, an email's status.
+  queued: "info",
+  sent: "success",
+  failed: "accent",
+  suppressed: "neutral",
 };
 
 // The tone for a status word, case insensitive; unknown words are neutral.

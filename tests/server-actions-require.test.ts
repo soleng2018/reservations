@@ -15,6 +15,9 @@ const PUBLIC_ACTIONS = new Set([
   // by rate limits.
   "app/book/actions.ts#checkDetailsAction",
   "app/book/actions.ts#previewTestbedAction",
+  // Spec 0014 AC-10, AC-18: the set password click; the token is the
+  // credential, and misses are limited per IP.
+  "app/set-password/[token]/actions.ts#startSetPassword",
 ]);
 
 const root = path.resolve(__dirname, "..");
@@ -59,6 +62,13 @@ describe("Server Actions authorize first", () => {
 
   it("finds the actions it checks", () => {
     expect(all.length).toBeGreaterThan(0);
+  });
+
+  // Spec 0014 AC-18: the public set password click is scanned, not missed.
+  it("scans the set password click", () => {
+    expect(all.map((a) => a.id)).toContain(
+      "app/set-password/[token]/actions.ts#startSetPassword",
+    );
   });
 
   it.each(all)("$id calls requireAdmin or requireLearner", ({ id, body }) => {

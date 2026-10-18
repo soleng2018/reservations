@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { LEARNER_MESSAGES } from "@/lib/learners";
+import { cancelAccessLine } from "@/lib/manage-reservations";
 import type { Result } from "@/lib/result";
 
 // Spec 0008 AC-10: an Upcoming or Current row's Cancel, with a confirm. The
@@ -76,7 +77,7 @@ export function BookingCancelButton({
             <AlertDialogTitle>Cancel this reservation?</AlertDialogTitle>
             <AlertDialogDescription>
               {testbed}, {start} to {end}. The testbed is freed at once.
-              {current ? " The learner's lab access ends now." : null}
+              {cancelAccessLine("admin", current)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

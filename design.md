@@ -160,7 +160,7 @@ on the container.
 
 | Piece | File | Use it for |
 |---|---|---|
-| Button | `components/ui/button.tsx` | `default` (Nile Blue pill), `cta` (learner gradient), `outline`, `secondary`, `ghost`, `destructive`, `link`. Sizes `default` 40px, `sm`, `lg` 48px, `icon` 32px square, `icon-lg` 38px. Pending: `<Spinner data-icon="inline-start" />` plus `disabled`. |
+| Button | `components/ui/button.tsx` | `default` (Nile Blue pill), `cta` (learner gradient), `outline`, `secondary`, `ghost`, `destructive`, `link`. Sizes `default` 40px, `sm`, `lg` 48px, `icon` 32px square, `icon-lg` 38px. Pending: `<Spinner data-icon="inline-start" />` plus `disabled`. On a Link, use `cn(buttonVariants(...))`: cva alone keeps the base `border-transparent`, so an outline link loses its border. |
 | Badge | `components/ui/badge.tsx` | status pills. `tone` is `info`, `success`, `neutral`, or `accent`; get it from a word with `toneFor()` in `lib/badge-tones.ts`. |
 | Field | `components/field.tsx` | one labelled control: `<Field path="clients.0.url" label="URL"><Input name="clientUrl" /></Field>`. It wires the id, `aria-invalid`, `aria-describedby`, and `data-field`, and reads its error from the enclosing FormDialog (or `error`). |
 | FormSelect | `components/form-select.tsx` | a Base UI select that submits under `name`; works inside Field. |
@@ -178,6 +178,7 @@ on the container.
 | TimezoneCombobox | `components/timezone-combobox.tsx` | type to search IANA zones labelled with their offset ("America/New York (GMT-4)"); submits under `name`, works inside Field. Built on `components/ui/combobox.tsx`, whose input keeps the Input look. |
 | Turnstile | `components/turnstile.tsx` | Cloudflare Turnstile, explicit render, one widget id per instance. `onToken` gets each token (null on expiry); change `resetSignal` after each reply. Axe excludes `[data-slot=turnstile]`. |
 | Booking screens | `components/book/` | the `/book` flow: StepHeading (eyebrow plus the focusable `<h1>`), DetailsStep, TimeStep and ConfirmStep (plain props, reused by reschedule), ProgressScreen, FailureScreen, BookingSuccess. |
+| Reservation screens | `components/reservations/` | the learner's `/reservations` area (spec 0011): ReservationCard (one booking, its phase Badge, and its actions as rendered nodes), CancelReservationButton (the confirm AlertDialog, the page binds id and version), RescheduleFlow (Step 2 on TimeStep with `currentStart`, Step 3 on ConfirmStep with a `struck` "Current time" row and an optional `note`, then ProgressScreen, FailureScreen `flow="reschedule"`, RescheduleSuccess), CannotReschedule. The card states live in the gallery. |
 | Toasts | `components/notify.ts` | `notifySuccess(message)` (4s, polite) and `notifyError(message)` (8s, assertive, with Close). One region, mounted in the root layout. |
 | shadcn | `components/ui/` | Card, Input, Label, Select, Alert, Empty, Separator, Skeleton, Spinner, Table, Dialog, AlertDialog, Sheet, Toast, all restyled to these tokens. Use them before writing custom markup. |
 

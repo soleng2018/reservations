@@ -3,6 +3,7 @@ import { sql, type Kysely } from "kysely";
 import { DurationUnit, LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
 import { durationMs } from "@/lib/duration";
 import { freeStarts, HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
+import { preferFirst } from "@/lib/manage-reservations";
 import { bookableTestbedsOfType, dbNow } from "@/server/db/bookings";
 import type { DB } from "@/server/db/types";
 
@@ -59,12 +60,18 @@ async function typeDuration(
     : null;
 }
 
-// Live bookings of these testbeds that overlap [from, to).
+// A reschedule reads availability as if its own booking were gone (spec
+// 0011 AC-7, AC-8): its own range never counts as busy. /book passes none.
+export type ExcludeOwn = { readonly excludeBookingId?: string };
+
+// Live bookings of these testbeds that overlap [from, to), less the excluded
+// one.
 const busyRanges = (
   conn: Kysely<DB>,
   testbedIds: readonly string[],
   from: Date,
   to: Date,
+  { excludeBookingId }: ExcludeOwn = {},
 ) =>
   conn
     .selectFrom("bookings")
@@ -77,6 +84,9 @@ const busyRanges = (
     .where("status", "in", LIVE_BOOKING_STATUSES)
     .where("starts_at", "<", to)
     .where("ends_at", ">", from)
+    .$if(excludeBookingId !== undefined, (q) =>
+      q.where("id", "!=", excludeBookingId ?? ""),
+    )
     .execute();
 
 export type Starts = {
@@ -90,6 +100,7 @@ export type Starts = {
 export async function startsFor(
   conn: Kysely<DB>,
   testbedTypeId: string,
+  opts: ExcludeOwn = {},
 ): Promise<Starts> {
   const now = await dbNow(conn);
   const none = { starts: [], durationMs: 0, now };
@@ -104,6 +115,7 @@ export async function startsFor(
     ids,
     now,
     new Date(now.getTime() + HORIZON_MS + length),
+    opts,
   );
   const starts = freeStarts({
     now,
@@ -118,20 +130,26 @@ export async function startsFor(
 
 // The testbed the saga would most likely assign (spec 0010 AC-7): the first
 // bookable testbed of the type, in the saga's lower(name) order, with no live
-// booking overlapping [start, start + duration). Advice only; it takes no
-// lock and holds nothing. Null when none is free or the start is no longer
-// offered.
+// booking overlapping [start, start + duration). A reschedule keeps its own
+// testbed when it can (spec 0011 AC-8): `preferTestbedId` is tried first.
+// Advice only; it takes no lock and holds nothing. Null when none is free or
+// the start is no longer offered.
 export async function firstFreeTestbed(
   conn: Kysely<DB>,
   testbedTypeId: string,
   startsAt: Date,
+  opts: ExcludeOwn & { readonly preferTestbedId?: string } = {},
 ): Promise<{ readonly testbedName: string; readonly endsAt: Date } | null> {
   const length = await typeDuration(conn, testbedTypeId);
   if (length === null) return null;
   if (!isOfferableStart(startsAt, await dbNow(conn), LEAD_MS, HORIZON_MS))
     return null;
-  const testbeds = await bookableTestbedsOfType(conn, testbedTypeId);
-  if (testbeds.length === 0) return null;
+  const bookable = await bookableTestbedsOfType(conn, testbedTypeId);
+  if (bookable.length === 0) return null;
+  const testbeds =
+    opts.preferTestbedId === undefined
+      ? bookable
+      : preferFirst(bookable, opts.preferTestbedId);
 
   const endsAt = new Date(startsAt.getTime() + length);
   const busy = new Set(
@@ -141,6 +159,7 @@ export async function firstFreeTestbed(
         testbeds.map((t) => t.id),
         startsAt,
         endsAt,
+        opts,
       )
     ).map((b) => b.testbedId),
   );

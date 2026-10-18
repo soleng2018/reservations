@@ -120,7 +120,9 @@ export function trustProxyHeaders(): boolean {
 
 // Spec 0006 AC-9: the keyring that encrypts stored secrets, a JSON object
 // { "<keyId>": "<base64 32 bytes>" }, plus the id that encrypts new values.
-// Every message names the problem and never prints a key. Web only.
+// Every message names the problem and never prints a key. The web process
+// encrypts with it; the worker decrypts the CLOUDFLARE key with it, and reads
+// it only while one exists (spec 0012 AC-11).
 const keyringSchema = z
   .string({ error: "APP_ENCRYPTION_KEYS is missing" })
   .min(1, "APP_ENCRYPTION_KEYS is missing")

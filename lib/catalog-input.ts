@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ApiKeyType, DurationUnit, TestbedClientKind } from "./db-enums";
+import {
+  ApiKeyType,
+  DurationUnit,
+  GoogleAuthMethod,
+  TestbedClientKind,
+} from "./db-enums";
 
 // Admin catalog form input (spec 0004 AC-1, AC-2). Parsed on the server.
 
@@ -92,17 +97,118 @@ const ApiKeySecret = z
   .trim()
   .max(4096, "Use at most 4096 characters.");
 
+// Every type but GOOGLE: a base URL and a typed secret.
+const StandardKeyType = ApiKeyType.exclude(["GOOGLE"]);
+
 const ApiKeyBase = z.object({
   name: CatalogName,
-  type: z.enum(ApiKeyType.options, "Choose a type."),
+  type: StandardKeyType,
   baseUrl: ApiKeyBaseUrl,
 });
 
-export const ApiKeyCreateInput = ApiKeyBase.extend({
+// Spec 0006 AC-12: a CLOUDFLARE key's base URL is exactly the account route
+// the revoke path extends (spec 0012 AC-11). No trailing slash.
+export const CLOUDFLARE_BASE_URL =
+  /^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[0-9a-f]{32}$/;
+
+// An object rule, since it needs the type. It runs on the trimmed URL, and
+// only once the type and the URL have no error of their own, so a bad URL
+// shows one message.
+const cloudflareBaseUrl = {
+  message: "Enter https://api.cloudflare.com/client/v4/accounts/<account id>.",
+  path: ["baseUrl"],
+  when: (payload: z.core.ParsePayload) =>
+    payload.issues.every(
+      (i) => i.path?.[0] !== "type" && i.path?.[0] !== "baseUrl",
+    ),
+};
+const isCloudflareBaseUrl = (key: {
+  readonly type: ApiKeyType;
+  readonly baseUrl: string;
+}) => key.type !== "CLOUDFLARE" || CLOUDFLARE_BASE_URL.test(key.baseUrl);
+
+const StandardKeyCreate = ApiKeyBase.extend({
   secret: ApiKeySecret.min(1, "Enter the key."),
-});
-export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInput>;
+}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
+export type StandardKeyCreate = z.infer<typeof StandardKeyCreate>;
 
 // A blank secret keeps the stored one.
-export const ApiKeyUpdateInput = ApiKeyBase.extend({ secret: ApiKeySecret });
+const StandardKeyUpdate = ApiKeyBase.extend({
+  secret: ApiKeySecret,
+}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
+export type StandardKeyUpdate = z.infer<typeof StandardKeyUpdate>;
+
+// Spec 0013 AC-1: a GOOGLE key's base URL is this constant, stored and never
+// shown in the form.
+export const GOOGLE_BASE_URL = "https://www.googleapis.com";
+
+const EMAIL_MESSAGE = "Enter an email address.";
+const CALENDAR_ID_MESSAGE =
+  "Enter the calendar ID from the calendar's settings.";
+
+const EmailAddress = z.string().trim().pipe(z.email(EMAIL_MESSAGE));
+// Blank becomes null.
+const OptionalEmail = z
+  .string()
+  .trim()
+  .optional()
+  .transform(emptyToNull)
+  .pipe(z.email(EMAIL_MESSAGE).nullable());
+
+// The files are not here: the action reads them from the FormData and parses
+// them with parseGoogleKeyFile (lib/booking-email.ts) and
+// parseGoogleClientFile (lib/google-sign-in.ts). The pasted sign in address
+// is parsed there too, after these fields (spec 0013 AC-28).
+const googleCommon = {
+  name: CatalogName,
+  type: z.literal("GOOGLE"),
+  calendarId: z
+    .string()
+    .trim()
+    .min(1, CALENDAR_ID_MESSAGE)
+    .max(255, CALENDAR_ID_MESSAGE)
+    .regex(/^[^\s/]+$/, CALENDAR_ID_MESSAGE),
+  devInbox: OptionalEmail,
+  opsBcc: OptionalEmail,
+};
+
+// Spec 0013 AC-1: the service account acts as the typed sender mailbox.
+const GoogleServiceAccountFields = z.object({
+  ...googleCommon,
+  googleAuth: z.literal(GoogleAuthMethod.enum.service_account),
+  senderEmail: EmailAddress,
+});
+export type GoogleServiceAccountFields = z.infer<
+  typeof GoogleServiceAccountFields
+>;
+
+// Spec 0013 AC-25: no sender field; the sender is the account that signed
+// in (AC-28).
+const GoogleSignInFields = z.object({
+  ...googleCommon,
+  googleAuth: z.literal(GoogleAuthMethod.enum.oauth),
+});
+export type GoogleSignInFields = z.infer<typeof GoogleSignInFields>;
+
+const GoogleKeyFields = z.discriminatedUnion(
+  "googleAuth",
+  [GoogleServiceAccountFields, GoogleSignInFields],
+  "Choose a sign in method.",
+);
+export type GoogleKeyFields = z.infer<typeof GoogleKeyFields>;
+
+const TYPE_MESSAGE = "Choose a type.";
+
+export const ApiKeyCreateInput = z.discriminatedUnion(
+  "type",
+  [StandardKeyCreate, GoogleKeyFields],
+  TYPE_MESSAGE,
+);
+export type ApiKeyCreateInput = z.infer<typeof ApiKeyCreateInput>;
+
+export const ApiKeyUpdateInput = z.discriminatedUnion(
+  "type",
+  [StandardKeyUpdate, GoogleKeyFields],
+  TYPE_MESSAGE,
+);
 export type ApiKeyUpdateInput = z.infer<typeof ApiKeyUpdateInput>;

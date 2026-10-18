@@ -37,6 +37,7 @@ const BOOKED: BookState = {
   endsAt: "2026-10-13T17:00:00.000Z",
   timezone: "America/New_York",
   newUser: true,
+  access: null,
 };
 const error = (code: Exclude<BookState, { kind: "booked" | "idle" }>["code"]) =>
   ({ kind: "error", code, fields: {} }) as const;
@@ -641,5 +642,61 @@ describe("browser Back and Forward (AC-11)", () => {
     expect(
       run(s, { type: "starts_done", result: { ...LIST, starts: [] }, at: 9 }),
     ).toBe(s);
+  });
+});
+
+// covers: spec 0011 AC-13
+describe("a signed in learner's flow (spec 0011 AC-13)", () => {
+  const ACCOUNT = {
+    name: "Priya Shah",
+    company: null,
+    email: "priya@example.test",
+    timezone: "Europe/Paris",
+  };
+
+  it("seeds the details from the account", () => {
+    expect(initialFlow("UTC", ACCOUNT).form).toEqual({
+      name: "Priya Shah",
+      company: "",
+      email: "priya@example.test",
+      timezone: "Europe/Paris",
+      testbedTypeId: "",
+    });
+  });
+
+  it("shows signed_out at Step 1 from the check", () => {
+    const form = { ...initialFlow("UTC", ACCOUNT).form, testbedTypeId: TYPE };
+    const s = run(
+      initialFlow("UTC", ACCOUNT),
+      { type: "check_started", form },
+      {
+        type: "check_done",
+        form,
+        result: { kind: "error", code: "signed_out", fields: {} },
+      },
+    );
+    expect(s).toMatchObject({
+      step: "details",
+      details: null,
+      notice: { kind: "signed_out" },
+    });
+  });
+
+  it("returns to Step 1 with signed_out from confirm", () => {
+    const s = run(
+      atConfirm(),
+      { type: "token", token: "t" },
+      { type: "submit", id: 1 },
+      {
+        type: "book_done",
+        id: 1,
+        result: error("signed_out"),
+      },
+    );
+    expect(s).toMatchObject({
+      phase: "editing",
+      step: "details",
+      notice: { kind: "signed_out" },
+    });
   });
 });

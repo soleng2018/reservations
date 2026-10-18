@@ -265,3 +265,78 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
       ).toEqual(new Date(start + 24 * HOUR));
     }));
 });
+
+// A booking of a fresh learner on `testbed` at [from, to), returning its id.
+const bookId = async (
+  trx: Kysely<DB>,
+  testbed: { id: string; testbed_type_id: string },
+  from: number,
+  to: number,
+) => {
+  const user = await makeUser(trx);
+  const row = await trx
+    .insertInto("bookings")
+    .values({
+      user_id: user.id,
+      testbed_id: testbed.id,
+      testbed_type_id: testbed.testbed_type_id,
+      starts_at: new Date(from),
+      ends_at: new Date(to),
+      status: "confirmed",
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  return row.id;
+};
+
+// covers: spec 0011 AC-7, AC-8
+describe.skipIf(!hasDb)("a reschedule's view (spec 0011)", () => {
+  it("offers the booking's own range only when it is excluded", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx, { duration_value: 2 });
+      const testbed = await makeTestbed(trx, type.id);
+      const first = await firstStart(trx);
+      const own = await bookId(trx, testbed, first, first + 2 * HOUR);
+
+      const plain = await startsFor(trx, type.id);
+      expect(plain.starts.map((d) => d.getTime())).not.toContain(first);
+      const excluded = await startsFor(trx, type.id, {
+        excludeBookingId: own,
+      });
+      expect(excluded.starts.map((d) => d.getTime())).toContain(first);
+      expect(excluded.starts.map((d) => d.getTime())).toContain(first + HOUR);
+    }));
+
+  it("prefers the kept testbed when free, else the name order one", () =>
+    inRollback(async (trx) => {
+      const u = crypto.randomUUID().slice(0, 8);
+      const type = await makeType(trx, { duration_value: 2 });
+      const a = await makeTestbed(trx, type.id, { name: `a ${u}` });
+      const b = await makeTestbed(trx, type.id, { name: `b ${u}` });
+      const first = await firstStart(trx);
+      const own = await bookId(trx, b, first, first + 2 * HOUR);
+      const at = new Date(first + HOUR);
+
+      // Its own range on b does not block b once excluded.
+      expect(
+        await firstFreeTestbed(trx, type.id, at, {
+          excludeBookingId: own,
+          preferTestbedId: b.id,
+        }),
+      ).toMatchObject({ testbedName: b.name });
+      // Without the exclusion, b is busy, so a is offered.
+      expect(
+        await firstFreeTestbed(trx, type.id, at, { preferTestbedId: b.id }),
+      ).toMatchObject({ testbedName: a.name });
+
+      // Someone else on b: fall back to a.
+      const later = new Date(first + 24 * HOUR);
+      await bookId(trx, b, later.getTime(), later.getTime() + 2 * HOUR);
+      expect(
+        await firstFreeTestbed(trx, type.id, later, {
+          excludeBookingId: own,
+          preferTestbedId: b.id,
+        }),
+      ).toMatchObject({ testbedName: a.name });
+    }));
+});
