@@ -4,6 +4,7 @@ import { formatDateTime } from "@/lib/format-time";
 import type { LearnerInput } from "@/lib/learner-input";
 import {
   ADMINS,
+  FAKE_NEW_PK,
   fakeAuthentik,
   fakeLearner,
   fakeUser,
@@ -19,6 +20,7 @@ import {
 } from "@/server/db/testing";
 import { dbNow } from "@/server/db/bookings";
 import type { DB } from "@/server/db/types";
+import { appUrl } from "@/server/env";
 import {
   cancelBookingByAdmin,
   createLearner,
@@ -75,7 +77,7 @@ describe.skipIf(!hasDb)("createLearner, the add saga (spec 0008)", () => {
         name: "Priya Shah",
         company: "Concordia University",
         timezone: "America/Toronto",
-        authentik_user_pk: 100,
+        authentik_user_pk: FAKE_NEW_PK,
         set_password_pending: true,
       });
       expect(ak.users[0]?.attributes).toMatchObject({ hol_user_id: row?.id });
@@ -246,7 +248,7 @@ describe.skipIf(!hasDb)("createLearner, the add saga (spec 0008)", () => {
       expect(await rowOf(trx, values.email)).toBeUndefined();
       expect(ak.writes).toEqual([
         "POST /core/users/",
-        "DELETE /core/users/100/",
+        `DELETE /core/users/${FAKE_NEW_PK}/`,
       ]);
     }));
 
@@ -945,3 +947,62 @@ describe.skipIf(!hasDb)("isConsoleLearner (spec 0008)", () => {
         expect(await isConsoleLearner(trx, id)).toBe(false);
     }));
 });
+
+const welcomePayloads = async (trx: Kysely<DB>, id: string) =>
+  (
+    await trx
+      .selectFrom("jobs")
+      .select("payload")
+      .where("kind", "=", "send_welcome")
+      .where("idempotency_key", "like", `welcome:${id}%`)
+      .execute()
+  ).map((j) => j.payload);
+
+// covers: spec 0014 AC-15. One worker serves dev and prod, so every welcome
+// job carries the origin of the app that queued it.
+describe.skipIf(!hasDb)(
+  "welcome jobs carry the app's origin (spec 0014 AC-15)",
+  () => {
+    it("on an add", () =>
+      inRollback(async (trx) => {
+        const admin = await makeUser(trx, { role: "admin" });
+        const values = input();
+        await createLearner(
+          fakeAuthentik([]).api,
+          asConn(trx),
+          values,
+          admin.id,
+        );
+        const row = await rowOf(trx, values.email);
+        expect(await welcomePayloads(trx, row?.id ?? "")).toEqual([
+          { userId: row?.id, appUrl: appUrl() },
+        ]);
+      }));
+
+    it("on an email fix", () =>
+      inRollback(async (trx) => {
+        const admin = await makeUser(trx, { role: "admin" });
+        const { row, account } = await linked(trx, 11);
+        await updateLearner(
+          fakeAuthentik([account]).api,
+          asConn(trx),
+          row.id,
+          asInput(row, { email: `fixed-${unique()}@x.test` }),
+          admin.id,
+        );
+        expect(await welcomePayloads(trx, row.id)).toEqual([
+          { userId: row.id, appUrl: appUrl() },
+        ]);
+      }));
+
+    it("on an admin resend", () =>
+      inRollback(async (trx) => {
+        const admin = await makeUser(trx, { role: "admin" });
+        const { row } = await linked(trx, 11);
+        await resendSetPasswordByAdmin(asConn(trx), row.id, admin.id);
+        expect(await welcomePayloads(trx, row.id)).toEqual([
+          { userId: row.id, appUrl: appUrl() },
+        ]);
+      }));
+  },
+);

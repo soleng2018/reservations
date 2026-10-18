@@ -5,7 +5,7 @@ import {
   findOrCreateLearner,
   issueSetPasswordLink,
 } from "./learners";
-import { ADMINS, fakeAuthentik, fakeUser, POD } from "./testing";
+import { ADMINS, FAKE_NEW_PK, fakeAuthentik, fakeUser, POD } from "./testing";
 
 const user = fakeUser;
 
@@ -17,7 +17,12 @@ describe("findOrCreateLearner (AC-5)", () => {
     const r = await findOrCreateLearner(ak.api, input);
     expect(r).toEqual({
       ok: true,
-      value: { pk: 100, created: true, tagged: false, neverLoggedIn: true },
+      value: {
+        pk: FAKE_NEW_PK,
+        created: true,
+        tagged: false,
+        neverLoggedIn: true,
+      },
     });
     expect(ak.writes).toEqual(["POST /core/users/"]);
     expect(ak.users[0]).toMatchObject({

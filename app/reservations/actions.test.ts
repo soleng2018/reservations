@@ -42,6 +42,7 @@ const { cancelReservationAction, resendSetPassword } =
   await import("./actions");
 const { asConn, hasDb, inRollback, makeTestbed, makeType, makeUser, slot } =
   await import("@/server/db/testing");
+const { appUrl } = await import("@/server/env");
 
 const GENERIC =
   "If that email has a reservation waiting for a password, we've sent a new link. Check your inbox.";
@@ -160,6 +161,20 @@ describe.skipIf(!hasDb)("resendSetPassword (AC-8)", () => {
       await resendSetPassword(undefined, form(u.email));
       expect(await resendJobs(trx, u.id)).toEqual([]);
       expect(await audited(trx, u.id)).toBe(0);
+    }));
+
+  // covers: spec 0014 AC-15
+  it("puts this app's own origin in the job, so the link comes back here", () =>
+    withConn(async (trx) => {
+      const u = await makeUser(trx, { set_password_pending: true });
+      await resendSetPassword(undefined, form(u.email));
+      const [job] = await trx
+        .selectFrom("jobs")
+        .select("payload")
+        .where("kind", "=", "send_welcome")
+        .where("payload", "@>", JSON.stringify({ userId: u.id }))
+        .execute();
+      expect(job?.payload).toEqual({ userId: u.id, appUrl: appUrl() });
     }));
 });
 

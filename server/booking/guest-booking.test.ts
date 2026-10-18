@@ -17,6 +17,7 @@ import {
   slot,
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
+import { appUrl } from "@/server/env";
 import { bookAsGuest } from "./guest-booking";
 
 async function setup(trx: Kysely<DB>) {
@@ -250,5 +251,21 @@ describe.skipIf(!hasDb)("bookAsGuest (AC-5, AC-6)", () => {
         ok: false,
         error: "booking_pending",
       });
+    }));
+});
+
+// covers: spec 0014 AC-15
+describe.skipIf(!hasDb)("bookAsGuest's welcome job (spec 0014 AC-15)", () => {
+  it("carries this app's own origin, so the link comes back here", () =>
+    inRollback(async (trx) => {
+      const { input, state } = await setup(trx);
+      await bookAsGuest(fakeAuthentik([]).api, asConn(trx), input);
+      const { user } = await state();
+      const [job] = await trx
+        .selectFrom("jobs")
+        .select("payload")
+        .where("payload", "@>", JSON.stringify({ userId: user?.id }))
+        .execute();
+      expect(job?.payload).toEqual({ userId: user?.id, appUrl: appUrl() });
     }));
 });

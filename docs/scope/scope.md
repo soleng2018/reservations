@@ -44,7 +44,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | done |
 | 14 | Lab access & booking result screens | Slice 3 | done |
 | 15 | Email delivery & booking confirmations | Slice 4 | done |
-| 16 | Set password / welcome email | Slice 4 | in-progress |
+| 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | planned |
 | 18 | Admin audit log | Slice 5 | planned |
 
@@ -262,7 +262,7 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
 - [x] Test it: `/test email delivery & booking confirmations`
 spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `db/migrations/0010_google_sign_in.sql`, `lib/google-sign-in.ts`, `components/admin/api-key-fields.tsx`, `scripts/calendar-backfill.ts`
 
-### 16. Set password / welcome email · in-progress
+### 16. Set password / welcome email · done
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
 **Done when:** each new user gets exactly one such email; the link expires, works once, and lands them signed in.
 - [x] Design it (spec): `/architect set password / welcome email`
@@ -274,7 +274,7 @@ The email a new user gets when their account is created, at guest booking or by 
   - [x] Proof: snapshots, leak scans, allow list, Playwright, and `verify.md` (AC-5, 7, 11, 12, 18, 19)
   - [x] Timed out view: `onAPIError.errorURL`, the "Sign in timed out" view with a Sign in button on `/auth/error` (AC-19)
 - [x] Verify it: `/check verify set password / welcome email`
-- [ ] Test it: `/test set password / welcome email`
+- [x] Test it: `/test set password / welcome email`
 spec [0014](../specs/0014-set-password-welcome-email/index.md) · code in `server/jobs/send-welcome.ts`, `server/jobs/welcome-queue.ts`, `server/auth/set-password-links.ts`, `server/auth/start-set-password.ts`, `server/email/templates/welcome-email.tsx`, `app/set-password/`, `components/auth/`, `lib/welcome-email.ts`, `lib/set-password-link.ts`, `db/migrations/0011_set_password_links.sql`, `scripts/authentik-setup.ts`, `lib/auth-errors.ts`, `app/auth/error/`, `server/auth/index.ts`
 
 ### 17. Reminder before start · needs a decision

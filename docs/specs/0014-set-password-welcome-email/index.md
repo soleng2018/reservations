@@ -1,7 +1,7 @@
 # 0014. Set password and welcome email
 
 **Date**: 2026-10-17
-**Status**: In Progress
+**Status**: Accepted
 **Amends**: [spec 0002](../0002-data-model/index.md) (the one welcome per user index on `email_messages` is dropped; welcome `details` defined here), [spec 0003](../0003-authentik-sign-in-provisioning/index.md) (AC-6: the Authentik recovery link is requested when the learner clicks, for 10 minutes, and the 72 hours move to the app's own link; `hol-recovery` gains a login stage; `onAPIError.errorURL` sends every early callback failure to `/auth/error`, which gains a `timed_out` view with a Sign in button, AC-19), [spec 0008](../0008-admin-users/index.md) (the known gap "a link sent to the old address stays valid" is closed: an email change ends the learner's links; the email change job key gains the change's DB time), [spec 0013](../0013-email-delivery-booking-confirmations/index.md) (the `send_welcome` handler joins the runner's handled set and reuses `EmailFrame`).
 
 ## Summary

@@ -33,6 +33,9 @@ export const fakeGroup = (
   attributes: Record<string, unknown> = {},
 ): FakeGroup => ({ pk, name, attributes, roles_obj: [] });
 
+// The pk the fake gives the first user it creates; the next gets one more.
+export const FAKE_NEW_PK = 900_100;
+
 export const ADMINS = fakeGroup("admins-uuid", "hol-admins");
 export const POD = fakeGroup("pod-uuid", "pod-lab-1");
 
@@ -160,7 +163,9 @@ export function fakeAuthentik(
     if (method === "POST" && path === "/core/users/") {
       const created = {
         ...body,
-        pk: 100 + users.length,
+        // Far above the real Authentik's pks: dev and prod share one
+        // database, and a real learner's row already holds pk 100.
+        pk: FAKE_NEW_PK + users.length,
         is_superuser: false,
         groups: [],
       };
