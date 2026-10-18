@@ -3,6 +3,7 @@
 **Date**: 2026-10-04 (updated 2026-10-05 with spike 1 results)
 **Status**: Accepted
 **Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): Google credentials live on the API Keys screen as one `GOOGLE` key (the service account JSON key with domain wide delegation, plus the sender mailbox and calendar fields); the dev OAuth driver and the `GOOGLE_*` and `HOL_OPS_BCC` env vars are dropped; the worker runs without `--conditions=react-server` so React Email can render.
+**Amended**: 2026-10-16 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md) (AC-25 to AC-34): the OAuth consent driver returns, not by env but as the `GOOGLE` key's second sign in method (Google sign in, for a personal Gmail sender while testing), picked in the API Keys dialog; production moves to the service account by editing the key. The email sending row's dev/prod split now lives on that key, and the `GOOGLE_*` env vars stay dropped.
 
 ## Summary
 

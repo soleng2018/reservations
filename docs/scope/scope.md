@@ -256,8 +256,10 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
   - [x] Google sign in thickened: edit and switch methods, the breaker by method with the Needs attention badge, and its proof (AC-29, 31, 32, 33)
   - [x] Exchange outage keeps the sign in, so the same save can be retried (spec amended 2026-10-16, task 13) (AC-28)
   - [x] Review fixes: the invite attached once outside `multipart/alternative` with a MIME tree test, the booked email in the zone `/book` showed, the rescheduled intro and the password box for new accounts only (spec amended 2026-10-16, task 14) (AC-6, 11, 12, 15, 17, 23)
+  - [x] One zone per booking and the UTC label: later emails reuse the booked email's zone through `bookingZone`, and emails print `UTC` instead of `GMT+0` (spec amended 2026-10-17, task 15) (AC-6, 11, 14)
+  - [x] The sender's own mailbox and Gmail's copy: a Dev inbox or Ops BCC in the sender's mailbox refused at save and dropped at send, and AC-15 restated for what Gmail delivers (spec amended 2026-10-17, task 16) (AC-15, 16, 17, 35, 36)
 - [ ] Verify it: `/check verify email delivery & booking confirmations`
-- [ ] Test it: `/test email delivery & booking confirmations`
+- [x] Test it: `/test email delivery & booking confirmations`
 spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `db/migrations/0010_google_sign_in.sql`, `lib/google-sign-in.ts`, `components/admin/api-key-fields.tsx`, `scripts/calendar-backfill.ts`
 
 ### 16. Set password / welcome email

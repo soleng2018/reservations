@@ -124,7 +124,7 @@ The bug got through because the tests snapshot the HTML, the text, and the `.ics
 
 A returning learner who books through the guest form keeps their stored `users.timezone`, because the saga's insert does `ON CONFLICT DO NOTHING`. The success screen showed the zone they picked, and the email showed the stored one.
 
-- **Snapshot the zone the booking screen showed, for booked only (chosen).** The email matches the screen the learner just saw. Reschedule and cancel happen signed in (or by an admin), where every screen uses `users.timezone`, so their emails keep using it. Each email matches the screen that made its change, and nothing about the account changes.
+- **Snapshot the zone the booking screen showed, for booked only (chosen; the reschedule and cancel half superseded 2026-10-17, see below).** The email matches the screen the learner just saw. Reschedule and cancel happen signed in (or by an admin), where every screen uses `users.timezone`, so their emails keep using it. Each email matches the screen that made its change, and nothing about the account changes.
 - **Overwrite `users.timezone` with the picked zone.** One zone everywhere, but an unauthenticated form would then edit an existing account's settings by typing its email. Rejected.
 - **Show the stored zone on the success screen for an existing account.** One zone everywhere, but it would show an account's stored zone to anyone who types that email on `/book`, and it surprises the learner who just picked a zone. Rejected.
 
@@ -134,3 +134,43 @@ The rescheduled email reused the booked intro ("your reservation is confirmed").
 
 - **Rescheduled gets its own intro. The box shows only on a booked email for an account that booking created (chosen)**, keyed by the saga's `created`, which is exactly when that transaction queues the welcome job. The box drops the "Existing users…" sentence, because existing users no longer see it. The promise of a separate email comes true with feature 16, the same promise the `/book` success screen already makes. Runner up: drive the box from `users.set_password_pending`. That also catches an admin created learner who never set a password, but that learner's welcome job was queued at creation, not by this booking, so "you will receive" would be wrong for them.
 - **Hide the box until feature 16 ships.** Simpler, but then a new learner's first email never mentions setting a password, while the success screen does. Rejected.
+
+## Amendment 2026-10-17, after verify
+
+`/check verify` booked as `hol-test-learner` (stored zone UTC) through the guest form in `Asia/Kolkata`. The booked email said "Sat, Oct 17, 2026, 7:00 AM India Time" and the cancellation for the same booking said "1:30 AM GMT+0", seen side by side in iOS Mail. The 2026-10-16 rule (each email matches the screen that made its change) is correct one email at a time, but a learner reads a booking's emails as one thread, and two zones in it look like a mistake about the time.
+
+### One zone per booking (AC-6, AC-11)
+
+- **Reuse the booked email's zone for every later email of that booking (chosen, owner 2026-10-17).** The booked row's `details` already holds the zone, so a rescheduled or cancelled notice reads it in the same transaction, through the existing unique index. No migration, no new column, and the booked email stays the source of truth for "the zone this booking speaks". Cons: a later email can disagree with the signed in screen that made the change (the rare returning guest case), and a learner who changes their account zone keeps the old one on that booking's later emails. Falls back to `users.timezone` for bookings made before this feature.
+- **Store the zone on `bookings` (`bookings.timezone`, set at confirm).** Same behavior, and a clearer home. Cons: a migration and a backfill for a column only email reads, and a second copy of a value `email_messages.details` already holds. Runner up; worth it only if screens ever need the booking's zone too.
+- **Keep the zone of each change (the 2026-10-16 rule).** Every email matches its own screen. Con: the case verify found, two zones for one booking. Rejected by the owner.
+- **Overwrite `users.timezone` from the guest form.** Rejected again for the 2026-10-16 reason: an unauthenticated form would change an existing account.
+
+### The UTC label (AC-14)
+
+Intl's `shortGeneric` names `UTC` as `GMT+0`, while every screen says `UTC`. Printing `UTC` for `UTC`, `Etc/UTC`, and `Etc/GMT` is a one function change and matches what the learner chose (chosen, owner 2026-10-17). Making screens and emails share one format everywhere was weighed and left out: it touches every screen and admin page that uses `formatDateTime`, beyond this spec, and the generic names (`ET`, `India Time`) suit emails that may be read in another season, while the screens' exact names (`EDT`, `GMT+5:30`) suit a time chosen today. Runner up: leave `GMT+0`, which is correct but reads like a different zone from the one picked.
+
+## Amendment 2026-10-17, after the verify findings
+
+Two findings from the verify run (verify.md, the "Show original" step and the note on the reschedule and cancel step).
+
+### What Gmail delivers (AC-15)
+
+The `.eml` of booking `65b76eb8`, downloaded from the learner's Gmail, wasn't the tree the app composed. Gmail rebuilds every message sent through its API (new boundaries), and for a message carrying an invite it adds its own inline `text/calendar` alternative, with the same `UID` and `SEQUENCE`, inside a `multipart/related` that also holds the logo. The app's own tree matches AC-15 (the compose test passes). So the step was testing Gmail, not the app.
+
+- **Describe both trees and accept Gmail's copy (chosen, owner 2026-10-17).** AC-15 keeps the composed tree as the app's contract, proven by the MIME tree test; it notes the delivered tree as observed; the verify step checks what has to hold after Gmail (body present, our `invite.ics`, one `UID` and `SEQUENCE` across all calendar parts, no `application/ics`, no Bcc). Cost: Gmail web shows two `invite.ics` chips, which looks untidy but changes nothing a learner does.
+- **Change the composed tree so Gmail adds nothing**, for example sending the invite only as a `text/calendar` alternative. Gmail might keep it as it is, but that is the shape iOS Mail failed on, and the matrix would have to run again. Rejected.
+- **Send through something other than the Gmail API** (SMTP). Gmail's SMTP relay most likely rewrites too, and the 2026-10-16 amendment already rejected SMTP for its credential. Rejected.
+
+Why iOS Mail failed on nodemailer's tree but reads Gmail's rebuilt one well isn't known. The matrix is what proves a client, so the note says to recheck when the sender moves to Workspace.
+
+### The organizer's own calendar (AC-16, AC-17, AC-35, AC-36)
+
+Every invite names the sender mailbox as `ORGANIZER`. In the first verify run, an iPhone whose default calendar was the sender account (mnisdm@gmail.com) saved the learner's invite there. Google Calendar then owned the event, sent its own "Invitation:" email, and ignored our emailed update. The Ops BCC (`mnisdm+holops@gmail.com`) delivers every learner invite to that same account, so one tap on its invite card would do the same to a real learner's booking.
+
+- **Refuse an inbox in the sender's mailbox at save, and drop it at send (chosen, owner 2026-10-17).** It closes the one route the app itself creates, with a pure check and no migration. The send side makes the live row safe before anyone edits it. Ops loses nothing, since every email is already in the sender's Sent folder. Cons: it sees addresses, not routing (a Workspace alias passes), and it can't stop a person signed in as the sender, so that becomes an operating rule.
+- **Refuse at save only.** Smaller, but the live row would keep Bcc'ing the sender until someone edits the key. Runner up.
+- **Make the organizer an address with no Google Calendar.** It would remove the takeover itself. But a gmail.com sender can send only as itself or a verified alias, Gmail checks that updates come from the organizer before applying them on their own, and production's Workspace mailbox is a Calendar user too. It needs a domain the owner controls and a new client matrix. Rejected for now.
+- **Remove the Ops BCC.** Safest, but it needs a migration for the column, the audit keys, and the form, and Ops loses a copy in a separate mailbox. Rejected.
+
+Smaller calls: `sameMailbox` drops `+` tags for every domain (Gmail and Workspace both deliver them to the base mailbox) but ignores dots only for `gmail.com` and `googlemail.com`, where Google ignores them; the save check runs on the final stored fields, so it uses the sender the row will hold whatever the method; and a learner whose own address is the sender's mailbox is left alone, since only their own calendar is at stake.

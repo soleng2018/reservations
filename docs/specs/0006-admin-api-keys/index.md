@@ -4,6 +4,7 @@
 **Status**: Accepted
 **Amended**: 2026-10-14 by [spec 0012](../0012-lab-access-result-screens/index.md): a third key type, `CLOUDFLARE`, that the worker reads (AC-3, AC-5, AC-12)
 **Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): a fourth key type, `GOOGLE`, entered as an uploaded key file with Calendar ID, Dev inbox, and Ops BCC fields; `googleMailConfig` is `decryptSecret`'s second production caller (worker only).
+**Amended**: 2026-10-16 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md) (AC-25 to AC-34): a `GOOGLE` key signs in either as a service account or through Google sign in (an OAuth client file plus a pasted sign in address), recorded in `google_auth`, with `google_rejected_at` behind a "Needs attention" badge; the web process decrypts only its own short lived sign in cookie, never a stored secret.
 
 ## Summary
 
