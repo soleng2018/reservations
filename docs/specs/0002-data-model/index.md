@@ -3,6 +3,7 @@
 **Date**: 2026-10-06
 **Status**: Accepted
 **Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): `integration_secrets` is dropped from the target; `api_keys` gains `sender_email`, `calendar_id`, `dev_inbox`, `ops_bcc`; `email_messages` is built with `sent_to`, `details`, and a `suppressed` status, without the welcome unique index (left to feature 16).
+**Amended**: 2026-10-17 by [spec 0014](../0014-set-password-welcome-email/index.md): the welcome unique index `(user_id) where kind = 'welcome'` is dropped from the target (resend and email change send more than one; one send at a time is enforced when the job runs); welcome `details` is `{ name, expiresAt, timeZone }`; new table `set_password_links`.
 
 ## Summary
 

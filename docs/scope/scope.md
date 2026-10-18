@@ -43,8 +43,8 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 12 | Availability & booking rules | Slice 3 | done |
 | 13 | Manage reservations: sign in, cancel & reschedule | Slice 3 | done |
 | 14 | Lab access & booking result screens | Slice 3 | done |
-| 15 | Email delivery & booking confirmations | Slice 4 | in-progress |
-| 16 | Set password / welcome email | Slice 4 | planned |
+| 15 | Email delivery & booking confirmations | Slice 4 | done |
+| 16 | Set password / welcome email | Slice 4 | in-progress |
 | 17 | Reminder before start | Slice 4 | planned |
 | 18 | Admin audit log | Slice 5 | planned |
 
@@ -242,7 +242,7 @@ spec [0012](../specs/0012-lab-access-result-screens/index.md) · code in `app/re
 
 ## Slice 4: Notifications
 
-### 15. Email delivery & booking confirmations · in-progress
+### 15. Email delivery & booking confirmations · done
 Set up email sending and shared templates (the umbrella that features 16 and 17 build on), then send a confirmation with a calendar invite on book, reschedule, and cancel, with times in the learner's timezone. Book, reschedule, and cancel use the mock's email templates.
 **Done when:** book, reschedule, and cancel emails match the mock's templates and subjects, and render correctly in common mail clients; each of those three actions sends one correct email whose invite adds, moves, or removes the calendar event; a failed send never undoes the booking change.
 - [x] Design it (spec): `/architect email delivery & booking confirmations`
@@ -258,14 +258,24 @@ Set up email sending and shared templates (the umbrella that features 16 and 17 
   - [x] Review fixes: the invite attached once outside `multipart/alternative` with a MIME tree test, the booked email in the zone `/book` showed, the rescheduled intro and the password box for new accounts only (spec amended 2026-10-16, task 14) (AC-6, 11, 12, 15, 17, 23)
   - [x] One zone per booking and the UTC label: later emails reuse the booked email's zone through `bookingZone`, and emails print `UTC` instead of `GMT+0` (spec amended 2026-10-17, task 15) (AC-6, 11, 14)
   - [x] The sender's own mailbox and Gmail's copy: a Dev inbox or Ops BCC in the sender's mailbox refused at save and dropped at send, and AC-15 restated for what Gmail delivers (spec amended 2026-10-17, task 16) (AC-15, 16, 17, 35, 36)
-- [ ] Verify it: `/check verify email delivery & booking confirmations`
+- [x] Verify it: `/check verify email delivery & booking confirmations` (2026-10-18; the four live service account steps accepted on test coverage until a Workspace account exists, and the matrix on iOS Mail and Gmail web only, both by the owner)
 - [x] Test it: `/test email delivery & booking confirmations`
 spec [0013](../specs/0013-email-delivery-booking-confirmations/index.md) · code in `server/jobs/`, `server/email/`, `server/google/`, `server/catalog/api-keys.ts`, `lib/booking-email.ts`, `lib/email-routing.ts`, `worker/`, `db/migrations/0009_google_email.sql`, `db/migrations/0010_google_sign_in.sql`, `lib/google-sign-in.ts`, `components/admin/api-key-fields.tsx`, `scripts/calendar-backfill.ts`
 
-### 16. Set password / welcome email
+### 16. Set password / welcome email · in-progress
 The email a new user gets when their account is created, at guest booking or by an admin, carrying the set password link that also verifies their email.
 **Done when:** each new user gets exactly one such email; the link expires, works once, and lands them signed in.
-- [ ] Build it: `/develop set password email`
+- [x] Design it (spec): `/architect set password / welcome email`
+- [x] Build it: `/develop set password email`
+  - [x] Authentik spike on dev: `next` on a token flow, token reuse, single use, origins; pick the main or fallback landing (AC-11, 12) (main path: Authentik keeps `next`)
+  - [x] Tracer: migration `0011`, the welcome template, the handler, the `hol-recovery-login` stage, and one email clicked through to signed in (AC-1, 4, 7, 8, 9, 10, 11, 15)
+  - [x] Failure strands: Dead, Already set, unavailable, the miss limit, Gmail outcomes, stale jobs, no BCC (AC-2, 5, 6, 9, 10, 12)
+  - [x] One send and revocation: the covered check, `other_used`, email change ends links, purge, smoke render (AC-3, 13, 14, 16, 17)
+  - [x] Proof: snapshots, leak scans, allow list, Playwright, and `verify.md` (AC-5, 7, 11, 12, 18, 19)
+  - [x] Timed out view: `onAPIError.errorURL`, the "Sign in timed out" view with a Sign in button on `/auth/error` (AC-19)
+- [x] Verify it: `/check verify set password / welcome email`
+- [ ] Test it: `/test set password / welcome email`
+spec [0014](../specs/0014-set-password-welcome-email/index.md) · code in `server/jobs/send-welcome.ts`, `server/jobs/welcome-queue.ts`, `server/auth/set-password-links.ts`, `server/auth/start-set-password.ts`, `server/email/templates/welcome-email.tsx`, `app/set-password/`, `components/auth/`, `lib/welcome-email.ts`, `lib/set-password-link.ts`, `db/migrations/0011_set_password_links.sql`, `scripts/authentik-setup.ts`, `lib/auth-errors.ts`, `app/auth/error/`, `server/auth/index.ts`
 
 ### 17. Reminder before start · needs a decision
 A scheduled reminder email shortly before a booking starts.

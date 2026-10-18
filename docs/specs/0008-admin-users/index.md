@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-10
 **Status**: Accepted
+**Amended**: 2026-10-17 by [spec 0014](../0014-set-password-welcome-email/index.md): an email change ends the learner's outstanding set password links in the same transaction, closing the known gap in Consequences; the email change job key becomes `welcome:<id>:email:<lower email>:<DB time ms>`.
 
 ## Summary
 

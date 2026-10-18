@@ -3,6 +3,7 @@
 **Date**: 2026-10-06
 **Status**: Accepted
 **Amended**: 2026-10-14 by [spec 0012](../0012-lab-access-result-screens/index.md): learners may also use the HOL Labs app, the Cloudflare Access login for the lab VMs, while they are in a testbed `pod-*` group (AC-13, AC-17, AC-19)
+**Amended**: 2026-10-17 by [spec 0014](../0014-set-password-welcome-email/index.md): the email carries the app's own single use 72 hour link, and the Authentik recovery link is requested when the learner clicks it, for 10 minutes, not when the job sends (AC-6); `hol-recovery` gains a user login stage after the write, so the learner lands signed in (AC-13); the job payload adds `appUrl`; `onAPIError.errorURL` sends every early callback failure to `/auth/error`, which gains a `timed_out` view with a Sign in button for Better Auth's `state_mismatch` code (spec 0014 AC-19).
 
 ## Summary
 
