@@ -54,6 +54,9 @@ function createAuth(pool: Pool) {
       cookieCache: { enabled: false },
     },
     account: { accountLinking: { enabled: false } },
+    // A callback that fails before the state is read (its row expired, or no
+    // state at all) lands on our error page, not Better Auth's (spec 0014 AC-19).
+    onAPIError: { errorURL: "/auth/error" },
     user: {
       validateUserInfo: async ({ source }) => {
         if (source.oauth?.providerId !== AUTHENTIK_PROVIDER_ID)

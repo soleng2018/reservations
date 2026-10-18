@@ -19,11 +19,41 @@ describe("authErrorView", () => {
   it("treats unknown or missing codes as unavailable", () => {
     const unavailable =
       "Sign in is temporarily unavailable, try again shortly.";
-    expect(authErrorView({ error: "state_mismatch" }).message).toBe(
-      unavailable,
-    );
+    expect(authErrorView({ error: "state_invalid" }).message).toBe(unavailable);
     expect(authErrorView({ error: "toString" }).message).toBe(unavailable);
+    expect(authErrorView({ reason: "unavailable" }).message).toBe(unavailable);
     expect(authErrorView({}).message).toBe(unavailable);
+  });
+
+  // covers: spec 0014 AC-19 (Better Auth's 5 minute state cookie ran out)
+  it("shows a state mismatch as timed out, with a Sign in button", () => {
+    expect(authErrorView({ error: "state_mismatch" })).toEqual({
+      title: "Sign in timed out",
+      message:
+        "Your sign in expired before it finished. Sign in again to continue.",
+      reserveLink: false,
+      signIn: true,
+    });
+  });
+
+  // covers: spec 0014 AC-19
+  it("keeps our reason ahead of a state mismatch", () => {
+    expect(
+      authErrorView({ reason: "unavailable", error: "state_mismatch" }),
+    ).toMatchObject({ title: "Sign in unavailable", signIn: false });
+  });
+
+  // covers: spec 0014 AC-19
+  it("offers Sign in only on the timed out view", () => {
+    const reasons = [
+      "unknown",
+      "deactivated",
+      "unavailable",
+      "not_authorized",
+      "signout_partial",
+    ];
+    for (const reason of reasons)
+      expect(authErrorView({ reason }).signIn).toBe(false);
   });
 
   // covers: AC-12 (Authentik unreachable at sign out)

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LearnerFrame } from "@/components/learner-frame";
+import { Button } from "@/components/ui/button";
 import { authErrorView } from "@/lib/auth-errors";
+import { signInWithSso } from "../actions";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -25,6 +27,13 @@ export default async function AuthErrorPage({
         <div className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-8">
           <h1 className="text-xl font-semibold">{view.title}</h1>
           <p>{view.message}</p>
+          {view.signIn && (
+            <form action={signInWithSso}>
+              <Button type="submit" className="w-full">
+                Sign in
+              </Button>
+            </form>
+          )}
           {view.reserveLink ? (
             <Link href="/" className="font-medium underline">
               Reserve a lab
