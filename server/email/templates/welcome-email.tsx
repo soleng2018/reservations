@@ -40,7 +40,7 @@ export function WelcomeEmail({
       <CtaButton href={url}>Set my password</CtaButton>
       <Section style={sectionPad(8, 4)}>
         <Text style={small}>
-          This link works once and expires {welcomeExpiry(details)}.
+          {`This link works once and expires ${welcomeExpiry(details)}.`}
         </Text>
       </Section>
       <Section style={sectionPad(16, 4)}>

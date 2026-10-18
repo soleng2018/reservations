@@ -18,6 +18,8 @@ import {
   parseTeamDomain,
   planPermissions,
   uncoveredProviders,
+  desiredRecoveryLoginStage,
+  RECOVERY_STAGE_ORDER,
 } from "./authentik-setup-plan";
 
 describe("isolationExpression (AC-17)", () => {
@@ -284,5 +286,16 @@ describe("planPermissions", () => {
         ),
       ),
     ).toBe(true);
+  });
+});
+
+// covers: spec 0014 AC-11
+describe("hol-recovery stages (spec 0014 AC-11)", () => {
+  it("signs the learner in after the password, with a browser session", () => {
+    expect(desiredRecoveryLoginStage).toEqual({
+      name: "hol-recovery-login",
+      session_duration: "seconds=0",
+    });
+    expect(RECOVERY_STAGE_ORDER).toEqual({ prompt: 10, write: 20, login: 30 });
   });
 });

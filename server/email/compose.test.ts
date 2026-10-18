@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { BookingEmailDetails } from "@/lib/booking-email";
 import {
   composeBookingEmail,
+  composeWelcomeEmail,
   renderBookingEmail,
   renderInvite,
+  renderWelcomeEmail,
 } from "./compose";
 import { inviteFields } from "@/lib/booking-email";
-import { SAMPLE_BOOKING_DETAILS } from "./sample";
+import { SAMPLE_BOOKING_DETAILS, SAMPLE_WELCOME } from "./sample";
 import { allParts, mimeShape, parseMime } from "./testing";
 
 // covers: spec 0013 AC-12 to AC-15, AC-17, AC-23 (the render snapshots)
@@ -192,5 +194,103 @@ describe("composeBookingEmail (spec 0013 AC-15)", () => {
     expect(ics).toMatch(/^SEQUENCE:3$/m);
     expect(ics).toMatch(/PARTSTAT=NEEDS-ACTION/);
     expect(ics).toMatch(/RSVP=FALSE/);
+  });
+});
+
+// covers: spec 0014 AC-5, AC-7, AC-17 (the set password email)
+describe("welcome email (spec 0014 AC-7)", () => {
+  const UTC_WELCOME = {
+    ...SAMPLE_WELCOME,
+    details: { ...SAMPLE_WELCOME.details, name: "Sam", timeZone: "UTC" },
+  };
+
+  it.each([
+    ["New York", SAMPLE_WELCOME],
+    ["UTC", UTC_WELCOME],
+  ] as const)("renders for %s", async (_zone, sample) => {
+    const { html, text } = await renderWelcomeEmail(
+      sample.details,
+      sample.email,
+      sample.url,
+    );
+    expect(html).toMatchSnapshot("html");
+    expect(text).toMatchSnapshot("text");
+  });
+
+  it("carries the copy, the button, the fallback link, and the expiry in the learner's zone", async () => {
+    const { html, text } = await renderWelcomeEmail(
+      SAMPLE_WELCOME.details,
+      SAMPLE_WELCOME.email,
+      SAMPLE_WELCOME.url,
+    );
+    // Plain text uppercases the heading.
+    expect(html).toContain(">Set your password</h1>");
+    expect(text).toContain("SET YOUR PASSWORD");
+    for (const body of [html, text]) {
+      expect(body).toContain(
+        "Hi Priya, your Nile Hands-On Labs account for priya@example.com is ready. Set a password to view your lab access and reschedule or cancel reservations.",
+      );
+      expect(body).toContain("Set my password");
+      expect(body).toContain(
+        "This link works once and expires Fri, Oct 16, 2026, 9:00 AM EDT.",
+      );
+      expect(body).toContain(
+        "Button not working? Paste this link into your browser:",
+      );
+      expect(body).toContain(SAMPLE_WELCOME.url);
+      expect(body).toContain("You can ignore this email.");
+    }
+    expect(html).toContain(
+      "Set a password to manage your Nile Hands-On Lab reservations.",
+    );
+    expect(html).toContain(`href="${SAMPLE_WELCOME.url}"`);
+  });
+
+  it("names the UTC zone UTC", async () => {
+    const { text } = await renderWelcomeEmail(
+      UTC_WELCOME.details,
+      UTC_WELCOME.email,
+      UTC_WELCOME.url,
+    );
+    expect(text).toContain("expires Fri, Oct 16, 2026, 1:00 PM UTC.");
+  });
+
+  const composeWelcome = (subjectPrefix = "") =>
+    composeWelcomeEmail({
+      emailId: "33333333-3333-4333-8333-333333333333",
+      details: SAMPLE_WELCOME.details,
+      email: SAMPLE_WELCOME.email,
+      url: SAMPLE_WELCOME.url,
+      senderEmail: "labs@nile.example",
+      to: "priya@example.com",
+      subjectPrefix,
+    }).then(({ subject, raw }) => ({
+      subject,
+      mime: Buffer.from(raw, "base64url").toString("utf8"),
+    }));
+
+  it("builds HTML and text alternatives with the inline logo, no attachment, and no Bcc (AC-5)", async () => {
+    const { subject, mime } = await composeWelcome();
+    expect(subject).toBe("Set your password for Nile Hands-On Labs");
+    expect(mime).toContain('From: "Nile Hands-On Labs" <labs@nile.example>');
+    expect(mime).toContain("To: priya@example.com");
+    expect(mime).toContain(
+      "Message-ID: <33333333-3333-4333-8333-333333333333@nile-hol-reservations>",
+    );
+    expect(mime).not.toMatch(/^Bcc:/m);
+    const root = parseMime(mime);
+    expect(mimeShape(root)).toEqual([
+      "multipart/alternative",
+      ["text/plain", ["multipart/related", ["text/html", "image/png"]]],
+    ]);
+    expect(
+      allParts(root).filter((p) => p.disposition?.startsWith("attachment")),
+    ).toEqual([]);
+  });
+
+  it("adds the [dev] prefix to the subject", async () => {
+    expect((await composeWelcome("[dev] ")).subject).toBe(
+      "[dev] Set your password for Nile Hands-On Labs",
+    );
   });
 });
