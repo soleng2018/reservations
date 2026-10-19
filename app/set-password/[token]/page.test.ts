@@ -8,8 +8,9 @@ describe("/set-password/[token] page exports (spec 0014 AC-9)", () => {
     expect(dynamic).toBe("force-dynamic");
   });
 
-  it("sends no referrer, so the token never leaves in a Referer header", () => {
-    expect(metadata.referrer).toBe("no-referrer");
+  it("sends the origin only as Referer, so the token never leaves in it", () => {
+    // Not no-referrer, which nulls Origin on a native form POST.
+    expect(metadata.referrer).toBe("strict-origin");
   });
 
   it("keeps the root's noindex by not setting robots of its own", () => {

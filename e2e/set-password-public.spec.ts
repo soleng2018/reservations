@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test";
 const UNKNOWN = "A".repeat(43);
 
 // covers: AC-9
-test("an unknown link shows the one Dead message, with no referrer and noindex", async ({
+test("an unknown link shows the one Dead message, with an origin only referrer and noindex", async ({
   page,
 }) => {
   await page.goto(`/set-password/${UNKNOWN}`);
@@ -17,12 +17,32 @@ test("an unknown link shows the one Dead message, with no referrer and noindex",
   ).toBeVisible();
   await expect(page.locator('meta[name="referrer"]')).toHaveAttribute(
     "content",
-    "no-referrer",
+    "strict-origin",
   );
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
     "content",
     "noindex, nofollow",
   );
+});
+
+// covers: AC-9, AC-10 (a click before hydration posts the form natively; under
+// no-referrer that POST carried `Origin: null` and Next refused the action)
+test("a native form POST from the link page keeps its Origin and leaves the token out of Referer", async ({
+  page,
+}) => {
+  await page.goto(`/set-password/${UNKNOWN}`);
+  const posted = page.waitForRequest((req) => req.method() === "POST");
+  await page.evaluate(() => {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = location.href;
+    document.body.append(form);
+    setTimeout(() => form.submit(), 0);
+  });
+  const sent = await (await posted).allHeaders();
+  const origin = new URL(page.url()).origin;
+  expect(sent["origin"]).toBe(origin);
+  expect(sent["referer"]).toBe(`${origin}/`);
 });
 
 // covers: AC-9
