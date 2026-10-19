@@ -246,5 +246,5 @@ Tracer Bullet: prove the risky Authentik round trip first, then one real email t
 
   Add `welcome-queue.ts`, `server/auth/set-password-links.ts`, and the user first lock order for links.
 - [ ] Accepted: `hol-recovery` now signs in anyone holding a recovery token, including a link an Authentik admin makes by hand for a learner (that signs them in to Authentik, not to the app).
-- [ ] The next `/check verify` covers the AC-9 referrer amendment (2026-10-18): run `e2e/set-password-public.spec.ts` beside `e2e/set-password.spec.ts`, and click `Set my password` on dev before the page hydrates.
+- [x] The next `/check verify` covers the AC-9 referrer amendment (2026-10-18): run `e2e/set-password-public.spec.ts` beside `e2e/set-password.spec.ts`, and click `Set my password` on dev before the page hydrates.
 - [ ] The scope's done criterion "the link expires, works once, and lands them signed in" is met by AC-11 to AC-13. If the fallback is used, the e2e test targets the first `APP_URLS` entry.
