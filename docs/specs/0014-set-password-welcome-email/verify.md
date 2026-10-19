@@ -38,6 +38,14 @@ Verify run, 2026-10-18 (`/check verify`): run on dev against the shared Authenti
 - [x] `npx vitest run server/jobs/send-welcome.test.ts server/auth/start-set-password.test.ts server/auth/set-password-links.test.ts lib/set-password-link.test.ts lib/welcome-email.test.ts lib/auth-errors.test.ts server/email/compose.test.ts tests/server-actions-require.test.ts scripts/authentik-setup-plan.test.ts` → all pass; with no database the DB cases skip, so fewer passes means they didn't run → AC-1 to AC-19 (148 of 148, none skipped)
 - [x] `npx playwright test e2e/set-password.spec.ts` (dev server up, hol-test passwords and `.env.local` present) → 2 pass → AC-9 to AC-12
 - [x] With `WORKER_ENABLED=true`, `npm run worker` starts (the smoke check renders the booking and the welcome samples) → AC-17
+
+## AC-9 referrer amendment (2026-10-18, `/check verify`, on dev)
+
+Found by the owner: Set my password clicked before hydration showed "Invalid Server Actions request" under `no-referrer` (a native POST carried `Origin: null`). Fixed with `strict-origin` on `feat/set-password-referrer`.
+
+- [x] `npx playwright test e2e/set-password.spec.ts e2e/set-password-public.spec.ts` → 7 pass, including the native POST check (Origin `http://10.1.255.18:3000`, Referer `http://10.1.255.18:3000/`, no token) and the full sign in flow → AC-9, AC-10, AC-11, AC-12
+- [x] Click before hydration, on a live link: a fresh `dev-prehydrate-…@nile-test.invalid` learner, the link opened with JavaScript off, Set my password → a native POST (no `Next-Action` header) with the real Origin and an origin only Referer, a redirect to `https://authentik.dev.app.nile-global.cloud/if/flow/hol-recovery/`, and the link ended `used` → AC-9, AC-10 (a throwaway Playwright spec, deleted after the run; the learner is left behind, as the e2e learners are)
+- [x] `npx vitest run app/set-password` → 3 pass (`metadata.referrer` is `strict-origin`) → AC-9
 - [x] `npm run db:codegen -- --verify` → no drift (migration `0011` applied) → AC-4, AC-16 (and the live table has every column, constraint, and index in the data model sketch, with RLS on)
 
 ## Value sourcing

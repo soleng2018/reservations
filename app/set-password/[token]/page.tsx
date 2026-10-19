@@ -9,12 +9,14 @@ import { startSetPassword } from "./actions";
 
 // Spec 0014 AC-9: public, noindex (the root default), and read only: a GET
 // changes nothing, so a mail scanner that prefetches the link can't use it.
-// No referrer, so the token never leaves in a Referer header.
+// Referer carries the origin only, so the token never leaves in it. Not
+// no-referrer: that makes a native form POST (a click before hydration) send
+// `Origin: null`, which Next rejects as an invalid Server Actions request.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Set your password",
-  referrer: "no-referrer",
+  referrer: "strict-origin",
 };
 
 export default async function SetPasswordPage({

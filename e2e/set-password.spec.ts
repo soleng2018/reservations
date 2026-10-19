@@ -89,7 +89,7 @@ test("a new learner's link sets a password and lands them signed in", async ({
   ).toBeVisible();
   await expect(page.getByText(`for ${email}`)).toBeVisible();
   await expect(
-    page.locator('meta[name="referrer"][content="no-referrer"]'),
+    page.locator('meta[name="referrer"][content="strict-origin"]'),
   ).toHaveCount(1);
   await page.getByRole("button", { name: "Set my password" }).click();
 
