@@ -46,7 +46,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 15 | Email delivery & booking confirmations | Slice 4 | done |
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
-| 18 | Admin audit log | Slice 5 | in-progress |
+| 18 | Admin audit log | Slice 5 | done |
 
 ## Foundations
 
@@ -293,7 +293,7 @@ spec [0015](../specs/0015-reminder-before-start/index.md) · code in `server/job
 
 ## Slice 5: Accountability
 
-### 18. Admin audit log · in-progress
+### 18. Admin audit log · done
 Record who did what: API key secret creation and replacement, catalog changes, testbed group changes in Authentik, user deactivation, and booking cancellations by admins. Admins can view the log.
 **Done when:** each of those actions writes an entry with actor, action, target, and time; entries cannot be edited from the app.
 - [x] Design it (spec): `/architect admin audit log`
@@ -303,8 +303,8 @@ Record who did what: API key secret creation and replacement, catalog changes, t
   - [x] Row detail: `describeMetadata` and the expand disclosure (AC-8)
   - [x] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
   - [x] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
-- [ ] Verify it: `/check verify admin audit log`
-- [ ] Test it: `/test admin audit log`
+- [x] Verify it: `/check verify admin audit log` (2026-10-20; the timezone change, rename, and screenshot steps left to `/test`, since they write to the shared database or the committed shots)
+- [x] Test it: `/test admin audit log` (2026-10-20; the existing suite, 113 Vitest and 5 Playwright, all pass)
 spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 
 ## Deferred

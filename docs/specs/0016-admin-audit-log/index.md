@@ -1,7 +1,7 @@
 # 0016. Admin audit log
 
 **Date**: 2026-10-20
-**Status**: In Progress
+**Status**: Accepted
 **Builds on**: [spec 0002](../0002-data-model/index.md) (the `audit_events` table, its append only and no truncate triggers, AC-7), [spec 0005](../0005-design-system-ui-foundation/index.md) (the admin shell, `PageHeader`, `PageBody`, the nav), [spec 0008](../0008-admin-users/index.md) (the admin timezone, the user detail page). **Settles** spec 0005's deferred "Admin table sorting and pagination" for this one list (server pages, see AC-3); the other admin lists keep client search.
 
 ## Summary

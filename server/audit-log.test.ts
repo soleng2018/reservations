@@ -121,6 +121,36 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
       });
       expect(granted.actor).toEqual({ kind: "system", label: "System" });
     }));
+
+  // covers: value sourcing (actor, target), names read from today's rows
+  it("shows today's actor and target names on a past entry", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin", name: "Old Admin" });
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id, { name: "Old Pod" });
+      await entry(trx, {
+        actorUserId: admin.id,
+        action: "testbed.updated",
+        targetType: "testbed",
+        targetId: testbed.id,
+      });
+
+      await trx
+        .updateTable("users")
+        .set({ name: "New Admin" })
+        .where("id", "=", admin.id)
+        .execute();
+      await trx
+        .updateTable("testbeds")
+        .set({ name: "New Pod" })
+        .where("id", "=", testbed.id)
+        .execute();
+
+      const [top] = (await listAuditEvents(trx, {}, "UTC")).rows;
+
+      expect(top.actor).toMatchObject({ kind: "admin", label: "New Admin" });
+      expect(top.target).toMatchObject({ label: "New Pod", deleted: false });
+    }));
 });
 
 describe.skipIf(!hasDb)("resolveTargets", () => {
