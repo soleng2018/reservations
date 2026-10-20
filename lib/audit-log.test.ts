@@ -12,6 +12,7 @@ import {
   areaActions,
   auditHref,
   decodeCursor,
+  describeMetadata,
   encodeCursor,
   escapeLike,
   hasFilters,
@@ -382,5 +383,80 @@ describe("hasFilters", () => {
       false,
     );
     expect(hasFilters({ learner: ID })).toBe(true);
+  });
+});
+
+describe("describeMetadata", () => {
+  // covers: AC-8, a changedFields edit, each key on its own line
+  it("reads a from and to change per key, never merged", () => {
+    expect(
+      describeMetadata({
+        durationValue: { from: 2, to: 3 },
+        durationUnit: { from: "hours", to: "days" },
+      }),
+    ).toEqual([
+      { label: "Duration value", text: "2 → 3" },
+      { label: "Duration unit", text: "hours → days" },
+    ]);
+  });
+
+  // covers: AC-8, value formats
+  it("formats empty, booleans, numbers, strings, and objects", () => {
+    expect(
+      describeMetadata({
+        company: { from: null, to: "Nile" },
+        sessionsEnded: true,
+        authentikSynced: false,
+        authentikUserPk: 42,
+        vmRevoke: "skipped",
+        clients: [{ kind: "wired" }],
+        extra: { a: 1 },
+      }),
+    ).toEqual([
+      { label: "Company", text: "empty → Nile" },
+      { label: "Sessions ended", text: "yes" },
+      { label: "Synced to Authentik", text: "no" },
+      { label: "Authentik user", text: "42" },
+      { label: "Lab session revoke", text: "skipped" },
+      { label: "Clients", text: '[{"kind":"wired"}]' },
+      { label: "Extra", text: '{"a":1}' },
+    ]);
+  });
+
+  // covers: AC-8, a key with no label reads as words in sentence case
+  it("labels an unknown key from its name", () => {
+    expect(describeMetadata({ googleMethod: "oauth" })).toEqual([
+      { label: "Google method", text: "oauth" },
+    ]);
+    expect(describeMetadata({ cancelled_bookings: 2 })).toEqual([
+      { label: "Cancelled bookings", text: "2" },
+    ]);
+  });
+
+  it("keeps an object with more than from and to as plain JSON", () => {
+    expect(describeMetadata({ x: { from: 1, to: 2, by: 3 } })).toEqual([
+      { label: "X", text: '{"from":1,"to":2,"by":3}' },
+    ]);
+  });
+
+  // covers: AC-8, Key invariants, secret looking keys are never shown
+  it("never renders a secret looking key", () => {
+    expect(
+      describeMetadata({
+        secret: "s",
+        apiPassword: "p",
+        refreshToken: "t",
+        secret_ciphertext: "c",
+        name: { from: "a", to: "b" },
+      }),
+    ).toEqual([{ label: "Name", text: "a → b" }]);
+  });
+
+  // covers: AC-8, empty metadata shows no expand button
+  it("has no lines for empty or non object metadata", () => {
+    expect(describeMetadata({})).toEqual([]);
+    expect(describeMetadata(null)).toEqual([]);
+    expect(describeMetadata([1, 2])).toEqual([]);
+    expect(describeMetadata("text")).toEqual([]);
   });
 });

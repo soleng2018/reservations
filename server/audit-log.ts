@@ -9,6 +9,7 @@ import {
   actionsMatchingLabel,
   actorKind,
   areaActions,
+  describeMetadata,
   encodeCursor,
   escapeLike,
   targetHistoryHref,
@@ -296,7 +297,7 @@ async function toRows(
         href: targetHistoryHref(e.target_type, e.target_id),
       },
       summary: e.summary,
-      details: [],
+      details: describeMetadata(e.metadata),
     };
   });
 }

@@ -73,6 +73,7 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
         action: "testbed_type.updated",
         targetId: type.id,
         summary: "Testbed type updated",
+        metadata: { durationValue: { from: 2, to: 3 } },
       });
 
       const page = await listAuditEvents(trx, {}, "UTC");
@@ -97,6 +98,8 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
         href: `/admin/audit-log?target=testbed_type%3A${type.id}`,
       });
       expect(top.summary).toBe("Testbed type updated");
+      // covers: AC-8, the row carries its readable details
+      expect(top.details).toEqual([{ label: "Duration value", text: "2 → 3" }]);
     }));
 
   // covers: AC-6, a null actor reads by its action

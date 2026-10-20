@@ -415,3 +415,80 @@ export function auditHref(
   ).toString();
   return search ? `${AUDIT_LOG_PATH}?${search}` : AUDIT_LOG_PATH;
 }
+
+// AC-8: the field labels of an entry's details.
+export const METADATA_LABELS: Readonly<Record<string, string>> = {
+  name: "Name",
+  durationValue: "Duration value",
+  durationUnit: "Duration unit",
+  type: "Type",
+  baseUrl: "Base URL",
+  slug: "Slug",
+  clients: "Clients",
+  email: "Email",
+  company: "Company",
+  timezone: "Timezone",
+  phase: "Phase",
+  source: "Source",
+  fromStartsAt: "Was starting",
+  toStartsAt: "Now starting",
+  fromTestbedId: "Was testbed",
+  toTestbedId: "Now testbed",
+  testbedId: "Testbed",
+  userId: "User",
+  groupPk: "Access group",
+  authentikUserPk: "Authentik user",
+  authentikSynced: "Synced to Authentik",
+  reusedAuthentikUser: "Reused Authentik user",
+  sessionsEnded: "Sessions ended",
+  vmRevoke: "Lab session revoke",
+};
+
+// No writer stores one, but a secret looking key is never shown anyway.
+const SECRET_KEY = /secret|password|token|ciphertext/i;
+
+// "googleMethod" → "Google method", for a key with no label.
+const keyLabel = (key: string): string => {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\s]+/g, " ")
+    .trim()
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+const isRecord = (v: unknown): v is Readonly<Record<string, unknown>> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const valueText = (v: unknown): string =>
+  v === null || v === undefined
+    ? "empty"
+    : typeof v === "boolean"
+      ? v
+        ? "yes"
+        : "no"
+      : typeof v === "string"
+        ? v
+        : typeof v === "number"
+          ? String(v)
+          : JSON.stringify(v);
+
+// The changedFields shape: exactly { from, to }.
+const isChange = (
+  v: unknown,
+): v is { readonly from: unknown; readonly to: unknown } =>
+  isRecord(v) && Object.keys(v).length === 2 && "from" in v && "to" in v;
+
+// AC-8: an entry's metadata as readable lines, one per key, in stored
+// order. A non object (or an empty one) has no lines.
+export const describeMetadata = (metadata: unknown): readonly DetailLine[] =>
+  isRecord(metadata)
+    ? Object.entries(metadata)
+        .filter(([key]) => !SECRET_KEY.test(key))
+        .map(([key, value]) => ({
+          label: METADATA_LABELS[key] ?? keyLabel(key),
+          text: isChange(value)
+            ? `${valueText(value.from)} → ${valueText(value.to)}`
+            : valueText(value),
+        }))
+    : [];

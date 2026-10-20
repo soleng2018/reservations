@@ -101,8 +101,8 @@ export function AuditRow({ row }: { readonly row: AuditRowData }) {
         >
           <TableCell colSpan={AUDIT_COLUMNS} className="whitespace-normal">
             <dl className="grid gap-x-6 gap-y-1.5 sm:grid-cols-[max-content_1fr]">
-              {row.details.map((d) => (
-                <div key={d.label} className="contents">
+              {row.details.map((d, i) => (
+                <div key={`${i}-${d.label}`} className="contents">
                   <dt className="text-sub font-semibold text-fg2">{d.label}</dt>
                   <dd className="text-sub break-words text-fg1">{d.text}</dd>
                 </div>
