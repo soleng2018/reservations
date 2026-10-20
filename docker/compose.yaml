@@ -1,0 +1,95 @@
+# Production on this host (spec 0001). Start with scripts/deploy.sh, which
+# takes a pg_dump before `migrate` runs. The Cloudflare Tunnel already sends
+# *.nile.global to Traefik, so `web` needs only the Traefik labels below.
+#
+#   cp docker/.env.example docker/.env   # then fill it in (gitignored)
+name: reservations
+
+x-env: &env
+  TZ: UTC
+  DATABASE_HOST: insforge-postgres
+  DATABASE_PORT: "5432"
+  DATABASE_PASSWORD_FILE: /run/secrets/hol_app_password
+  AUTHENTIK_CLIENT_SECRET_FILE: /run/secrets/authentik_client_secret
+  AUTH_SECRET_FILE: /run/secrets/auth_secret
+  AUTHENTIK_PROVISIONING_TOKEN_FILE: /run/secrets/authentik_provisioning_token
+  APP_ENCRYPTION_KEYS_FILE: /run/secrets/hol_encryption_keys
+
+x-app: &app
+  image: reservations:${IMAGE_TAG:-latest}
+  restart: unless-stopped
+  env_file: .env
+  environment: *env
+  secrets:
+    - hol_app_password
+    - authentik_client_secret
+    - auth_secret
+    - authentik_provisioning_token
+    - hol_encryption_keys
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+  logging:
+    driver: json-file
+    options: { max-size: 10m, max-file: "5" }
+
+services:
+  migrate:
+    image: reservations:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: "no"
+    command: ["node", "dist/migrate.mjs"]
+    environment: *env
+    secrets: [hol_app_password]
+    networks: [hol-internal]
+    healthcheck: { disable: true }
+
+  web:
+    <<: *app
+    environment:
+      <<: *env
+      # Every request reaches web through the tunnel, so CF-Connecting-IP is real.
+      TRUST_PROXY_HEADERS: "true"
+    networks: [traefik, hol-internal]
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik
+      traefik.http.routers.reservations.rule: Host(`${APP_HOST}`)
+      traefik.http.routers.reservations.entrypoints: websecure
+      traefik.http.routers.reservations.tls: "true"
+      traefik.http.routers.reservations.tls.certresolver: letsencrypt
+      traefik.http.routers.reservations.service: reservations-svc
+      traefik.http.services.reservations-svc.loadbalancer.server.port: "3000"
+
+  worker:
+    <<: *app
+    command: ["node", "dist/worker.mjs"]
+    environment:
+      <<: *env
+      # The one production worker. Its advisory lock keeps it to one.
+      WORKER_ENABLED: "true"
+    # The traefik network is only its route out (Authentik, Google,
+    # Cloudflare); it has no Traefik labels.
+    networks: [traefik, hol-internal]
+    # SIGTERM finishes the current step; give a job time to complete.
+    stop_grace_period: 60s
+    healthcheck: { disable: true }
+
+secrets:
+  hol_app_password:
+    file: ${SECRETS_DIR}/hol_app_password
+  authentik_client_secret:
+    file: ${SECRETS_DIR}/authentik_client_secret
+  auth_secret:
+    file: ${SECRETS_DIR}/auth_secret
+  authentik_provisioning_token:
+    file: ${SECRETS_DIR}/authentik_provisioning_token
+  hol_encryption_keys:
+    file: ${SECRETS_DIR}/hol_encryption_keys.json
+
+networks:
+  traefik:
+    external: true
+  hol-internal:
+    external: true

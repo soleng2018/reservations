@@ -1,0 +1,18 @@
+.git
+.github
+.husky
+.claude
+.agents
+node_modules
+.next
+dist
+coverage
+test-results
+playwright-report
+e2e
+docs
+*.tsbuildinfo
+# Real env and secrets never enter the image (next build would read .env*).
+.env*
+!.env.example
+docker/.env
