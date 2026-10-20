@@ -5,6 +5,8 @@
 export const SLOT_MS = 30 * 60 * 1000;
 export const LEAD_MS = 60 * 60 * 1000; // 1 hour
 export const HORIZON_MS = 90 * 24 * 60 * 60 * 1000; // 90 days (spec 0010)
+// Spec 0015 AC-1: the reminder email's lead time, set only here.
+export const REMINDER_LEAD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 export type BusyRange = {
   readonly testbedId: string;

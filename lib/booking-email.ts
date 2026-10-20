@@ -31,9 +31,16 @@ export function parseGoogleKeyFile(
   return parsed.success ? ok(parsed.data) : err("invalid");
 }
 
-// The three booking notices (AC-6).
-export const BookingEmailKind = z.enum(["booked", "rescheduled", "cancelled"]);
+// The three booking notices (AC-6), plus the reminder before start (spec
+// 0015 AC-5), which the worker queues, never a booking change.
+export const BookingEmailKind = z.enum([
+  "booked",
+  "rescheduled",
+  "cancelled",
+  "reminder",
+]);
 export type BookingEmailKind = z.infer<typeof BookingEmailKind>;
+export type BookingNoticeKind = Exclude<BookingEmailKind, "reminder">;
 
 // Every link in an email must be https (the admin forms already enforce it
 // with HttpsUrl); this guards the snapshot itself.
@@ -87,6 +94,9 @@ export function emailSubject(
       return `Updated: Your Nile Hands-On Lab access - ${start}`;
     case "cancelled":
       return `Cancelled: Your Nile Hands-On Lab reservation - ${start}`;
+    // Spec 0015 AC-6.
+    case "reminder":
+      return `Reminder: Your Nile Hands-On Lab starts ${start}`;
     default: {
       const never: never = kind;
       return never;

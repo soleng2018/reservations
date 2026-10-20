@@ -5,22 +5,62 @@ import {
   emailStart,
   manageUrl,
   type BookingEmailDetails,
+  type BookingEmailKind,
 } from "@/lib/booking-email";
+import { firstName } from "@/lib/manage-reservations";
 import { CtaButton } from "./cta-button";
 import { DetailsCard } from "./details-card";
 import { BLUE, EmailFrame, LINE, MUTED, sectionPad } from "./email-frame";
 
 // Spec 0013 AC-12: the booked and rescheduled email, after
-// context/Nile HOL Lab Access Email Standalone.html.
+// context/Nile HOL Lab Access Email Standalone.html; spec 0015 AC-7 adds the
+// reminder before start, with the same card, links, and footer.
 
-const PREVIEW =
+type LabAccessKind = Exclude<BookingEmailKind, "cancelled">;
+
+type Copy = {
+  readonly title: string;
+  readonly preview: string;
+  readonly heading: string;
+  readonly intro: string;
+};
+
+const BOOKED_PREVIEW =
   "Your lab is reserved. Access links and session details inside.";
 
 // AC-12 (amended 2026-10-16): the rescheduled email has its own intro.
-const intro = (kind: "booked" | "rescheduled", name: string) =>
-  kind === "booked"
-    ? `Hi ${name}, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`
-    : `Hi ${name}, your reservation was moved. Here are the new details. The links below become active at your new start time and stop working when your session ends. The calendar invite attached to this email moves the event in your calendar.`;
+function copy(kind: LabAccessKind, details: BookingEmailDetails): Copy {
+  const name = details.learnerName;
+  switch (kind) {
+    case "booked":
+      return {
+        title: "Your Nile Hands-On Lab access",
+        preview: BOOKED_PREVIEW,
+        heading: "Your lab access is ready",
+        intro: `Hi ${name}, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`,
+      };
+    case "rescheduled":
+      return {
+        title: "Your Nile Hands-On Lab access",
+        preview: BOOKED_PREVIEW,
+        heading: "Your reservation was rescheduled",
+        intro: `Hi ${name}, your reservation was moved. Here are the new details. The links below become active at your new start time and stop working when your session ends. The calendar invite attached to this email moves the event in your calendar.`,
+      };
+    // Spec 0015 AC-7.
+    case "reminder":
+      return {
+        title: "Your Nile Hands-On Lab starts soon",
+        preview:
+          "Your lab starts soon. Access links and session details inside.",
+        heading: "Your lab starts soon",
+        intro: `Hi ${firstName(name)}, this is a reminder that your reservation starts ${emailStart(details)}. The links below become active at your start time and stop working when your session ends.`,
+      };
+    default: {
+      const never: never = kind;
+      return never;
+    }
+  }
+}
 
 const linkLabel = {
   portal: "Open the portal for this testbed",
@@ -33,9 +73,10 @@ export function LabAccessEmail({
   kind,
   details,
 }: {
-  readonly kind: "booked" | "rescheduled";
+  readonly kind: LabAccessKind;
   readonly details: BookingEmailDetails;
 }) {
+  const text = copy(kind, details);
   const links = details.links;
   const rows = links
     ? [
@@ -50,14 +91,10 @@ export function LabAccessEmail({
     : [];
   return (
     <EmailFrame
-      title="Your Nile Hands-On Lab access"
-      preview={PREVIEW}
-      heading={
-        kind === "booked"
-          ? "Your lab access is ready"
-          : "Your reservation was rescheduled"
-      }
-      intro={intro(kind, details.learnerName)}
+      title={text.title}
+      preview={text.preview}
+      heading={text.heading}
+      intro={text.intro}
     >
       <DetailsCard
         rows={[

@@ -5,6 +5,7 @@ import {
   BookingEmailDetails,
   emailSubject,
   type BookingEmailKind,
+  type BookingNoticeKind,
 } from "@/lib/booking-email";
 import { TestbedClientKind } from "@/lib/db-enums";
 import { isTimeZone } from "@/lib/timezones";
@@ -20,9 +21,14 @@ export const calendarPayload = z.object({ bookingId: z.uuid() });
 
 export const emailJobKey = (
   bookingId: string,
-  kind: BookingEmailKind,
+  kind: BookingNoticeKind,
   version: number,
 ) => `email:${bookingId}:${kind}:${version}`;
+
+// Spec 0015 AC-4: kept apart from emailJobKey on purpose, so a reminder's key
+// never reads as a booking change's.
+export const reminderJobKey = (bookingId: string, version: number) =>
+  `reminder:${bookingId}:${version}`;
 
 export const calendarJobKey = (bookingId: string, version: number) =>
   `calendar:${bookingId}:${version}`;
@@ -61,12 +67,15 @@ export async function bookingZone(
 }
 
 // AC-11: one explicit column read (never a client's OS login), from the
-// booking row as the change left it. Links only for booked and rescheduled.
+// booking row as the change left it. Links for all but a cancellation.
+// `app` is the app the learner used: appUrl() for a booking change, the
+// notice row's for a reminder (spec 0015 AC-5).
 async function readDetails(
   trx: Kysely<DB>,
   bookingId: string,
   kind: BookingEmailKind,
   shown: ShownAtBooking | undefined,
+  app: string,
 ): Promise<{
   readonly userId: string;
   readonly email: string;
@@ -126,21 +135,25 @@ async function readDetails(
       testbedName: row.testbedName,
       startsAt: row.starts_at.toISOString(),
       endsAt: row.ends_at.toISOString(),
-      appUrl: appUrl(),
+      appUrl: app,
       links,
     }),
   };
 }
 
 // AC-6. The email id is made here so the job can name it. A repeat of the
-// same (booking, kind, version) finds its job key taken and queues nothing.
-export async function queueBookingNotice(
+// same key finds it taken and queues nothing (answers false).
+async function queueEmail(
   trx: Kysely<DB>,
-  bookingId: string,
-  version: number,
-  kind: BookingEmailKind,
-  shown?: ShownAtBooking,
-): Promise<void> {
+  input: {
+    readonly key: string;
+    readonly bookingId: string;
+    readonly version: number;
+    readonly kind: BookingEmailKind;
+    readonly shown: ShownAtBooking | undefined;
+    readonly app: string;
+  },
+): Promise<boolean> {
   const emailMessageId = crypto.randomUUID();
   const job = await trx
     .insertInto("jobs")
@@ -149,33 +162,54 @@ export async function queueBookingNotice(
       payload: JSON.stringify({ emailMessageId } satisfies z.infer<
         typeof sendEmailPayload
       >),
-      idempotency_key: emailJobKey(bookingId, kind, version),
+      idempotency_key: input.key,
     })
     .onConflict((oc) => oc.column("idempotency_key").doNothing())
     .returning("id")
     .executeTakeFirst();
-  if (!job) return;
+  if (!job) return false;
 
   const { userId, email, details } = await readDetails(
     trx,
-    bookingId,
-    kind,
-    shown,
+    input.bookingId,
+    input.kind,
+    input.shown,
+    input.app,
   );
   await trx
     .insertInto("email_messages")
     .values({
       id: emailMessageId,
       user_id: userId,
-      booking_id: bookingId,
-      booking_version: version,
+      booking_id: input.bookingId,
+      booking_version: input.version,
       job_id: job.id,
-      kind,
+      kind: input.kind,
       to_address: email,
-      subject: emailSubject(kind, details),
+      subject: emailSubject(input.kind, details),
       details: JSON.stringify(details),
     })
     .execute();
+  return true;
+}
+
+// AC-6: the booking change's email, then its calendar job.
+export async function queueBookingNotice(
+  trx: Kysely<DB>,
+  bookingId: string,
+  version: number,
+  kind: BookingNoticeKind,
+  shown?: ShownAtBooking,
+): Promise<void> {
+  const queued = await queueEmail(trx, {
+    key: emailJobKey(bookingId, kind, version),
+    bookingId,
+    version,
+    kind,
+    shown,
+    app: appUrl(),
+  });
+  if (!queued) return;
 
   await trx
     .insertInto("jobs")
@@ -188,4 +222,27 @@ export async function queueBookingNotice(
     })
     .onConflict((oc) => oc.column("idempotency_key").doNothing())
     .execute();
+}
+
+// Spec 0015 AC-3, AC-5: what the reminder takes from its version's notice
+// row (the booked or rescheduled email): the app the learner used.
+export type ReminderNotice = { readonly appUrl: string };
+
+// Spec 0015 AC-4: inside the sweep's transaction, with the booking already
+// locked FOR SHARE and found due. No calendar job: the event is already
+// there. A key already taken queues nothing.
+export async function queueReminder(
+  trx: Kysely<DB>,
+  bookingId: string,
+  version: number,
+  notice: ReminderNotice,
+): Promise<boolean> {
+  return queueEmail(trx, {
+    key: reminderJobKey(bookingId, version),
+    bookingId,
+    version,
+    kind: "reminder",
+    shown: undefined,
+    app: notice.appUrl,
+  });
 }
