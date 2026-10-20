@@ -303,7 +303,7 @@ Record who did what: API key secret creation and replacement, catalog changes, t
   - [x] Row detail: `describeMetadata` and the expand disclosure (AC-8)
   - [x] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
   - [x] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
-- [ ] Verify it: `/check verify admin audit log`
+- [x] Verify it: `/check verify admin audit log` (2026-10-20; the timezone change, rename, and screenshot steps left to `/test`, since they write to the shared database or the committed shots)
 - [ ] Test it: `/test admin audit log`
 spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 
