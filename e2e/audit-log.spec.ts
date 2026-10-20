@@ -123,6 +123,22 @@ test("a bad link shows the page with one notice, never an error", async ({
   await expect(entries(page).nth(1)).toBeVisible();
 });
 
+// Every table on the page has one header per cell of its first shown row, so
+// no heading sits over another column's data (axe does not check this).
+async function expectAlignedTables(page: Page) {
+  const shapes = await page.locator("table").evaluateAll((tables) =>
+    tables.map((t) => ({
+      region: t.closest("[role=region]")?.getAttribute("aria-label") ?? "",
+      headers: t.querySelectorAll("thead th").length,
+      cells: t.querySelector("tbody tr:not([hidden])")?.children.length ?? 0,
+    })),
+  );
+  expect(shapes.length).toBeGreaterThan(0);
+  for (const s of shapes.filter((s) => s.cells > 0)) {
+    expect(s.cells, `${s.region} table`).toBe(s.headers);
+  }
+}
+
 // The first learner on Users who has an entry in their History section.
 async function learnerWithHistory(page: Page) {
   await page.goto("/admin/users");
@@ -144,6 +160,7 @@ test("axe finds no serious violation on the log and the History section", async 
     .getByRole("button", { name: /^Details for/ })
     .click();
   await expectNoSeriousViolations(page);
+  await expectAlignedTables(page);
 
   await learnerWithHistory(page);
   await expect(page.getByRole("link", { name: "See all" })).toHaveAttribute(
@@ -151,6 +168,7 @@ test("axe finds no serious violation on the log and the History section", async 
     /\/admin\/audit-log\?learner=/,
   );
   await expectNoSeriousViolations(page);
+  await expectAlignedTables(page);
 });
 
 for (const w of [
