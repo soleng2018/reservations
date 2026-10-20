@@ -282,14 +282,14 @@ A scheduled reminder email shortly before a booking starts.
 **Done when:** each booking that is still active gets one reminder at the set lead time; a cancelled or rescheduled booking never gets a stale reminder.
 - [x] Design it (spec): `/architect reminder before start`
 - [ ] Build it: `/develop reminder before start`
-  - [ ] Tracer: `REMINDER_LEAD_MS`, the `reminder` kind and subject, the "reminders" sweep and `queueReminder`, the worker step, and one real reminder sent on dev (AC-1, 2, 3, 4, 5, 6)
-  - [ ] Send time checks: changed booking and 1 hour floor suppress, no Bcc, catch up (AC-8, 9, 11, 12)
-  - [ ] Claim order: the new `claimJob` clause, so reminders block nothing and wait for their own confirmation (AC-10)
-  - [ ] The real email: `LabAccessEmail` reminder branch, the invite, the start up render check and samples (AC-7)
-  - [ ] Proof: DB tests for the due rules, suppress paths and claim order, snapshots, a console regression check, and `verify.md` (AC-13, 14)
+  - [ ] Tracer: `REMINDER_LEAD_MS`, the `reminder` kind and subject, the "reminders" sweep and `queueReminder`, the worker step, and one real reminder sent on dev (AC-1, 2, 3, 4, 5, 6) · all built and tested; the real dev send is left to `/check verify` (2026-10-20)
+  - [x] Send time checks: changed booking and 1 hour floor suppress, no Bcc, catch up (AC-8, 9, 11, 12)
+  - [x] Claim order: the new `claimJob` clause, so reminders block nothing and wait for their own confirmation (AC-10)
+  - [x] The real email: `LabAccessEmail` reminder branch, the invite, the start up render check and samples (AC-7)
+  - [x] Proof: DB tests for the due rules, suppress paths and claim order, snapshots, a console regression check, and `verify.md` (AC-13, 14)
 - [ ] Verify it: `/check verify reminder before start`
 - [ ] Test it: `/test reminder before start`
-spec [0015](../specs/0015-reminder-before-start/index.md)
+spec [0015](../specs/0015-reminder-before-start/index.md) · code in `server/jobs/reminders.ts`, `server/jobs/booking-notice.ts`, `server/jobs/send-email.ts`, `server/jobs/runner.ts`, `server/email/templates/lab-access-email.tsx`, `lib/booking-email.ts`, `lib/slots.ts`, `worker/index.ts`
 
 ## Slice 5: Accountability
 
