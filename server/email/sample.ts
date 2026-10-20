@@ -46,3 +46,10 @@ export const SAMPLE_BOOKING_DETAILS: BookingEmailDetails = {
     ],
   },
 };
+
+// Spec 0015 AC-5, AC-7: the same booking's reminder. A reminder is never a
+// new account's first email.
+export const SAMPLE_REMINDER_DETAILS: BookingEmailDetails = {
+  ...SAMPLE_BOOKING_DETAILS,
+  newAccount: false,
+};

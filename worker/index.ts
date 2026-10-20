@@ -12,7 +12,11 @@ import { db } from "@/server/db";
 import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { purgeSetPasswordLinks } from "@/server/auth/set-password-links";
 import { renderBookingEmail, renderWelcomeEmail } from "@/server/email/compose";
-import { SAMPLE_BOOKING_DETAILS, SAMPLE_WELCOME } from "@/server/email/sample";
+import {
+  SAMPLE_BOOKING_DETAILS,
+  SAMPLE_REMINDER_DETAILS,
+  SAMPLE_WELCOME,
+} from "@/server/email/sample";
 import {
   breakerLogLine,
   purgeDoneJobs,
@@ -20,6 +24,7 @@ import {
   type Handlers,
 } from "@/server/jobs/runner";
 import { syncBookingEvent } from "@/server/jobs/calendar-sync";
+import { queueReminders } from "@/server/jobs/reminders";
 import { runSendEmail } from "@/server/jobs/send-email";
 import { runSendWelcome } from "@/server/jobs/send-welcome";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
@@ -60,11 +65,12 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Spec 0013 AC-22, spec 0014 AC-17: the smoke check. Email needs
+  // Spec 0013 AC-22, spec 0014 AC-17, spec 0015 AC-7: the smoke check. Email needs
   // react-dom/server, which only loads without the react-server condition
   // (the server-only hook).
   try {
     await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
+    await renderBookingEmail("reminder", SAMPLE_REMINDER_DETAILS);
     await renderWelcomeEmail(
       SAMPLE_WELCOME.details,
       SAMPLE_WELCOME.email,
@@ -141,6 +147,10 @@ async function main(): Promise<number> {
     for (const f of step.failed) console.error(`jobs: ${f} failed`);
     if (step.breaker) console.error(breakerLogLine(step.method));
   };
+  const reminders = async () => {
+    const { queued } = await queueReminders(conn);
+    if (queued > 0) log(`reminders: queued ${queued}`);
+  };
   while (!stop.signal.aborted) {
     // A dead lock connection is noticed here even when idle.
     await lock.query("select 1").catch((e: Error) => lost(e.message));
@@ -164,6 +174,9 @@ async function main(): Promise<number> {
         name: "testbed teardown",
         run: () => teardownDeletedTestbeds(api, conn),
       },
+      // Spec 0015 AC-2: right before "jobs", so a reminder queued here can
+      // send in the same tick.
+      { name: "reminders", run: reminders },
       { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
         ? [

@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "kysely";
 import { BookingEmailDetails, BookingEmailKind } from "@/lib/booking-email";
 import { routeEmail } from "@/lib/email-routing";
+import { LEAD_MS } from "@/lib/slots";
 import { dbNow } from "@/server/db/bookings";
 import { composeBookingEmail } from "@/server/email/compose";
 import { sendRaw } from "@/server/google/gmail";
@@ -16,6 +17,10 @@ import type { JobHandler, JobOutcome } from "./runner";
 
 export const STALE = "The booking had already ended.";
 export const UNREADABLE = "The queued email can't be read.";
+// Spec 0015 AC-8.
+export const REMINDER_CHANGED =
+  "The booking changed before the reminder went out.";
+export const REMINDER_TOO_CLOSE = "Too close to the start to send a reminder.";
 export const GMAIL_RETRY = "Gmail didn't take the message yet. Retrying.";
 export const gmailRefused = (status: number) =>
   `Gmail refused the message (${status}).`;
@@ -63,11 +68,34 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
   };
 
   // AC-18: by the DB clock.
-  if (new Date(details.data.endsAt) <= (await dbNow(trx)))
-    return suppress(STALE);
+  const now = await dbNow(trx);
+  if (new Date(details.data.endsAt) <= now) return suppress(STALE);
 
-  // AC-16, AC-36.
-  const route = routeEmail(row.to_address, ctx.cfg);
+  // Spec 0015 AC-8: a reminder goes out only for the same confirmed version,
+  // and never in the last hour. The booking is read without a lock (holding
+  // one across the Gmail call would block a cancel); a change that commits
+  // after this read is covered by its own email.
+  if (kind.data === "reminder") {
+    const booking = await trx
+      .selectFrom("bookings")
+      .select(["status", "version"])
+      .where("id", "=", row.booking_id)
+      .executeTakeFirst();
+    if (
+      !booking ||
+      booking.status !== "confirmed" ||
+      booking.version !== row.booking_version
+    )
+      return suppress(REMINDER_CHANGED);
+    if (new Date(details.data.startsAt).getTime() < now.getTime() + LEAD_MS)
+      return suppress(REMINDER_TOO_CLOSE);
+  }
+
+  // AC-16, AC-36; spec 0015 AC-9: a reminder never has a Bcc.
+  const route = routeEmail(
+    row.to_address,
+    kind.data === "reminder" ? { ...ctx.cfg, opsBcc: null } : ctx.cfg,
+  );
   if (route.kind === "suppress") return suppress(route.reason);
 
   const { raw } = await composeBookingEmail({
