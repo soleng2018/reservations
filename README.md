@@ -17,6 +17,7 @@ Read this before you start: **dev and production share one database.** Migration
 | An Authentik admin account and its master token | One time setup of the sign in app; the app never uses the master token itself |
 | A Cloudflare account with Zero Trust (team domain `<team>.cloudflareaccess.com`) | Turnstile on public forms, and lab VM access |
 | Optional: a Google account for the HOL mailbox and calendar | Booking emails and the shared "HOL bookings" calendar |
+| For production only: Docker, Traefik, and a Cloudflare Tunnel on the host | The app runs as containers; see [Running in production (Docker)](#running-in-production-docker) |
 
 Keep secrets in `~/secrets/`, one value per file, with mode `600`. The app reads each secret from the file that a `*_FILE` variable points to:
 
@@ -212,6 +213,8 @@ WORKER_ENABLED=true npm run worker
 
 **Because the database is shared, a worker started on your machine is the production worker.** Only one may run at a time, so start it only after checking that no other worker is running. See [server/worker/AGENTS.md](server/worker/AGENTS.md).
 
+In production the worker runs in the `reservations-worker-1` container (see [Running in production (Docker)](#running-in-production-docker)). While that container runs, it holds the worker lock, and `npm run worker` on your machine prints "another worker holds the lock" and exits. Check with `docker ps --filter name=reservations-worker`.
+
 ### 10. Check your setup
 
 ```bash
@@ -238,3 +241,128 @@ npm run test:e2e    # Playwright against the dev server; needs ~/secrets/hol-tes
 | Booking emails never arrive | The worker isn't running (step 9), no `GOOGLE` key exists, or a test learner has no Dev inbox set. The learner's page in the console lists each email's status |
 | API Keys page says not configured | `APP_ENCRYPTION_KEYS_FILE` is unreadable, or `APP_ENCRYPTION_ACTIVE_KEY_ID` isn't in the keyring |
 | `npm run dev` fails at start on a `DATABASE_*` or auth variable | A required value is missing or a `*_FILE` path is wrong; the error names the variable |
+
+## Running in production (Docker)
+
+Production runs on the InsForge host as one Docker Compose project named `reservations`, with three services built from one image:
+
+| Service | Runs | Notes |
+| --- | --- | --- |
+| `migrate` | `node dist/migrate.mjs` | Applies new migrations, then exits. `web` and `worker` start only after it succeeds |
+| `web` | `node server.js` (Next.js standalone) | Port 3000 inside the container, published only through Traefik. Healthcheck on `/api/health` |
+| `worker` | `node dist/worker.mjs` | The one production worker (`WORKER_ENABLED=true`). On stop it finishes its current step, with up to 60 seconds |
+
+A request travels: browser → Cloudflare → Cloudflare Tunnel (`cloudflared`) → Traefik → `web:3000`. The containers reach Postgres as `insforge-postgres:5432` on the internal `hol-internal` network. The files are [Dockerfile](Dockerfile), [docker/compose.yaml](docker/compose.yaml), [docker/.env.example](docker/.env.example), and [scripts/deploy.sh](scripts/deploy.sh).
+
+### 1. What the host needs
+
+| Need | How to check | Why |
+| --- | --- | --- |
+| Docker Engine with Compose v2 (tested on Docker 28.4, Compose 2.39) | `docker compose version` | Builds the image and runs the project |
+| A user with uid `1000` that can run `docker` | `id -u` | The containers run as `node` (uid 1000) and must read the secret files, which are mode `600` |
+| InsForge running, with `insforge-postgres` on the `hol-internal` network | `docker network inspect hol-internal` lists `insforge-postgres` | The app's database. InsForge's compose file joins it; create the network once with `docker network create --internal hol-internal` |
+| A Traefik v3 container on an external Docker network named `traefik`, with an HTTPS entrypoint `websecure` and a cert resolver `letsencrypt` | `docker network inspect traefik`, and Traefik's `--entrypoints` and `--certificatesresolvers` flags | The `web` labels in `docker/compose.yaml` use these names; change the labels if your Traefik uses others |
+| A Cloudflare Tunnel that sends the app's host name to Traefik (here, a `*.nile.global` → `https://traefik` rule) | The tunnel's *Public Hostnames* in Cloudflare Zero Trust | The only way in from the internet; no port is opened |
+| No other DNS record for the app's host name | Cloudflare → DNS → search for the host | A specific record (for example a CNAME to a Pages project) wins over the wildcard and sends visitors to another site |
+| Database role, secrets, and Authentik set up as in steps 3 to 5 above | `ls ~/secrets` | The containers read the same secrets as dev |
+| The production URL in the Authentik provider's redirect URIs | Step 5, with `APP_URLS=https://<prod host>,http://10.1.255.18:3000` | Otherwise sign in fails with a redirect URI error |
+| Production Turnstile keys for the host name | Cloudflare → Turnstile | The `.env.example` test keys always pass, so the public booking form has no bot protection |
+
+### 2. Secret files
+
+Compose mounts these files from `SECRETS_DIR` (default `/home/nova/secrets`) into `/run/secrets/` in each container. The names must match exactly:
+
+| File in `SECRETS_DIR` | Made in |
+| --- | --- |
+| `hol_app_password` | Step 3 |
+| `auth_secret` | Step 4 |
+| `hol_encryption_keys.json` | Step 4 |
+| `authentik_client_secret` | Step 5 |
+| `authentik_provisioning_token` | Step 5 |
+
+`migrate` gets only `hol_app_password`. The Authentik master token is never mounted.
+
+### 3. Fill in `docker/.env`
+
+```bash
+cp docker/.env.example docker/.env
+chmod 600 docker/.env
+```
+
+`docker/.env` is gitignored. Compose reads it for the `${...}` values in `docker/compose.yaml` and also passes it to every container:
+
+| Variable | Value |
+| --- | --- |
+| `SECRETS_DIR` | Absolute path to the folder with the secret files above |
+| `APP_HOST` | The public host name, for example `reservations.nile.global`. Traefik routes it to `web` |
+| `APP_URL` | `https://` plus `APP_HOST`, exactly as visitors see it |
+| `ADMIN_ENTRY_PATH` | The same value as in dev |
+| `AUTHENTIK_URL`, `AUTHENTIK_CLIENT_ID` | The same values as in dev (one Authentik and one client for both) |
+| `TURNSTILE_SITE_KEY` | The production widget's site key |
+| `TURNSTILE_SECRET_KEY` | The production widget's secret. You can put it in a file instead: mount it and set `TURNSTILE_SECRET_KEY_FILE` |
+| `APP_ENCRYPTION_ACTIVE_KEY_ID` | The same value as in dev |
+
+Compose itself sets the database host, every `*_FILE` path, `TZ=UTC`, `TRUST_PROXY_HEADERS=true` on `web`, and `WORKER_ENABLED=true` on `worker`. Don't add them to `docker/.env`.
+
+### 4. Deploy
+
+```bash
+scripts/deploy.sh          # migrate, web, and worker
+scripts/deploy.sh web      # migrate and web only, with no worker
+```
+
+The script:
+
+1. builds the image from the current checkout and tags it `reservations:sha-<commit>` (with `-dirty` added if you have uncommitted changes), plus `reservations:latest`;
+2. dumps the `hol_app` and `hol_auth` schemas to `~/backups/hol_before_deploy_<time>.dump` (set `BACKUP_DIR` to change the folder), because dev and production share the database;
+3. runs `docker compose up -d`, which runs `migrate` and then (re)starts `web` and `worker`.
+
+The first build takes a few minutes. The build reads no env or secrets, so it can run anywhere.
+
+**Before you start `worker`, make sure no other worker is running** (for example `npm run worker` on a dev machine). The first worker to start holds the lock; a second one exits.
+
+Check the result:
+
+```bash
+docker compose -f docker/compose.yaml ps            # web shows (healthy)
+curl -s https://<APP_HOST>/api/health               # {"status":"ok","db":"ok"}
+docker logs reservations-migrate-1                  # applied: ... or nothing to apply
+docker logs reservations-worker-1                   # worker: started
+```
+
+Then sign in at `https://<APP_HOST><ADMIN_ENTRY_PATH>` as an admin.
+
+### 5. Day to day
+
+All commands run from the repo root.
+
+| Task | Command |
+| --- | --- |
+| Deploy a new version | `git pull && scripts/deploy.sh` |
+| Follow the logs | `docker logs -f reservations-web-1` (or `reservations-worker-1`) |
+| Apply a change to `docker/.env` | `docker compose -f docker/compose.yaml up -d` (Compose sees the change and recreates the containers) |
+| Apply a changed secret file | `docker compose -f docker/compose.yaml restart web worker` (secrets are read once at start) |
+| Stop the worker only | `docker compose -f docker/compose.yaml stop worker` |
+| Stop everything | `docker compose -f docker/compose.yaml down` (the database is not touched) |
+| Roll back to an earlier image | `IMAGE_TAG=sha-<commit> docker compose -f docker/compose.yaml up -d web worker` (list the tags with `docker images reservations`) |
+
+A rollback changes only the code. Migrations are never undone, which is why each migration must also work with the previous release. To restore the data itself, stop `web` and `worker`, then load the dump from before the deploy. This overwrites shared data, so ask the owner first:
+
+```bash
+PGPASSWORD="$(cat ~/secrets/hol_app_password)" docker exec -i -e PGPASSWORD insforge-postgres \
+  pg_restore -h 127.0.0.1 -U hol_app -d insforge --clean --if-exists < ~/backups/<dump file>
+```
+
+### 6. Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| The public URL shows a different site, while `curl -k --resolve <APP_HOST>:443:127.0.0.1 https://<APP_HOST>/` shows ours | Another DNS record for the host name overrides the tunnel. Remove it in Cloudflare DNS (and the custom domain on whatever it points to) |
+| Traefik answers `404 page not found` | `web` is not running, not on the `traefik` network, or `APP_HOST` doesn't match the host name |
+| `network hol-internal declared as external, but could not be found` | Create it: `docker network create --internal hol-internal`, then restart InsForge so `insforge-postgres` joins it |
+| `web` or `migrate` fails at start with `EACCES` on `/run/secrets/...` | The secret files aren't readable by uid 1000. Run the deploy as the uid 1000 user, or `chown 1000` the files |
+| `migrate` exits with an error, and `web` and `worker` don't start | Read `docker logs reservations-migrate-1`. Nothing after the failed migration ran, and the dump from before the deploy is in `~/backups` |
+| The image build fails while "Generating static pages" with a `ZodError` on an env variable | A page reads env before it calls `headers()`, `cookies()`, or `connection()`, so Next tries to prerender it at build time. Call one of those first (see `currentSession` in `server/auth/require.ts`) |
+| `worker: another worker holds the lock, exiting` | A worker is already running somewhere (often `npm run worker` in dev). Stop that one; Compose restarts this one |
+| `reconciler: skipped group … (not_found)` every tick | A testbed's Authentik group is gone. Delete the testbed in the console if it's no longer used |
+| Sign in fails with a redirect URI error | Add the production URL to the provider with `npm run authentik:setup` (step 5) |

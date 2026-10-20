@@ -38,7 +38,11 @@ npm run calendar:backfill # queues a calendar job for every confirmed booking no
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
+npm run build:bundle      # esbuild bundles of the worker and migrate into dist/ (the image runs these)
+scripts/deploy.sh         # production: build the image, pg_dump, then compose up migrate, web, worker (docker/compose.yaml)
 ```
+
+- Production runs as the Compose project `reservations` from `docker/compose.yaml` (settings in the gitignored `docker/.env`, secrets mounted from `SECRETS_DIR`); its `worker` container is the one production worker. The README's "Running in production (Docker)" section has prerequisites and operations.
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
 - Dev runs on the LAN IP (`http://10.1.255.18:3000`), because the Authentik proxy refuses requests that mention localhost. `APP_URL` must match the URL the browser uses, or sign in fails with `state_mismatch`.
