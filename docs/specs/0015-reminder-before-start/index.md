@@ -1,7 +1,7 @@
 # 0015. Reminder email before a booking starts
 
 **Date**: 2026-10-20
-**Status**: In Progress
+**Status**: Accepted
 **Builds on**: [spec 0013](../0013-email-delivery-booking-confirmations/index.md) (the job queue, the `send_email` handler, routing, the lab access template, the invite). **Amends** spec 0013 AC-10 (the claim order: a queued reminder never holds back another email, AC-10 here). **Settles** [spec 0001](../0001-stack-architecture/index.md)'s follow-up "decide where the reminder lead time is configured" (a code constant) and confirms [spec 0002](../0002-data-model/index.md)'s plan of a job keyed `reminder:<booking id>:<version>`.
 
 ## Summary
