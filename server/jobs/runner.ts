@@ -105,7 +105,9 @@ const JobRow = z.object({
 // AC-8, AC-10. One statement: the oldest due job of a handled kind with
 // attempts left, pending and due or running with an expired lease. A
 // send_email job waits while an older email of its booking is still queued,
-// so a booking's emails go out in version order.
+// so a booking's emails go out in version order. Spec 0015 AC-10: a queued
+// reminder never holds back another email, and a reminder also waits for
+// its own version's booked or rescheduled email.
 export async function claimJob(
   conn: Kysely<DB>,
   kinds: readonly JobKind[],
@@ -125,8 +127,10 @@ export async function claimJob(
           from hol_app.email_messages m
           join hol_app.email_messages older
             on older.booking_id = m.booking_id
-           and older.booking_version < m.booking_version
            and older.status = 'queued'
+           and older.kind <> 'reminder'
+           and (older.booking_version < m.booking_version
+                or (m.kind = 'reminder' and older.booking_version = m.booking_version))
           where m.job_id = j.id
         )
       order by j.run_at, j.created_at
