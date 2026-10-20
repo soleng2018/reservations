@@ -164,6 +164,8 @@ const jobsFor = (trx: Kysely<DB>, keyPrefix: string) =>
     ])
     .where("idempotency_key", "like", `${keyPrefix}%`)
     .orderBy("created_at")
+    // Rows from one inRollback share created_at; the key ends in the version.
+    .orderBy("idempotency_key")
     .execute();
 
 const decoded = (req: RecordedRequest) => {
