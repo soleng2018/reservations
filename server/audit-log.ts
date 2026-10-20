@@ -1,19 +1,26 @@
 import "server-only";
-import { sql, type Kysely } from "kysely";
+import { sql, type Expression, type Kysely, type SqlBool } from "kysely";
 import { z } from "zod";
 import {
   ACTOR_KIND_LABEL,
+  BOOKING_FORM_ACTIONS,
   TARGET_TYPE_LABEL,
   actionView,
+  actionsMatchingLabel,
   actorKind,
+  areaActions,
+  encodeCursor,
+  escapeLike,
   targetHistoryHref,
+  type AuditCursor,
+  type AuditQuery,
   type AuditRow,
 } from "@/lib/audit-log";
 import { AuditTargetType, UserRole } from "@/lib/db-enums";
 import { formatDateTime } from "@/lib/format-time";
+import type { DB } from "@/server/db/types";
 
 export type { AuditRow } from "@/lib/audit-log";
-import type { DB } from "@/server/db/types";
 
 // Spec 0016: the read only Audit Log. Every function here runs after the
 // caller's requireAdmin(), reads audit_events as stored, and writes nothing.
@@ -22,17 +29,33 @@ export const AUDIT_PAGE_SIZE = 50;
 
 export type AuditPage = {
   readonly rows: readonly AuditRow[];
+  // Cursors for the Older and Newer links, when each should show (AC-3).
   readonly older?: string;
+  readonly newer?: string;
 };
 
-// The boundary row's time as microsecond UTC text, made by SQL so it never
-// passes through a JS Date (milliseconds only), and the cursor built on it.
+// The row's time as microsecond UTC text, made by SQL so it never passes
+// through a JS Date (milliseconds only) on its way into a cursor.
 const cursorTs = sql<string>`to_char(e.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 
-export const encodeCursor = (ts: string, id: string): string =>
-  Buffer.from(`${ts}|${id}`).toString("base64url");
+// AC-5: the three ways an entry belongs to a learner's history, each served
+// by an existing index.
+type LearnerArm = "actor" | "user_target" | "booking_target";
+const LEARNER_ARMS: readonly LearnerArm[] = [
+  "actor",
+  "user_target",
+  "booking_target",
+];
 
-const selectEvents = (conn: Kysely<DB>) =>
+// Every filter of the query (AC-4, AC-5), plus one learner arm, plus the
+// cursor, applied in SQL, in the cursor's order, one row past a page.
+const eventsQuery = (
+  conn: Kysely<DB>,
+  query: AuditQuery,
+  timeZone: string,
+  size: number,
+  arm?: LearnerArm,
+) =>
   conn
     .selectFrom("audit_events as e")
     .leftJoin("users as actor", "actor.id", "e.actor_user_id")
@@ -48,28 +71,190 @@ const selectEvents = (conn: Kysely<DB>) =>
       "actor.name as actor_name",
       "actor.role as actor_role",
       cursorTs.as("cursor_ts"),
-    ]);
+    ])
+    .where((eb) => {
+      const { actor, area, admin, from, to, q, target, learner, cursor } =
+        query;
+      const conditions: readonly (Expression<SqlBool> | undefined)[] = [
+        actor === "admin" || actor === "learner"
+          ? eb("actor.role", "=", actor)
+          : actor === "booking_form"
+            ? eb.and([
+                eb("e.actor_user_id", "is", null),
+                eb("e.action", "in", BOOKING_FORM_ACTIONS),
+              ])
+            : actor === "system"
+              ? eb.and([
+                  eb("e.actor_user_id", "is", null),
+                  eb("e.action", "not in", BOOKING_FORM_ACTIONS),
+                ])
+              : undefined,
+        area ? eb("e.action", "in", areaActions(area)) : undefined,
+        admin ? eb("e.actor_user_id", "=", admin) : undefined,
+        // Whole days in the admin's zone, converted by Postgres.
+        from
+          ? eb(
+              "e.created_at",
+              ">=",
+              sql<Date>`(${from}::date)::timestamp at time zone ${timeZone}::text`,
+            )
+          : undefined,
+        to
+          ? eb(
+              "e.created_at",
+              "<",
+              sql<Date>`(${to}::date + 1)::timestamp at time zone ${timeZone}::text`,
+            )
+          : undefined,
+        q ? textMatch(q) : undefined,
+        target
+          ? eb.and([
+              eb("e.target_type", "=", target.type),
+              eb("e.target_id", "=", target.id),
+            ])
+          : undefined,
+        learner && arm === "actor"
+          ? eb("e.actor_user_id", "=", learner)
+          : learner && arm === "user_target"
+            ? eb.and([
+                eb("e.target_type", "=", "user"),
+                eb("e.target_id", "=", learner),
+              ])
+            : learner && arm === "booking_target"
+              ? eb.and([
+                  eb("e.target_type", "=", "booking"),
+                  eb(
+                    "e.target_id",
+                    "in",
+                    eb
+                      .selectFrom("bookings")
+                      .select(sql<string>`id::text`.as("id"))
+                      .where("user_id", "=", learner),
+                  ),
+                ])
+              : undefined,
+        cursor ? afterCursor(cursor) : undefined,
+      ];
+      return eb.and(conditions.filter((c) => c !== undefined));
+    })
+    .orderBy("e.created_at", cursor(query) === "after" ? "asc" : "desc")
+    .orderBy("e.id", cursor(query) === "after" ? "asc" : "desc")
+    .limit(size + 1);
+
+const cursor = (q: AuditQuery) => q.cursor?.dir;
+
+// AC-3: the row value comparison the paging index serves. The time is
+// compared as timestamptz, at the microseconds the cursor carries.
+const afterCursor = (c: AuditCursor) =>
+  c.dir === "before"
+    ? sql<SqlBool>`(e.created_at, e.id) < (${c.ts}::timestamptz, ${c.id}::uuid)`
+    : sql<SqlBool>`(e.created_at, e.id) > (${c.ts}::timestamptz, ${c.id}::uuid)`;
+
+// AC-4 `q`: the summary, the action (name or label), the actor's name or
+// email, and the target's name. Every id in the target union is compared as
+// text, so target_id is never cast.
+const textMatch = (q: string) => {
+  const p = `%${escapeLike(q)}%`;
+  const like = (col: string) => sql`${sql.ref(col)} ilike ${p} escape '\\'`;
+  const labelled = actionsMatchingLabel(q);
+  return sql<SqlBool>`(
+    ${like("e.summary")}
+    or ${like("e.action")}
+    ${labelled.length > 0 ? sql`or e.action in (${sql.join(labelled)})` : sql``}
+    or ${like("actor.name")}
+    or ${like("actor.email")}
+    or (e.target_type, e.target_id) in (
+      select 'testbed_type', id::text from testbed_types where ${like("name")}
+      union all
+      select 'testbed', id::text from testbeds where ${like("name")}
+      union all
+      select 'api_key', id::text from api_keys where ${like("name")}
+      union all
+      select 'user', id::text from users where ${like("name")} or ${like("email")}
+      union all
+      select 'booking', b.id::text from bookings b
+        join users u on u.id = b.user_id
+        where ${like("u.name")} or ${like("u.email")}
+      union all
+      select 'authentik_group', authentik_group_pk::text from testbeds
+        where authentik_group_pk is not null and ${like("name")}
+    )
+  )`;
+};
 
 type EventRow = Awaited<
-  ReturnType<ReturnType<typeof selectEvents>["execute"]>
+  ReturnType<ReturnType<typeof eventsQuery>["execute"]>
 >[number];
 
-// AC-2: the newest page, ordered by (created_at, id) so ties never shuffle.
+// Sorted the way the cursor reads: newest first, or oldest first after an
+// `after` cursor. The time text is fixed width UTC, so it sorts as text,
+// and uuid order is the order of their lowercase text.
+const compareRows =
+  (dir: "asc" | "desc") =>
+  (a: EventRow, b: EventRow): number => {
+    const order =
+      a.cursor_ts === b.cursor_ts
+        ? a.id < b.id
+          ? -1
+          : a.id > b.id
+            ? 1
+            : 0
+        : a.cursor_ts < b.cursor_ts
+          ? -1
+          : 1;
+    return dir === "asc" ? order : -order;
+  };
+
+// One page plus one row, in the cursor's order. A learner's history reads
+// its three arms, each limited the same way, then merges them (a row can be
+// in more than one arm) and keeps the first size plus one.
+async function fetchEvents(
+  conn: Kysely<DB>,
+  query: AuditQuery,
+  timeZone: string,
+  size: number,
+): Promise<readonly EventRow[]> {
+  if (!query.learner) return eventsQuery(conn, query, timeZone, size).execute();
+  const arms = await Promise.all(
+    LEARNER_ARMS.map((arm) =>
+      eventsQuery(conn, query, timeZone, size, arm).execute(),
+    ),
+  );
+  const unique = [...new Map(arms.flat().map((row) => [row.id, row])).values()];
+  return unique
+    .sort(compareRows(cursor(query) === "after" ? "asc" : "desc"))
+    .slice(0, size + 1);
+}
+
+// AC-2, AC-3: one page of entries, newest first, with the Older and Newer
+// cursors the link rules allow.
 export async function listAuditEvents(
   conn: Kysely<DB>,
+  query: AuditQuery,
   timeZone: string,
 ): Promise<AuditPage> {
-  const found = await selectEvents(conn)
-    .orderBy("e.created_at", "desc")
-    .orderBy("e.id", "desc")
-    .limit(AUDIT_PAGE_SIZE + 1)
-    .execute();
-  const shown = found.slice(0, AUDIT_PAGE_SIZE);
-  const rows = await toRows(conn, shown, timeZone);
-  const last = rows.at(-1);
+  const found = await fetchEvents(conn, query, timeZone, AUDIT_PAGE_SIZE);
+  const more = found.length > AUDIT_PAGE_SIZE;
+  const page = found.slice(0, AUDIT_PAGE_SIZE);
+  const rows = await toRows(
+    conn,
+    query.cursor?.dir === "after" ? page.toReversed() : page,
+    timeZone,
+  );
+  const first = rows.at(0)?.cursor;
+  const last = rows.at(-1)?.cursor;
+  // An empty page past a cursor links back across that same cursor.
+  const self = query.cursor && encodeCursor(query.cursor.ts, query.cursor.id);
+  const links =
+    query.cursor?.dir === "before"
+      ? { older: more ? last : undefined, newer: first ?? self }
+      : query.cursor?.dir === "after"
+        ? { older: last ?? self, newer: more ? first : undefined }
+        : { older: more ? last : undefined, newer: undefined };
   return {
     rows,
-    ...(found.length > AUDIT_PAGE_SIZE && last ? { older: last.cursor } : {}),
+    ...(links.older ? { older: links.older } : {}),
+    ...(links.newer ? { newer: links.newer } : {}),
   };
 }
 
@@ -290,3 +475,15 @@ const namedRows = (
       .where("id", "in", list)
       .execute(),
   );
+
+// AC-4: the `admin` filter's picker, every admin by name.
+export const listAdmins = (
+  conn: Kysely<DB>,
+): Promise<readonly { readonly id: string; readonly name: string }[]> =>
+  conn
+    .selectFrom("users")
+    .select(["id", "name"])
+    .where("role", "=", "admin")
+    .orderBy("name")
+    .orderBy("id")
+    .execute();

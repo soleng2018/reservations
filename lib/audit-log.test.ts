@@ -7,8 +7,16 @@ import {
   AuditArea,
   BOOKING_FORM_ACTIONS,
   actionView,
+  actionsMatchingLabel,
   actorKind,
   areaActions,
+  auditHref,
+  decodeCursor,
+  encodeCursor,
+  escapeLike,
+  hasFilters,
+  parseAuditQuery,
+  parseTarget,
   targetHistoryHref,
   type ActorKind,
 } from "./audit-log";
@@ -158,5 +166,221 @@ describe("targetHistoryHref", () => {
     expect(targetHistoryHref("user", "authentik:12")).toBe(
       "/admin/audit-log?target=user%3Aauthentik%3A12",
     );
+  });
+});
+
+const TS = "2026-10-20T13:45:01.123456Z";
+const ID = "0b8f8a4e-5c1d-4f3a-9b2e-7d6c5b4a3f21";
+const CURSOR = encodeCursor(TS, ID);
+
+describe("cursor", () => {
+  // covers: AC-3, the cursor round trips at microsecond precision
+  it("round trips the microsecond time and the id", () => {
+    expect(CURSOR).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(decodeCursor(CURSOR)).toEqual({ ts: TS, id: ID });
+  });
+
+  // covers: AC-3, each way a cursor is bad
+  it.each([
+    ["not base64url", "abc$%"],
+    ["undecodable", "a"],
+    ["no separator", encodeCursor(TS, ID).slice(0, 10)],
+    ["three parts", btoa(`${TS}|${ID}|x`).replace(/=+$/, "")],
+    ["millisecond time", encodeCursor("2026-10-20T13:45:01.123Z", ID)],
+    ["year zero", encodeCursor("0000-01-01T00:00:00.000000Z", ID)],
+    ["bad id", encodeCursor(TS, "not-a-uuid")],
+  ])("rejects a cursor that is %s", (_, raw) => {
+    expect(decodeCursor(raw)).toBeUndefined();
+  });
+});
+
+describe("parseTarget", () => {
+  // covers: AC-5, the id rule per target type
+  it.each([
+    ["testbed_type:" + ID, { type: "testbed_type", id: ID }],
+    ["booking:" + ID, { type: "booking", id: ID }],
+    ["user:" + ID, { type: "user", id: ID }],
+    ["user:authentik:12", { type: "user", id: "authentik:12" }],
+    ["user:unknown", { type: "user", id: "unknown" }],
+    ["authentik_group:" + ID, { type: "authentik_group", id: ID }],
+    ["authentik_group:pod-abc-1", { type: "authentik_group", id: "pod-abc-1" }],
+  ])("reads %s", (raw, want) => {
+    expect(parseTarget(raw)).toEqual(want);
+  });
+
+  it.each([
+    ["no colon", "testbed"],
+    ["unknown type", "pod:" + ID],
+    ["non uuid testbed", "testbed:abc"],
+    ["non uuid booking", "booking:authentik:12"],
+    ["bad special user", "user:authentik:x"],
+    ["group with a slash", "authentik_group:a/b"],
+    ["group too long", "authentik_group:" + "a".repeat(65)],
+  ])("drops a target with %s", (_, raw) => {
+    expect(parseTarget(raw)).toBeUndefined();
+  });
+});
+
+describe("parseAuditQuery", () => {
+  // covers: AC-4, every filter read from the URL
+  it("reads every filter", () => {
+    expect(
+      parseAuditQuery({
+        actor: "booking_form",
+        area: "testbeds",
+        admin: ID,
+        from: "2026-10-01",
+        to: "2026-10-20",
+        q: "  pod 7  ",
+        target: "testbed:" + ID,
+        learner: ID,
+        before: CURSOR,
+      }),
+    ).toEqual({
+      query: {
+        actor: "booking_form",
+        area: "testbeds",
+        admin: ID,
+        from: "2026-10-01",
+        to: "2026-10-20",
+        q: "pod 7",
+        target: { type: "testbed", id: ID },
+        learner: ID,
+        cursor: { dir: "before", ts: TS, id: ID },
+      },
+      dropped: [],
+    });
+  });
+
+  it("reads an after cursor", () => {
+    expect(parseAuditQuery({ after: CURSOR }).query.cursor).toEqual({
+      dir: "after",
+      ts: TS,
+      id: ID,
+    });
+  });
+
+  // covers: AC-4, an unset GET form control is absent, not invalid
+  it("treats empty values as absent", () => {
+    expect(
+      parseAuditQuery({ actor: "", area: "", q: "   ", from: "", to: "" }),
+    ).toEqual({ query: {}, dropped: [] });
+  });
+
+  // covers: AC-4, a repeated param uses its first value
+  it("uses the first of a repeated param", () => {
+    expect(parseAuditQuery({ area: ["users", "bookings"] }).query.area).toBe(
+      "users",
+    );
+  });
+
+  // covers: AC-14, each bad param is dropped and named
+  it.each([
+    ["admin", { admin: "nope" }],
+    ["actor", { actor: "robot" }],
+    ["area", { area: "billing" }],
+    ["from", { from: "2026-02-30" }],
+    ["to", { to: "20-10-2026" }],
+    ["q", { q: " a " }],
+    ["q", { q: "x".repeat(101) }],
+    ["target", { target: "testbed:abc" }],
+    ["learner", { learner: "abc" }],
+    ["before", { before: "forged" }],
+  ])("drops a bad %s", (name, params) => {
+    const { query, dropped } = parseAuditQuery(params);
+    expect(query).toEqual({});
+    expect(dropped).toEqual([name]);
+  });
+
+  it("keeps the good filters beside a dropped one", () => {
+    expect(parseAuditQuery({ area: "users", admin: "nope" })).toEqual({
+      query: { area: "users" },
+      dropped: ["admin"],
+    });
+  });
+
+  // covers: AC-4, AC-14, from after to drops both
+  it("drops both dates when from is after to", () => {
+    expect(parseAuditQuery({ from: "2026-10-21", to: "2026-10-20" })).toEqual({
+      query: {},
+      dropped: ["from", "to"],
+    });
+  });
+
+  it("keeps one date given alone, and a single day range", () => {
+    expect(parseAuditQuery({ to: "2026-10-20" }).query).toEqual({
+      to: "2026-10-20",
+    });
+    expect(
+      parseAuditQuery({ from: "2026-10-20", to: "2026-10-20" }).query,
+    ).toEqual({ from: "2026-10-20", to: "2026-10-20" });
+  });
+
+  // covers: AC-14, both cursors drop both
+  it("drops both cursors when both are given", () => {
+    expect(parseAuditQuery({ before: CURSOR, after: CURSOR })).toEqual({
+      query: {},
+      dropped: ["before", "after"],
+    });
+  });
+
+  it("ignores params it does not know", () => {
+    expect(parseAuditQuery({ page: "2" })).toEqual({ query: {}, dropped: [] });
+  });
+});
+
+describe("escapeLike", () => {
+  // covers: Security model, q is matched literally
+  it("escapes the ILIKE wildcards and the escape character", () => {
+    expect(escapeLike("50%_off\\now")).toBe("50\\%\\_off\\\\now");
+  });
+});
+
+describe("actionsMatchingLabel", () => {
+  it("finds actions by label, case insensitive", () => {
+    expect(actionsMatchingLabel("SECRET")).toEqual(["api_key.secret_replaced"]);
+    expect(actionsMatchingLabel("no such label")).toEqual([]);
+  });
+});
+
+describe("auditHref", () => {
+  // covers: AC-3, AC-4, links keep the filters, never the old cursor
+  it("keeps every filter and drops the query's own cursor", () => {
+    const { query } = parseAuditQuery({
+      area: "users",
+      q: "ada lovelace",
+      target: "user:authentik:12",
+      before: CURSOR,
+    });
+    expect(auditHref(query)).toBe(
+      "/admin/audit-log?area=users&q=ada+lovelace&target=user%3Aauthentik%3A12",
+    );
+    expect(auditHref(query, { after: "abc" })).toBe(
+      "/admin/audit-log?area=users&q=ada+lovelace&target=user%3Aauthentik%3A12&after=abc",
+    );
+  });
+
+  it("is the bare path with no filters", () => {
+    expect(auditHref({})).toBe("/admin/audit-log");
+  });
+
+  it("round trips through parseAuditQuery", () => {
+    const { query } = parseAuditQuery({
+      actor: "system",
+      admin: ID,
+      from: "2026-10-01",
+      learner: ID,
+    });
+    const search = new URL(auditHref(query), "http://x").searchParams;
+    expect(parseAuditQuery(Object.fromEntries(search)).query).toEqual(query);
+  });
+});
+
+describe("hasFilters", () => {
+  it("ignores the cursor", () => {
+    expect(hasFilters({ cursor: { dir: "before", ts: TS, id: ID } })).toBe(
+      false,
+    );
+    expect(hasFilters({ learner: ID })).toBe(true);
   });
 });

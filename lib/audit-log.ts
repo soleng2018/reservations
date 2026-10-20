@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { AuditAction } from "@/lib/audit-actions";
-import type { AuditTargetType, UserRole } from "@/lib/db-enums";
+import { AuditTargetType, type UserRole } from "@/lib/db-enums";
 
 // Spec 0016: the pure half of the Audit Log. Labels, areas, and actor kinds
 // are display mappings over what is stored, so they are right for old rows
@@ -189,3 +189,229 @@ export const AUDIT_LOG_PATH = "/admin/audit-log";
 // AC-7: every target name links to that target's history.
 export const targetHistoryHref = (type: string, id: string): string =>
   `${AUDIT_LOG_PATH}?target=${encodeURIComponent(`${type}:${id}`)}`;
+
+// Free text matches an action by its label too (AC-4): the actions whose
+// label contains the text, case insensitive.
+export const actionsMatchingLabel = (q: string): readonly AuditAction[] =>
+  AuditAction.options.filter((a) =>
+    AUDIT_ACTION_INFO[a].label.toLowerCase().includes(q.toLowerCase()),
+  );
+
+// `\`, `%`, and `_` taken literally by ILIKE ... ESCAPE '\'.
+export const escapeLike = (q: string): string =>
+  q.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+// AC-3: the keyset cursor, base64url of "<microsecond UTC time>|<id>".
+export type AuditCursor = {
+  readonly dir: "before" | "after";
+  readonly ts: string;
+  readonly id: string;
+};
+
+export const encodeCursor = (ts: string, id: string): string =>
+  btoa(`${ts}|${id}`)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+// From 1970 on: a forged year 0000 would pass the format but not Postgres.
+const sinceEpoch = (s: string) => s >= "1970";
+const CursorTime = z.iso.datetime({ precision: 6 }).refine(sinceEpoch);
+const BASE64URL = /^[A-Za-z0-9_-]+$/;
+
+export function decodeCursor(
+  raw: string,
+): Omit<AuditCursor, "dir"> | undefined {
+  if (!BASE64URL.test(raw)) return undefined;
+  const text = (() => {
+    try {
+      return atob(raw.replace(/-/g, "+").replace(/_/g, "/"));
+    } catch {
+      return undefined;
+    }
+  })();
+  const parts = text?.split("|") ?? [];
+  if (parts.length !== 2) return undefined;
+  const [ts, id] = parts;
+  return CursorTime.safeParse(ts).success && z.uuid().safeParse(id).success
+    ? { ts, id }
+    : undefined;
+}
+
+// AC-5: a history target, `<type>:<id>` split on its first colon.
+export type AuditTarget = {
+  readonly type: AuditTargetType;
+  readonly id: string;
+};
+
+const UUID_TARGETS: ReadonlySet<AuditTargetType> = new Set([
+  "testbed_type",
+  "testbed",
+  "api_key",
+  "booking",
+]);
+const SPECIAL_USER = /^(?:authentik:\d{1,18}|unknown)$/;
+const GROUP_ID = /^[A-Za-z0-9-]{1,64}$/;
+const isUuid = (s: string) => z.uuid().safeParse(s).success;
+
+export function parseTarget(raw: string): AuditTarget | undefined {
+  const colon = raw.indexOf(":");
+  if (colon < 0) return undefined;
+  const type = AuditTargetType.safeParse(raw.slice(0, colon));
+  const id = raw.slice(colon + 1);
+  if (!type.success) return undefined;
+  const fits = UUID_TARGETS.has(type.data)
+    ? isUuid(id)
+    : type.data === "user"
+      ? isUuid(id) || SPECIAL_USER.test(id)
+      : GROUP_ID.test(id);
+  return fits ? { type: type.data, id } : undefined;
+}
+
+export type AuditQuery = {
+  readonly actor?: ActorKind;
+  readonly area?: AuditArea;
+  readonly admin?: string;
+  readonly from?: string;
+  readonly to?: string;
+  readonly q?: string;
+  readonly target?: AuditTarget;
+  readonly learner?: string;
+  readonly cursor?: AuditCursor;
+};
+
+export type SearchParams = Readonly<
+  Record<string, string | readonly string[] | undefined>
+>;
+
+// A param given more than once uses its first value; an empty one (an
+// unset control of the GET form) is absent, not invalid.
+const firstValue = (v: string | readonly string[] | undefined) => {
+  const s = typeof v === "string" ? v : v?.[0];
+  return s === undefined || s === "" ? undefined : s;
+};
+
+const IsoDay = z.iso.date().refine(sinceEpoch);
+const Q = z
+  .string()
+  .min(2)
+  .max(100)
+  .refine((s) => !s.includes("\u0000"));
+
+const fromSchema =
+  <T>(schema: z.ZodType<T>) =>
+  (raw: string): T | undefined => {
+    const parsed = schema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
+  };
+
+// One parser per param (AC-4); each returns undefined for a bad value.
+const PARSERS = {
+  actor: fromSchema(ActorKind),
+  area: fromSchema(AuditArea),
+  admin: fromSchema(z.uuid()),
+  from: fromSchema(IsoDay),
+  to: fromSchema(IsoDay),
+  q: fromSchema(Q),
+  target: parseTarget,
+  learner: fromSchema(z.uuid()),
+  before: decodeCursor,
+  after: decodeCursor,
+} as const;
+
+type ParamName = keyof typeof PARSERS;
+type ParsedParams = {
+  readonly [K in ParamName]?: NonNullable<ReturnType<(typeof PARSERS)[K]>>;
+};
+
+// AC-4, AC-14: the page's query from its URL. Never throws: a param that
+// fails to parse is dropped and named in `dropped`, so the page shows one
+// notice and the rest of the filters still apply.
+export function parseAuditQuery(params: SearchParams): {
+  readonly query: AuditQuery;
+  readonly dropped: readonly string[];
+} {
+  const names = Object.keys(PARSERS) as ParamName[];
+  const raw = Object.fromEntries(
+    names.map((n) => {
+      const v = firstValue(params[n]);
+      return [n, n === "q" && v !== undefined ? v.trim() || undefined : v];
+    }),
+  ) as Readonly<Record<ParamName, string | undefined>>;
+  const parsed = Object.fromEntries(
+    names.flatMap((n) => {
+      const v = raw[n];
+      const p = v === undefined ? undefined : PARSERS[n](v);
+      return p === undefined ? [] : [[n, p]];
+    }),
+  ) as ParsedParams;
+  const bad = names.filter((n) => raw[n] !== undefined && !(n in parsed));
+
+  // Pairs that cannot hold together are dropped whole.
+  const backwards =
+    parsed.from !== undefined &&
+    parsed.to !== undefined &&
+    parsed.from > parsed.to;
+  const bothCursors = raw.before !== undefined && raw.after !== undefined;
+  const pairDropped = [
+    ...(backwards ? ["from", "to"] : []),
+    ...(bothCursors ? ["before", "after"] : []),
+  ];
+  const kept = (n: ParamName) => !pairDropped.includes(n);
+  const cursor = !kept("before")
+    ? undefined
+    : parsed.before
+      ? ({ dir: "before", ...parsed.before } as const)
+      : parsed.after
+        ? ({ dir: "after", ...parsed.after } as const)
+        : undefined;
+
+  return {
+    query: {
+      ...(parsed.actor ? { actor: parsed.actor } : {}),
+      ...(parsed.area ? { area: parsed.area } : {}),
+      ...(parsed.admin ? { admin: parsed.admin } : {}),
+      ...(parsed.from && kept("from") ? { from: parsed.from } : {}),
+      ...(parsed.to && kept("to") ? { to: parsed.to } : {}),
+      ...(parsed.q ? { q: parsed.q } : {}),
+      ...(parsed.target ? { target: parsed.target } : {}),
+      ...(parsed.learner ? { learner: parsed.learner } : {}),
+      ...(cursor ? { cursor } : {}),
+    },
+    dropped: [...new Set([...bad, ...pairDropped])],
+  };
+}
+
+// AC-14: the one notice for any dropped param.
+export const DROPPED_NOTICE =
+  "Some filters in this link weren't valid and were ignored.";
+
+export const hasFilters = (q: AuditQuery): boolean =>
+  [q.actor, q.area, q.admin, q.from, q.to, q.q, q.target, q.learner].some(
+    (v) => v !== undefined,
+  );
+
+// A link to the log with these filters. The query's own cursor is never
+// carried: applying or clearing a filter starts from the newest page, and
+// the paging links pass their cursor explicitly.
+export function auditHref(
+  q: AuditQuery,
+  page: { readonly before?: string; readonly after?: string } = {},
+): string {
+  const pairs: readonly (readonly [string, string | undefined])[] = [
+    ["actor", q.actor],
+    ["area", q.area],
+    ["admin", q.admin],
+    ["from", q.from],
+    ["to", q.to],
+    ["q", q.q],
+    ["target", q.target && `${q.target.type}:${q.target.id}`],
+    ["learner", q.learner],
+    ["before", page.before],
+    ["after", page.after],
+  ];
+  const search = new URLSearchParams(
+    pairs.flatMap(([k, v]) => (v === undefined ? [] : [[k, v]])),
+  ).toString();
+  return search ? `${AUDIT_LOG_PATH}?${search}` : AUDIT_LOG_PATH;
+}

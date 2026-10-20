@@ -299,7 +299,7 @@ Record who did what: API key secret creation and replacement, catalog changes, t
 - [x] Design it (spec): `/architect admin audit log`
 - [ ] Build it: `/develop admin audit log`
   - [x] Tracer: migration `0012` keyset index, labels and actor kinds in `lib/audit-log.ts`, the Audit Log nav section and first page of rows (AC-1, 2, 6, 7, 13, 15)
-  - [ ] Paging and filters: keyset Older and Newer, the URL filter form, the dropped filter notice, empty states (AC-3, 4, 14)
+  - [x] Paging and filters: keyset Older and Newer, the URL filter form, the dropped filter notice, empty states (AC-3, 4, 14)
   - [ ] Row detail: `describeMetadata` and the expand disclosure (AC-8)
   - [ ] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
   - [ ] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
