@@ -1,4 +1,5 @@
 import {
+  HistoryIcon,
   LayoutGridIcon,
   LockIcon,
   RouterIcon,
@@ -13,6 +14,7 @@ export const ADMIN_SECTIONS = [
   "testbed-types",
   "testbeds",
   "users",
+  "audit-log",
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -54,6 +56,15 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     label: "Users",
     subtitle: "Everyone with hands-on lab access.",
     icon: UsersIcon,
+  },
+  // Spec 0016 AC-1: the read only log, last in the nav.
+  {
+    section: "audit-log",
+    href: "/admin/audit-log",
+    label: "Audit Log",
+    subtitle:
+      "Who changed what, from the console, the booking form, and the worker.",
+    icon: HistoryIcon,
   },
 ];
 

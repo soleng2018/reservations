@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeftIcon } from "lucide-react";
 import { z } from "zod";
+import { AuditRow } from "@/components/admin/audit-row";
 import { FormDialog } from "@/components/admin/form-dialog";
+import { HistoryLink } from "@/components/admin/history-link";
 import { LearnerFields } from "@/components/admin/learner-fields";
 import { BookingCancelButton } from "@/components/admin/booking-cancel-button";
 import {
@@ -23,6 +25,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  auditHref,
+  targetHistoryHref,
+  type AuditRow as AuditRowData,
+} from "@/lib/audit-log";
 import { toneFor } from "@/lib/badge-tones";
 import {
   EMAIL_KIND_LABEL,
@@ -38,6 +45,7 @@ import {
   learnerStatusLabel,
 } from "@/lib/learners";
 import { cn } from "@/lib/utils";
+import { learnerHistory } from "@/server/audit-log";
 import { requireAdmin } from "@/server/auth/require";
 import { googleConfigured } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
@@ -54,6 +62,9 @@ import {
 
 export const metadata: Metadata = { title: "User" };
 
+// Spec 0016 AC-10: the learner's newest entries on their page.
+const HISTORY_LIMIT = 20;
+
 const load = async (id: string): Promise<LearnerDetail> => {
   if (!z.uuid().safeParse(id).success) notFound();
   const found = await getLearnerDetail(db(), id);
@@ -69,9 +80,10 @@ export default async function UserDetailPage(
   const { user: admin } = await requireAdmin();
   const { id } = await props.params;
   const { learner, bookings } = await load(id);
-  const [emails, emailReady] = await Promise.all([
+  const [emails, emailReady, history] = await Promise.all([
     listUserEmails(db(), learner.id),
     googleConfigured(db()),
+    learnerHistory(db(), learner.id, admin.timezone, HISTORY_LIMIT),
   ]);
   const status = learnerStatusLabel(learner.status);
   // AC-7: only an active learner who has not set a password yet.
@@ -193,19 +205,25 @@ export default async function UserDetailPage(
                       {formatDateTime(b.endsAt, admin.timezone)}
                     </TableCell>
                     <TableCell className="text-right">
-                      {b.phase === "Upcoming" || b.phase === "Current" ? (
-                        <BookingCancelButton
-                          testbed={b.testbedName}
-                          start={formatDateTime(b.startsAt, admin.timezone)}
-                          end={formatDateTime(b.endsAt, admin.timezone)}
-                          current={b.phase === "Current"}
-                          action={cancelBookingAdminAction.bind(
-                            null,
-                            b.id,
-                            b.version,
-                          )}
+                      <div className="flex justify-end gap-2">
+                        <HistoryLink
+                          href={targetHistoryHref("booking", b.id)}
+                          name={`${b.testbedName}, ${formatDateTime(b.startsAt, admin.timezone)}`}
                         />
-                      ) : null}
+                        {b.phase === "Upcoming" || b.phase === "Current" ? (
+                          <BookingCancelButton
+                            testbed={b.testbedName}
+                            start={formatDateTime(b.startsAt, admin.timezone)}
+                            end={formatDateTime(b.endsAt, admin.timezone)}
+                            current={b.phase === "Current"}
+                            action={cancelBookingAdminAction.bind(
+                              null,
+                              b.id,
+                              b.version,
+                            )}
+                          />
+                        ) : null}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -220,6 +238,12 @@ export default async function UserDetailPage(
         <EmailsSection
           emails={emails}
           configured={emailReady}
+          timezone={admin.timezone}
+        />
+
+        <HistorySection
+          learnerId={learner.id}
+          rows={history}
           timezone={admin.timezone}
         />
       </PageBody>
@@ -265,6 +289,9 @@ function EmailsSection({
         <Table className="min-w-160" region="Emails">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-12 pr-0">
+                <span className="sr-only">Details</span>
+              </TableHead>
               <TableHead>When</TableHead>
               <TableHead>Kind</TableHead>
               <TableHead>Subject</TableHead>
@@ -301,6 +328,62 @@ function EmailsSection({
                 </TableRow>
               );
             })}
+          </TableBody>
+        </Table>
+      )}
+      <p className="border-t px-6 py-3.5 text-pill text-fg3">
+        Times in {timezone}.
+      </p>
+    </section>
+  );
+}
+
+// Spec 0016 AC-10: the learner's 20 newest audit entries, by the Audit
+// Log's learner rule, with a link to all of them.
+function HistorySection({
+  learnerId,
+  rows,
+  timezone,
+}: {
+  readonly learnerId: string;
+  readonly rows: readonly AuditRowData[];
+  readonly timezone: string;
+}) {
+  return (
+    <section
+      aria-labelledby="history-heading"
+      className="rounded-xl border bg-card shadow-xs"
+    >
+      <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-1.5">
+        <h2 id="history-heading" className="text-base font-bold text-fg1">
+          History
+        </h2>
+        <Link
+          href={auditHref({ learner: learnerId })}
+          className="text-sm font-semibold text-nile-blue underline-offset-4 hover:underline"
+        >
+          See all
+        </Link>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-5 py-12.5 text-center text-sm text-fg3">
+          No history yet.
+        </p>
+      ) : (
+        <Table className="min-w-240" region="History">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>When</TableHead>
+              <TableHead>Who</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Target</TableHead>
+              <TableHead>Summary</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <AuditRow key={row.id} row={row} />
+            ))}
           </TableBody>
         </Table>
       )}

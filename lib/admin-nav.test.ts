@@ -1,4 +1,4 @@
-import { LockIcon, UsersIcon } from "lucide-react";
+import { HistoryIcon, LockIcon, UsersIcon } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_NAV,
@@ -15,6 +15,7 @@ describe("ADMIN_NAV", () => {
       "Testbed Types",
       "Testbeds",
       "Users",
+      "Audit Log",
     ]);
   });
 
@@ -43,6 +44,8 @@ describe("ADMIN_NAV", () => {
         "Lab difficulty levels and how long each reservation lasts.",
       testbeds: "The remote labs customers can reserve.",
       users: "Everyone with hands-on lab access.",
+      "audit-log":
+        "Who changed what, from the console, the booking form, and the worker.",
     });
   });
 
@@ -50,6 +53,12 @@ describe("ADMIN_NAV", () => {
   it("uses the lock icon for API Keys and the users icon for Users", () => {
     expect(navItem("api-keys").icon).toBe(LockIcon);
     expect(navItem("users").icon).toBe(UsersIcon);
+  });
+
+  // covers: spec 0016 AC-1, the Audit Log section and its icon
+  it("uses the history icon for Audit Log", () => {
+    expect(navItem("audit-log").icon).toBe(HistoryIcon);
+    expect(navItem("audit-log").href).toBe("/admin/audit-log");
   });
 
   it("throws for a section missing from the nav (a broken invariant)", () => {
@@ -66,6 +75,10 @@ describe("activeSection", () => {
 
   it("keeps the section active on nested paths", () => {
     expect(activeSection("/admin/users/42")).toBe("users");
+  });
+
+  it("matches the Audit Log with its query string stripped", () => {
+    expect(activeSection("/admin/audit-log")).toBe("audit-log");
   });
 
   it("does not confuse testbeds with testbed-types", () => {

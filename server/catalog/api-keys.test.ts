@@ -5,6 +5,7 @@ import {
   PostgresAdapter,
   PostgresIntrospector,
   PostgresQueryCompiler,
+  sql,
   type Transaction,
 } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
@@ -78,12 +79,23 @@ const stored = (trx: Kysely<DB>, id: string) =>
     .where("id", "=", id)
     .executeTakeFirstOrThrow();
 
+// Every row a test writes shares one created_at (`now()` is fixed for the
+// inRollback transaction), so the tie is broken by the order these actions
+// happen in a key's life; Postgres would return tied rows in any order.
+const lifecycle: readonly string[] = [
+  "api_key.created",
+  "api_key.updated",
+  "api_key.secret_replaced",
+  "api_key.deleted",
+];
+
 const auditsFor = (trx: Kysely<DB>, targetId: string) =>
   trx
     .selectFrom("audit_events")
     .select(["action", "actor_user_id", "metadata", "summary"])
     .where("target_id", "=", targetId)
     .orderBy("created_at")
+    .orderBy(sql<number>`array_position(${sql.val(lifecycle)}::text[], action)`)
     .execute();
 
 const thrown = async (fn: () => Promise<unknown>): Promise<Error> => {

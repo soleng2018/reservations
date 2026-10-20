@@ -46,7 +46,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 15 | Email delivery & booking confirmations | Slice 4 | done |
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
-| 18 | Admin audit log | Slice 5 | planned |
+| 18 | Admin audit log | Slice 5 | in-progress |
 
 ## Foundations
 
@@ -293,10 +293,19 @@ spec [0015](../specs/0015-reminder-before-start/index.md) · code in `server/job
 
 ## Slice 5: Accountability
 
-### 18. Admin audit log · needs a decision
+### 18. Admin audit log · in-progress
 Record who did what: API key secret creation and replacement, catalog changes, testbed group changes in Authentik, user deactivation, and booking cancellations by admins. Admins can view the log.
 **Done when:** each of those actions writes an entry with actor, action, target, and time; entries cannot be edited from the app.
-- [ ] Design it (spec): `/architect admin audit log`
+- [x] Design it (spec): `/architect admin audit log`
+- [x] Build it: `/develop admin audit log`
+  - [x] Tracer: migration `0012` keyset index, labels and actor kinds in `lib/audit-log.ts`, the Audit Log nav section and first page of rows (AC-1, 2, 6, 7, 13, 15)
+  - [x] Paging and filters: keyset Older and Newer, the URL filter form, the dropped filter notice, empty states (AC-3, 4, 14)
+  - [x] Row detail: `describeMetadata` and the expand disclosure (AC-8)
+  - [x] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
+  - [x] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
+- [ ] Verify it: `/check verify admin audit log`
+- [ ] Test it: `/test admin audit log`
+spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.
@@ -312,6 +321,9 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Secret rotation script**: `secrets:rotate` encrypts every stored secret again under the active keyring key in one transaction; needed once something decrypts them · from spec 0006
 - **Per mailbox Google grant**: replace the `GOOGLE` service account key (domain wide reach) with a refresh token for the HOL mailbox only · from spec 0013
 - **Email breaker alert**: tell someone (a console banner or a note to the Ops BCC) when Google has rejected the HOL mailbox key for over an hour · from spec 0013
+- **Audit log export**: a CSV of the filtered Audit Log view, writing its own audit entry; deferred by owner choice on 2026-10-20 · from spec 0016
+- **Audit log search index**: add a `pg_trgm` index on `audit_events.summary` if free text search slows down (around a million entries) · from spec 0016
+- **Reconciler grant target fallback**: drop `booking?.bookingId ?? testbed.id` in `access.granted` so a testbed id can never be stored as a booking target (unreachable today) · from spec 0016
 
 ## Legend
 

@@ -4,6 +4,7 @@ import { ApiKeyFields } from "@/components/admin/api-key-fields";
 import { DataTable } from "@/components/admin/data-table";
 import { DeleteFlow } from "@/components/admin/delete-flow";
 import { FormDialog } from "@/components/admin/form-dialog";
+import { HistoryLink } from "@/components/admin/history-link";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import {
   GOOGLE_REJECTED_LINE,
   SECRET_MASK,
 } from "@/lib/api-keys";
+import { targetHistoryHref } from "@/lib/audit-log";
 import type { ApiKeyType } from "@/lib/db-enums";
 import { formatDay } from "@/lib/format-time";
 import { requireAdmin } from "@/server/auth/require";
@@ -107,6 +109,10 @@ export default async function ApiKeysPage() {
       },
       actions: (
         <>
+          <HistoryLink
+            href={targetHistoryHref("api_key", k.id)}
+            name={k.name}
+          />
           <FormDialog
             trigger={
               <Button
