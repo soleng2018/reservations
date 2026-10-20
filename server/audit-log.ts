@@ -28,11 +28,20 @@ export type { AuditRow } from "@/lib/audit-log";
 
 export const AUDIT_PAGE_SIZE = 50;
 
+// AC-5: a removable "History for <name>" chip above the table.
+export type HistoryChip = {
+  readonly filter: "target" | "learner";
+  readonly text: string;
+};
+
 export type AuditPage = {
   readonly rows: readonly AuditRow[];
   // Cursors for the Older and Newer links, when each should show (AC-3).
   readonly older?: string;
   readonly newer?: string;
+  readonly chips: readonly HistoryChip[];
+  // On a booking's history, its learner, whose history holds the revokes.
+  readonly bookingNoteUserId?: string;
 };
 
 // The row's time as microsecond UTC text, made by SQL so it never passes
@@ -234,7 +243,18 @@ export async function listAuditEvents(
   query: AuditQuery,
   timeZone: string,
 ): Promise<AuditPage> {
-  const found = await fetchEvents(conn, query, timeZone, AUDIT_PAGE_SIZE);
+  const [found, chips, bookingNoteUserId] = await Promise.all([
+    fetchEvents(conn, query, timeZone, AUDIT_PAGE_SIZE),
+    historyChips(conn, query, timeZone),
+    query.target?.type === "booking"
+      ? conn
+          .selectFrom("bookings")
+          .select("user_id")
+          .where("id", "=", query.target.id)
+          .executeTakeFirst()
+          .then((b) => b?.user_id)
+      : undefined,
+  ]);
   const more = found.length > AUDIT_PAGE_SIZE;
   const page = found.slice(0, AUDIT_PAGE_SIZE);
   const rows = await toRows(
@@ -256,7 +276,48 @@ export async function listAuditEvents(
     rows,
     ...(links.older ? { older: links.older } : {}),
     ...(links.newer ? { newer: links.newer } : {}),
+    chips,
+    ...(bookingNoteUserId ? { bookingNoteUserId } : {}),
   };
+}
+
+// The chips name their filter through resolveTargets, as a row would.
+async function historyChips(
+  conn: Kysely<DB>,
+  query: AuditQuery,
+  timeZone: string,
+): Promise<readonly HistoryChip[]> {
+  const wanted: readonly {
+    readonly filter: HistoryChip["filter"];
+    readonly type: string;
+    readonly id: string;
+  }[] = [
+    ...(query.target ? [{ filter: "target" as const, ...query.target }] : []),
+    ...(query.learner
+      ? [{ filter: "learner" as const, type: "user", id: query.learner }]
+      : []),
+  ];
+  if (wanted.length === 0) return [];
+  const labels = await resolveTargets(conn, wanted, timeZone);
+  return wanted.map((w) => {
+    const label = labels.get(targetKey(w.type, w.id)) ?? notFound(w.type);
+    return {
+      filter: w.filter,
+      text: label.found ? `History for ${label.label}` : label.label,
+    };
+  });
+}
+
+// AC-10: a learner's newest entries for their detail page, by the same
+// three arm rule as the `learner` filter.
+export async function learnerHistory(
+  conn: Kysely<DB>,
+  userId: string,
+  timeZone: string,
+  limit: number,
+): Promise<readonly AuditRow[]> {
+  const found = await fetchEvents(conn, { learner: userId }, timeZone, limit);
+  return toRows(conn, found.slice(0, limit), timeZone);
 }
 
 async function toRows(

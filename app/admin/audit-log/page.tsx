@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { AuditFilters } from "@/components/admin/audit-filters";
 import { AuditRow } from "@/components/admin/audit-row";
 import { PageBody } from "@/components/admin/page-body";
@@ -52,6 +52,39 @@ export default async function AuditLogPage({
           </Alert>
         ) : null}
         <AuditFilters key={auditHref(query)} query={query} admins={admins} />
+        {page.chips.length > 0 ? (
+          <div className="flex flex-col gap-2.5">
+            <ul aria-label="History filters" className="flex flex-wrap gap-2">
+              {page.chips.map((chip) => (
+                <li
+                  key={chip.filter}
+                  className="inline-flex max-w-full items-center gap-1 rounded-full bg-nile-blue-100 py-1 pr-1 pl-3.5 text-sm font-semibold text-nile-blue"
+                >
+                  <span className="min-w-0 truncate">{chip.text}</span>
+                  <Link
+                    href={auditHref({ ...query, [chip.filter]: undefined })}
+                    aria-label={`Remove filter: ${chip.text}`}
+                    className="inline-flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-nile-blue-050"
+                  >
+                    <XIcon aria-hidden="true" className="size-4" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {page.bookingNoteUserId ? (
+              <p className="text-sm text-fg2">
+                Access removals for this booking are listed in{" "}
+                <Link
+                  href={auditHref({ learner: page.bookingNoteUserId })}
+                  className="font-semibold text-nile-blue underline underline-offset-4"
+                >
+                  the learner&apos;s history
+                </Link>
+                .
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <section
           aria-label="Audit entries"
           className="rounded-xl border bg-card shadow-xs"

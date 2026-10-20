@@ -3,12 +3,14 @@ import { PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
 import { DeleteFlow } from "@/components/admin/delete-flow";
 import { FormDialog } from "@/components/admin/form-dialog";
+import { HistoryLink } from "@/components/admin/history-link";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { TestbedEditDialog } from "@/components/admin/testbed-edit-dialog";
 import { TestbedFields } from "@/components/admin/testbed-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { targetHistoryHref } from "@/lib/audit-log";
 import { toneFor } from "@/lib/badge-tones";
 import { clientCountLabel, testbedSearchText } from "@/lib/testbeds";
 import { requireAdmin } from "@/server/auth/require";
@@ -66,6 +68,7 @@ export default async function TestbedsPage() {
     },
     actions: (
       <>
+        <HistoryLink href={targetHistoryHref("testbed", t.id)} name={t.name} />
         <TestbedEditDialog
           id={t.id}
           name={t.name}

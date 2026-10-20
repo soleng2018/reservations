@@ -3,11 +3,13 @@ import Link from "next/link";
 import { ArrowRightIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
 import { FormDialog } from "@/components/admin/form-dialog";
+import { HistoryLink } from "@/components/admin/history-link";
 import { LearnerFields } from "@/components/admin/learner-fields";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { auditHref } from "@/lib/audit-log";
 import { toneFor } from "@/lib/badge-tones";
 import {
   editDefaults,
@@ -60,6 +62,7 @@ export default async function UsersPage() {
       },
       actions: (
         <>
+          <HistoryLink href={auditHref({ learner: u.id })} name={u.name} />
           <Link
             href={href}
             aria-label={`View ${u.name}`}

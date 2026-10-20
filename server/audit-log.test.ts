@@ -18,6 +18,7 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import {
+  learnerHistory,
   listAdmins,
   listAuditEvents,
   resolveTargets,
@@ -649,5 +650,105 @@ describe.skipIf(!hasDb)("listAuditEvents learner history", () => {
       expect(down.ids).toEqual([...seeded].reverse());
       const up = await walk(trx, base, "newer", down.last);
       expect(new Set(up.ids)).toEqual(new Set(seeded));
+    }));
+});
+
+describe.skipIf(!hasDb)("history chips and learnerHistory", () => {
+  // covers: AC-5, chips name their filters, found or not
+  it("names the target and learner chips, or says not found", () =>
+    inRollback(async (trx) => {
+      const learner = await makeUser(trx, { name: "Chip Learner" });
+      const type = await makeType(trx, { name: "Chip type" });
+      const missing = crypto.randomUUID();
+
+      const both = await listAuditEvents(
+        trx,
+        {
+          target: { type: "testbed_type", id: type.id },
+          learner: learner.id,
+        },
+        "UTC",
+      );
+      expect(both.chips).toEqual([
+        { filter: "target", text: "History for Chip type" },
+        {
+          filter: "learner",
+          text: `History for Chip Learner · ${learner.email}`,
+        },
+      ]);
+      const gone = await listAuditEvents(
+        trx,
+        { target: { type: "api_key", id: missing } },
+        "UTC",
+      );
+      expect(gone.chips).toEqual([
+        { filter: "target", text: "API key (not found)" },
+      ]);
+      expect((await listAuditEvents(trx, {}, "UTC")).chips).toEqual([]);
+    }));
+
+  // covers: AC-5, the booking note links to the booking's learner
+  it("points a booking's history at its learner, only when it exists", () =>
+    inRollback(async (trx) => {
+      const learner = await makeUser(trx);
+      const type = await makeType(trx);
+      const testbed = await makeTestbed(trx, type.id);
+      const booking = await trx
+        .insertInto("bookings")
+        .values({
+          user_id: learner.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: new Date("2099-01-01T10:00:00Z"),
+          ends_at: new Date("2099-01-01T12:00:00Z"),
+          status: "completed",
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+
+      const found = await listAuditEvents(
+        trx,
+        { target: { type: "booking", id: booking.id } },
+        "UTC",
+      );
+      expect(found.bookingNoteUserId).toBe(learner.id);
+      const missing = await listAuditEvents(
+        trx,
+        { target: { type: "booking", id: crypto.randomUUID() } },
+        "UTC",
+      );
+      expect(missing.bookingNoteUserId).toBeUndefined();
+    }));
+
+  // covers: AC-10, the newest entries by the learner rule, at most the limit
+  it("reads a learner's newest entries, up to the limit", () =>
+    inRollback(async (trx) => {
+      const learner = await makeUser(trx);
+      const other = await makeUser(trx);
+      const seeded: string[] = [];
+      for (let i = 0; i < 25; i++)
+        seeded.push(
+          (
+            await entry(trx, {
+              action: "user.updated",
+              targetType: "user",
+              targetId: learner.id,
+              at: new Date(FUTURE.getTime() + i * 1000),
+            })
+          ).id,
+        );
+      await entry(trx, {
+        action: "user.updated",
+        targetType: "user",
+        targetId: other.id,
+        at: new Date(FUTURE.getTime() + 99_000),
+      });
+
+      const rows = await learnerHistory(trx, learner.id, "UTC", 20);
+      expect(rows.map((r) => r.id)).toEqual(seeded.slice(5).reverse());
+      expect(await learnerHistory(trx, other.id, "UTC", 20)).toHaveLength(1);
+      expect(await learnerHistory(trx, crypto.randomUUID(), "UTC", 20)).toEqual(
+        [],
+      );
     }));
 });
