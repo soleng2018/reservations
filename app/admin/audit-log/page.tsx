@@ -93,14 +93,14 @@ export default async function AuditLogPage({
             <Table className="min-w-240" region="Audit entries">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 pr-0">
+                    <span className="sr-only">Details</span>
+                  </TableHead>
                   <TableHead>When</TableHead>
                   <TableHead>Who</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>Target</TableHead>
                   <TableHead>Summary</TableHead>
-                  <TableHead>
-                    <span className="sr-only">Details</span>
-                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

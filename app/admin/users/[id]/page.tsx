@@ -289,6 +289,9 @@ function EmailsSection({
         <Table className="min-w-160" region="Emails">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-12 pr-0">
+                <span className="sr-only">Details</span>
+              </TableHead>
               <TableHead>When</TableHead>
               <TableHead>Kind</TableHead>
               <TableHead>Subject</TableHead>
@@ -375,9 +378,6 @@ function HistorySection({
               <TableHead>Action</TableHead>
               <TableHead>Target</TableHead>
               <TableHead>Summary</TableHead>
-              <TableHead>
-                <span className="sr-only">Details</span>
-              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

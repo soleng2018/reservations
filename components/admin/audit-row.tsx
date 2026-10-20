@@ -25,6 +25,26 @@ export function AuditRow({ row }: { readonly row: AuditRowData }) {
   return (
     <>
       <TableRow>
+        <TableCell className="w-12 pr-0 align-top">
+          {row.details.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-expanded={open}
+              aria-controls={detailsId}
+              aria-label={`Details for ${action.label}, ${row.time}`}
+              onClick={() => setOpen((o) => !o)}
+            >
+              <ChevronDownIcon
+                aria-hidden="true"
+                className={cn(
+                  "transition-transform duration-120 ease-nile",
+                  open && "rotate-180",
+                )}
+              />
+            </Button>
+          ) : null}
+        </TableCell>
         <TableCell className="min-w-36 align-top text-sub whitespace-normal text-fg2">
           {row.time}
         </TableCell>
@@ -71,26 +91,6 @@ export function AuditRow({ row }: { readonly row: AuditRowData }) {
         </TableCell>
         <TableCell className="min-w-56 align-top whitespace-normal">
           {row.summary}
-        </TableCell>
-        <TableCell className="w-12 text-right align-top">
-          {row.details.length > 0 ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-expanded={open}
-              aria-controls={detailsId}
-              aria-label={`Details for ${action.label}, ${row.time}`}
-              onClick={() => setOpen((o) => !o)}
-            >
-              <ChevronDownIcon
-                aria-hidden="true"
-                className={cn(
-                  "transition-transform duration-120 ease-nile",
-                  open && "rotate-180",
-                )}
-              />
-            </Button>
-          ) : null}
         </TableCell>
       </TableRow>
       {row.details.length > 0 ? (

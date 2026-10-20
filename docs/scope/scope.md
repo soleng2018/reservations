@@ -297,15 +297,15 @@ spec [0015](../specs/0015-reminder-before-start/index.md) · code in `server/job
 Record who did what: API key secret creation and replacement, catalog changes, testbed group changes in Authentik, user deactivation, and booking cancellations by admins. Admins can view the log.
 **Done when:** each of those actions writes an entry with actor, action, target, and time; entries cannot be edited from the app.
 - [x] Design it (spec): `/architect admin audit log`
-- [ ] Build it: `/develop admin audit log`
+- [x] Build it: `/develop admin audit log`
   - [x] Tracer: migration `0012` keyset index, labels and actor kinds in `lib/audit-log.ts`, the Audit Log nav section and first page of rows (AC-1, 2, 6, 7, 13, 15)
   - [x] Paging and filters: keyset Older and Newer, the URL filter form, the dropped filter notice, empty states (AC-3, 4, 14)
   - [x] Row detail: `describeMetadata` and the expand disclosure (AC-8)
   - [x] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
-  - [ ] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
+  - [x] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
 - [ ] Verify it: `/check verify admin audit log`
 - [ ] Test it: `/test admin audit log`
-spec [0016](../specs/0016-admin-audit-log/index.md)
+spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.
