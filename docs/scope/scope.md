@@ -45,7 +45,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 14 | Lab access & booking result screens | Slice 3 | done |
 | 15 | Email delivery & booking confirmations | Slice 4 | done |
 | 16 | Set password / welcome email | Slice 4 | done |
-| 17 | Reminder before start | Slice 4 | in-progress |
+| 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | planned |
 
 ## Foundations
@@ -277,12 +277,12 @@ The email a new user gets when their account is created, at guest booking or by 
 - [x] Test it: `/test set password / welcome email`
 spec [0014](../specs/0014-set-password-welcome-email/index.md) · code in `server/jobs/send-welcome.ts`, `server/jobs/welcome-queue.ts`, `server/auth/set-password-links.ts`, `server/auth/start-set-password.ts`, `server/email/templates/welcome-email.tsx`, `app/set-password/`, `components/auth/`, `lib/welcome-email.ts`, `lib/set-password-link.ts`, `db/migrations/0011_set_password_links.sql`, `scripts/authentik-setup.ts`, `lib/auth-errors.ts`, `app/auth/error/`, `server/auth/index.ts`
 
-### 17. Reminder before start · in-progress
+### 17. Reminder before start · done
 A scheduled reminder email shortly before a booking starts.
 **Done when:** each booking that is still active gets one reminder at the set lead time; a cancelled or rescheduled booking never gets a stale reminder.
 - [x] Design it (spec): `/architect reminder before start`
-- [ ] Build it: `/develop reminder before start`
-  - [ ] Tracer: `REMINDER_LEAD_MS`, the `reminder` kind and subject, the "reminders" sweep and `queueReminder`, the worker step, and one real reminder sent on dev (AC-1, 2, 3, 4, 5, 6) · all built and tested; the real dev send is left to `/check verify` (2026-10-20)
+- [x] Build it: `/develop reminder before start`
+  - [x] Tracer: `REMINDER_LEAD_MS`, the `reminder` kind and subject, the "reminders" sweep and `queueReminder`, the worker step, and one real reminder sent on dev (AC-1, 2, 3, 4, 5, 6) · all built and tested; the real dev send was made by `/check verify` (2026-10-20)
   - [x] Send time checks: changed booking and 1 hour floor suppress, no Bcc, catch up (AC-8, 9, 11, 12)
   - [x] Claim order: the new `claimJob` clause, so reminders block nothing and wait for their own confirmation (AC-10)
   - [x] The real email: `LabAccessEmail` reminder branch, the invite, the start up render check and samples (AC-7)
