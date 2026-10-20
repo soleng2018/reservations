@@ -1,5 +1,6 @@
 import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { SUPPRESSED_NO_DEV_INBOX } from "@/lib/email-routing";
 import { ok } from "@/lib/result";
 import { LEAD_MS, REMINDER_LEAD_MS } from "@/lib/slots";
 import type { GoogleMailConfig } from "@/server/catalog/api-keys";
@@ -24,6 +25,7 @@ import {
 } from "@/server/google/testing";
 import type { MintToken } from "@/server/google/token";
 import {
+  emailJobKey,
   queueBookingNotice,
   reminderJobKey,
   type ShownAtBooking,
@@ -73,11 +75,11 @@ const SHOWN: ShownAtBooking = { timezone: "Asia/Kolkata", newAccount: true };
 // email queued, made `noticeLead` before the start (48 hours by default).
 async function bookingAt(
   trx: Transaction<DB>,
-  opts: { startsIn?: number; noticeLead?: number } = {},
+  opts: { startsIn?: number; noticeLead?: number; email?: string } = {},
 ) {
   const user = await makeUser(trx, {
     name: "Priya Raman",
-    email: `priya-${crypto.randomUUID().slice(0, 6)}@acme.com`,
+    email: opts.email ?? `priya-${crypto.randomUUID().slice(0, 6)}@acme.com`,
     timezone: "America/New_York",
   });
   const type = await makeType(trx);
@@ -179,6 +181,19 @@ const decoded = (req: RecordedRequest) => {
 
 afterAll(() => (hasDb ? db().destroy() : undefined));
 
+describe("reminderJobKey (AC-4)", () => {
+  const id = "0b6f3c1e-2a4d-4f8e-9c7b-5d1a2e3f4a5b";
+
+  it("is reminder:<booking id>:<version>", () => {
+    expect(reminderJobKey(id, 3)).toBe(`reminder:${id}:3`);
+  });
+
+  it("never reads as a booking change's email key", () => {
+    expect(reminderJobKey(id, 1)).not.toBe(emailJobKey(id, "booked", 1));
+    expect(reminderJobKey(id, 1).startsWith("email:")).toBe(false);
+  });
+});
+
 describe.skipIf(!hasDb)("queueReminders: when a reminder is due", () => {
   it("is due exactly at the 24 hour mark, and not a moment before (AC-2)", () =>
     inRollback(async (trx) => {
@@ -273,6 +288,49 @@ describe.skipIf(!hasDb)("queueReminders: when a reminder is due", () => {
         .execute();
       expect(jobs).toHaveLength(1);
     }));
+
+  it("reminds again for a new version even after the old version's reminder went out (AC-2, AC-11)", () =>
+    inRollback(async (trx) => {
+      const { bookingId, startsAt } = await bookingAt(trx, { startsIn: 120 });
+      await sweepAt(trx, shift(startsAt, -5 * HOUR));
+      await trx
+        .updateTable("email_messages")
+        .set({ status: "sent" })
+        .where("booking_id", "=", bookingId)
+        .where("kind", "=", "reminder")
+        .execute();
+
+      const moved = shift(startsAt, 24 * HOUR);
+      await rescheduleTo(trx, bookingId, moved, 30);
+      await sweepAt(trx, shift(moved, -5 * HOUR));
+
+      const rows = await remindersOf(trx, bookingId);
+      expect(
+        rows
+          .map((r) => ({ version: r.booking_version, status: r.status }))
+          .sort((a, b) => (a.version ?? 0) - (b.version ?? 0)),
+      ).toEqual([
+        { version: 1, status: "sent" },
+        { version: 2, status: "queued" },
+      ]);
+    }));
+
+  it("queues the earliest start first when the budget runs out (AC-2)", () =>
+    inRollback(async (trx) => {
+      // Far past the 90 day horizon, so no real booking sorts in between.
+      // The later one is made first, so insert order can't pass for start order.
+      const later = await bookingAt(trx, { startsIn: 24 * 200 + 3 });
+      const earlier = await bookingAt(trx, { startsIn: 24 * 200 });
+      // One read at the start, one before each booking: room for one.
+      const ticks = [0, 0, 20_000];
+      const result = await queueReminders(asConn(trx), {
+        now: shift(earlier.startsAt, -5 * HOUR),
+        clock: () => ticks.shift() ?? 20_000,
+      });
+      expect(result).toEqual({ queued: 1 });
+      expect(await remindersOf(trx, earlier.bookingId)).toHaveLength(1);
+      expect(await remindersOf(trx, later.bookingId)).toHaveLength(0);
+    }));
 });
 
 describe.skipIf(!hasDb)(
@@ -336,6 +394,38 @@ describe.skipIf(!hasDb)(
         expect(calendar).toHaveLength(1); // the booked email's only
       }));
 
+    it("takes the recipient and the lab links as they are when it queues (AC-4, AC-5)", () =>
+      inRollback(async (trx) => {
+        const { user, testbed, bookingId, startsAt } = await bookingAt(trx);
+        const newEmail = `priya-new-${crypto.randomUUID().slice(0, 6)}@acme.com`;
+        const newPortal = "https://portal-new.example.test/lab";
+        await trx
+          .updateTable("users")
+          .set({ email: newEmail })
+          .where("id", "=", user.id)
+          .execute();
+        await trx
+          .updateTable("testbeds")
+          .set({ portal_url: newPortal })
+          .where("id", "=", testbed.id)
+          .execute();
+        await sweepAt(trx, shift(startsAt, -5 * HOUR));
+
+        const [reminder] = await remindersOf(trx, bookingId);
+        expect(reminder?.to_address).toBe(newEmail);
+        expect(reminder?.details).toMatchObject({
+          links: { portalUrl: newPortal },
+        });
+        // The booked email keeps what it was sent with.
+        const booked = await trx
+          .selectFrom("email_messages")
+          .select("to_address")
+          .where("booking_id", "=", bookingId)
+          .where("kind", "=", "booked")
+          .executeTakeFirstOrThrow();
+        expect(booked.to_address).toBe(user.email);
+      }));
+
     it("logs a booking whose notice has no usable appUrl and still queues the rest (AC-4, AC-5)", () =>
       inRollback(async (trx) => {
         const bad = await bookingAt(trx, { startsIn: 70 });
@@ -376,12 +466,16 @@ describe.skipIf(!hasDb)(
 
 // Bookings 30 real hours out whose reminders are queued and whose booked
 // emails already went out, so the handler runs by the real DB clock.
-async function queuedReminders(trx: Transaction<DB>, count: number) {
+async function queuedReminders(
+  trx: Transaction<DB>,
+  count: number,
+  email?: string,
+) {
   await parkRealJobs(trx);
   const made = await Array.from({ length: count }).reduce<
     Promise<Awaited<ReturnType<typeof bookedAndSent>>[]>
   >(
-    async (acc) => [...(await acc), await bookedAndSent(trx)],
+    async (acc) => [...(await acc), await bookedAndSent(trx, email)],
     Promise.resolve([]),
   );
   const [first] = made;
@@ -408,14 +502,14 @@ async function queuedReminders(trx: Transaction<DB>, count: number) {
   return queued;
 }
 
-async function queuedReminder(trx: Transaction<DB>) {
-  const [one] = await queuedReminders(trx, 1);
+async function queuedReminder(trx: Transaction<DB>, email?: string) {
+  const [one] = await queuedReminders(trx, 1, email);
   if (!one) throw new Error("expected a reminder");
   return one;
 }
 
-async function bookedAndSent(trx: Transaction<DB>) {
-  const b = await bookingAt(trx, { startsIn: 30 });
+async function bookedAndSent(trx: Transaction<DB>, email?: string) {
+  const b = await bookingAt(trx, { startsIn: 30, email });
   const booked = await trx
     .updateTable("email_messages")
     .set({ status: "sent" })
@@ -431,14 +525,17 @@ async function bookedAndSent(trx: Transaction<DB>) {
   return b;
 }
 
-const run = async (trx: Transaction<DB>) => {
+const run = async (
+  trx: Transaction<DB>,
+  cfg: Partial<GoogleMailConfig> = {},
+) => {
   const google = fakeGoogleFetch(() => ({
     status: 200,
     json: { id: "gmail-msg-1" },
   }));
   await runJobs(asConn(trx), {
     handlers: HANDLERS,
-    config: async () => config(),
+    config: async () => ({ ...config(), ...cfg }),
     fetch: google.fetch,
     mint,
   });
@@ -483,6 +580,36 @@ describe.skipIf(!hasDb)("runSendEmail for a reminder (AC-7 to AC-9)", () => {
       const [req] = await run(trx);
       if (!req) throw new Error("expected a send");
       expect(decoded(req)).toMatch(/^Bcc: ops@nile\.example/im);
+    }));
+
+  it("sends a test address's reminder to the dev inbox with the [dev] prefix (AC-6, AC-9)", () =>
+    inRollback(async (trx) => {
+      const { reminderId } = await queuedReminder(
+        trx,
+        `dev-priya-${crypto.randomUUID().slice(0, 6)}@acme.com`,
+      );
+      const [req] = await run(trx);
+      if (!req) throw new Error("expected a send");
+      const mime = decoded(req);
+      expect(mime).toMatch(/^To: .*dev-inbox@nile\.example/m);
+      expect(mime).toMatch(
+        /^Subject: \[dev\] Reminder: Your Nile Hands-On Lab starts/m,
+      );
+      expect(mime).not.toMatch(/^Bcc:/im);
+      expect((await statusOf(trx, reminderId)).status).toBe("sent");
+    }));
+
+  it("suppresses a test address's reminder when no dev inbox is set (AC-9)", () =>
+    inRollback(async (trx) => {
+      const { reminderId } = await queuedReminder(
+        trx,
+        `dev-priya-${crypto.randomUUID().slice(0, 6)}@acme.com`,
+      );
+      expect(await run(trx, { devInbox: null })).toHaveLength(0);
+      expect(await statusOf(trx, reminderId)).toEqual({
+        status: "suppressed",
+        last_error: SUPPRESSED_NO_DEV_INBOX,
+      });
     }));
 
   it("is suppressed when the booking was cancelled before it sent (AC-8, AC-11)", () =>

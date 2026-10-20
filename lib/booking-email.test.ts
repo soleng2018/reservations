@@ -83,6 +83,11 @@ describe("emailSubject (spec 0013 AC-12, AC-13)", () => {
       "cancelled",
       "Cancelled: Your Nile Hands-On Lab reservation - Tue, Oct 13, 2026, 9:00 AM ET",
     ],
+    // covers: spec 0015 AC-6
+    [
+      "reminder",
+      "Reminder: Your Nile Hands-On Lab starts Tue, Oct 13, 2026, 9:00 AM ET",
+    ],
   ] as const)("titles %s", (kind, subject) => {
     expect(emailSubject(kind, details)).toBe(subject);
   });
