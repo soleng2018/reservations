@@ -8,10 +8,15 @@ import {
   renderWelcomeEmail,
 } from "./compose";
 import { inviteFields } from "@/lib/booking-email";
-import { SAMPLE_BOOKING_DETAILS, SAMPLE_WELCOME } from "./sample";
+import {
+  SAMPLE_BOOKING_DETAILS,
+  SAMPLE_REMINDER_DETAILS,
+  SAMPLE_WELCOME,
+} from "./sample";
 import { allParts, mimeShape, parseMime } from "./testing";
 
-// covers: spec 0013 AC-12 to AC-15, AC-17, AC-23 (the render snapshots)
+// covers: spec 0013 AC-12 to AC-15, AC-17, AC-23 (the render snapshots);
+// spec 0015 AC-7, AC-14 (the reminder's)
 const KOLKATA: BookingEmailDetails = {
   ...SAMPLE_BOOKING_DETAILS,
   learnerName: "Arjun",
@@ -46,9 +51,30 @@ const cases = [
   ],
   ["booked", "UTC", UTC_LEARNER],
   ["cancelled", "UTC", cancelled(UTC_LEARNER)],
+  ["reminder", "New York", SAMPLE_REMINDER_DETAILS],
+  ["reminder", "Kolkata", { ...KOLKATA, newAccount: false }],
 ] as const;
 
+// The version each kind's sample invite carries (a reminder repeats the
+// booked version's invite, spec 0015 AC-7).
+const VERSION = { booked: 1, rescheduled: 2, cancelled: 3, reminder: 1 };
+
 describe("booking email render (spec 0013 AC-23)", () => {
+  it("greets a reminder by first name and says when it starts (spec 0015 AC-7)", async () => {
+    const { html, text } = await renderBookingEmail("reminder", {
+      ...SAMPLE_REMINDER_DETAILS,
+      learnerName: "Priya Raman",
+    });
+    const intro =
+      "Hi Priya, this is a reminder that your reservation starts Tue, Oct 13, 2026, 9:00 AM ET.";
+    expect(text).toContain(intro);
+    expect(html).toContain("Your lab starts soon");
+    expect(html).toContain(
+      "Your lab starts soon. Access links and session details inside.",
+    );
+    expect(html).not.toContain("Set your password");
+  });
+
   it.each(cases)("renders %s for %s", async (kind, _zone, details) => {
     const { html, text } = await renderBookingEmail(kind, details);
     expect(html).toMatchSnapshot("html");
@@ -58,7 +84,7 @@ describe("booking email render (spec 0013 AC-23)", () => {
         kind,
         details,
         bookingId: BOOKING_ID,
-        bookingVersion: kind === "booked" ? 1 : kind === "rescheduled" ? 2 : 3,
+        bookingVersion: VERSION[kind],
         createdAt: CREATED,
         senderEmail: "labs@nile.example",
         recipient: "priya@acme.com",
