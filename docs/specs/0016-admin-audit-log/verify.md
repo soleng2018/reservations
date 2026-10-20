@@ -27,9 +27,9 @@ You can run these against the dev server on `http://10.1.255.18:3000`, signed in
 
 ## Value sourcing
 - [ ] Entry time: shown in the signed in admin's `users.timezone`; change it and the times shift → Value sourcing (time)
-- [ ] Actor: rename an admin in Authentik (or the DB) and every past row shows the new name; a null actor reads Booking form or System by action → Value sourcing (actor)
+- [x] Actor: rename an admin in Authentik (or the DB) and every past row shows the new name; a null actor reads Booking form or System by action → Value sourcing (actor) (2026-10-20, automated in `server/audit-log.test.ts`: the rename test and the null actor test)
 - [x] Action label and area come from `AUDIT_ACTION_INFO`; a legacy action name shows raw with no area → Value sourcing (action)
-- [ ] Target name and Deleted badge follow today's row (rename a testbed, its past rows show the new name) → Value sourcing (target)
+- [x] Target name and Deleted badge follow today's row (rename a testbed, its past rows show the new name) → Value sourcing (target) (2026-10-20, automated in `server/audit-log.test.ts`: the rename test and `resolveTargets`)
 - [x] Summary shows exactly as stored → Value sourcing (summary)
 - [x] Changed fields come from `metadata` through `describeMetadata` → Value sourcing (row detail)
 - [x] The cursor round trips microseconds (two entries a microsecond apart page apart correctly) → Value sourcing (cursor)
