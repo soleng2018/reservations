@@ -31,7 +31,10 @@ export type CurrentSession = {
 export const currentSession = cache(async function currentSession(): Promise<
   CurrentSession | undefined
 > {
-  const found = await auth().api.getSession({ headers: await headers() });
+  // headers() first: it marks the route dynamic before auth() reads the env,
+  // so `next build` never prerenders a page that needs a session.
+  const requestHeaders = await headers();
+  const found = await auth().api.getSession({ headers: requestHeaders });
   if (!found) return undefined;
   const row = await db()
     .selectFrom("users")
