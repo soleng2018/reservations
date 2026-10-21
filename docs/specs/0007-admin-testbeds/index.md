@@ -24,7 +24,8 @@ Admins get the full Testbeds screen from the mock: list, search, add, edit, and 
 - **AC-7**: Every worker tick, right after the access reconciler, a teardown step takes each testbed with `deleted_at` set, a group pk, and no `authentik_group_deleted_at`. For each, it first reads the group's members (`podGroupMembers`). If any member carries `hol_learner = true`, it logs a warning with the testbed id and that count and skips the row this tick (the reconciler removes them and ends their sessions first; a learner it cannot remove keeps the row pending, visibly in the log). Otherwise it calls `deletePodGroup(api, pk, testbedId)`, which rereads the group through the `pod-*` guard and refuses one whose `hol_testbed_id` is not this testbed's id; untagged members do not stop it. Outcomes: success, or `not_found` from either call (the group is already gone), stamps the row; `not_owned`, `not_pod_group`, and any Authentik failure log an error and leave the row for the next tick, never stamped. Stamping is one transaction: `update testbeds set authentik_group_deleted_at = now() where id = $1 and authentik_group_deleted_at is null`, plus an `authentik_group.deleted` audit row (target type `authentik_group`, target id the group pk, actor null, metadata `{ testbedId }`, summary "Access group of a deleted testbed removed", or "Access group of a deleted testbed was already gone" for `not_found`). A failure on one testbed is logged and the rest still run. The reconciler skips testbeds whose `authentik_group_deleted_at` is set.
 - **AC-8**: The migration adds `testbeds.authentik_group_deleted_at` (with check `testbeds_group_deleted_after_delete_check`: null unless `deleted_at` is set) and `testbed_clients.os_username` and `os_password` (checks `testbed_clients_os_username_length_check` and `testbed_clients_os_password_length_check`: null or 1 to 200 characters; and `testbed_clients_password_needs_username_check`: a password needs a username). The names follow the repo's `_check` suffix and are a contract with `mapConstraintError`. `npm run db:codegen -- --verify` passes after it.
 - **AC-9**: `loadTestbedForEdit`, `updateTestbedAction`, `checkTestbedDelete`, and `deleteTestbedAction` call `requireAdmin()`. A learner or anonymous caller gets the existing "not authorized" result and nothing is written. None of them is on the public allow list.
-- **AC-10**: The string `os_password` appears in app code only in `server/catalog/testbeds.ts` (generated types and migrations aside), enforced by a source scan test like `tests/secret-column-scan.test.ts`. No learner facing page or public action selects it.
+- **AC-10**: The string `os_password` appears in app code only in `server/catalog/testbeds.ts` (generated types and migrations aside), enforced by the source scan `tests/os-password-scan.test.ts` (modelled on `tests/secret-column-scan.test.ts`). No learner facing page or public action selects it.
+- **AC-11** (amended 2026-10-20, built with feature 15's email): the booked, rescheduled, and reminder emails show each client's OS login under that client's link: "Username: <os_username>" and, when one is set, "Password: <os_password>" (no Password line when it is null), in the HTML (values in a monospace span) and the plain text parts. Only client rows carry a login, never the Nile Portal or LMS rows; a client with no username shows no login lines. The reminder carries the logins to the learner like the booked email, and never has a Bcc (spec 0015 AC-9). A cancellation shows none: the email kind decides it, so the logins are not even read. The worker reads the logins at send time with `clientLoginsForBooking(conn, bookingId)` in `server/catalog/testbeds.ts` (the booking's testbed's clients with a username, by `position`), inside the send job's transaction, and hands them only to the renderer. They are never written to `email_messages.details`, `jobs.payload`, `last_error`, a log line, or audit metadata, so the queued snapshot (spec 0013 AC-11, spec 0015 AC-5) still holds none. A login shows under a snapshot client only when its name and URL both equal the snapshot's exactly (plain string equality, no trimming or case folding; if two clients of a testbed share both, the first by `position` wins). So a client edited after the email was queued shows no login rather than another client's, and an email still queued when a reschedule moved its booking to another testbed shows no logins at all (its links name the old testbed; the rescheduled email carries the new testbed's links and logins). Each send attempt reads the logins again; a failed attempt's `last_error` holds only the Gmail status. The read ignores `testbeds.deleted_at` on purpose: a testbed with live bookings cannot be deleted (AC-6), and an email whose booking has ended is suppressed (spec 0013 AC-18). The calendar invite (`.ics`) carries no login. The AC-10 allow list stays this one file.
 
 ## Decision
 
@@ -92,6 +93,7 @@ Server modules:
 |---|---|---|
 | `lib/catalog-input.ts` `TestbedClientInput`, `TestbedInput` | adds `osUsername` (trimmed, empty to null, max 200), `osPassword` (not trimmed, empty to null, max 200, refined: needs `osUsername`), `idpApiKeyId` (`z.uuid()` or empty to null), `clients` `.max(20)` | Used by create and update. Field errors keyed `clients.N.osUsername` and so on through `fieldErrors`. |
 | `server/catalog/testbeds.ts` `listTestbedsForAdmin` | `(conn) => Promise<readonly AdminTestbedRow[]>` | Replaces `listTestbeds` and `TestbedListRow` (their only users are the Testbeds page and `server/catalog/testbeds.test.ts`, whose `listTestbeds` tests move to it). One query: testbeds joined to type, left joined to the IDP key, with a client count subquery. Row: `id, name, typeName, idpName \| null, clientCount, groupReady`. No client details. |
+| `server/catalog/testbeds.ts` `clientLoginsForBooking` (amended 2026-10-20) | `(conn, bookingId) => Promise<readonly ClientLogin[]>` | AC-11. Joins `bookings` to `testbed_clients` on `testbed_id`, keeps rows with `os_username` set, orders by `position`. `ClientLogin` (`lib/booking-email.ts`): `{ name, url, username, password \| null }`; `loginFor(logins, client)` matches by name and URL. Used only by `runSendEmail` (`server/jobs/send-email.ts`). |
 | `server/catalog/testbeds.ts` `getTestbedForEdit` | `(conn, id) => Promise<Result<TestbedEditDefaults, 'not_found'>>` | The live testbed plus its clients by `position`, including OS credentials. Used only by `loadTestbedForEdit`. |
 | `server/catalog/testbeds.ts` `createTestbed` | unchanged signature, error union gains `idp_not_found` | Adds the IDP lock and check inside `insertTestbedRow`, writes `idp_api_key_id`, `os_username`, `os_password`, and adds `.where("deleted_at", "is", null)` to the pk store update (AC-2). |
 | `server/catalog/testbeds.ts` `updateTestbed` | `(conn, id, input, actorId) => Promise<Result<void, 'duplicate_name' \| 'not_found' \| 'not_ready' \| 'type_not_found' \| 'idp_not_found'>>` | AC-3 and AC-5 in one transaction. Compares before and after (the five testbed fields and the ordered client list) to skip a no change save. Client replace is delete all, then insert, so `testbed_clients_position_uq` never trips. Maps `testbeds_name_lower_uq` through `mapConstraintError`. |
@@ -119,6 +121,7 @@ Server modules:
 | edit | group name shown | `pod-<slug>` via `podGroupName(testbeds.slug)` |
 | create, update | `idp_api_key_id` | form `idpApiKeyId`, empty to null, rechecked under `FOR SHARE` |
 | create, update | `os_username`, `os_password` | form, per client row, empty to null |
+| booked, rescheduled, reminder email | each client's login | `clientLoginsForBooking(trx, email_messages.booking_id)` at send time, matched to `details.links.clients` by name and URL (AC-11) |
 | create, update | client `position` | form row order from 0 |
 | update | success message | `Updated <parsed name>.` |
 | update | `testbed.updated` metadata | before row and clients read under the `FOR UPDATE` lock vs the parsed input (AC-5) |
@@ -141,14 +144,16 @@ Server modules:
 - A create whose row was soft deleted mid saga never stores its group pk (AC-2).
 - A testbed's `idp_api_key_id`, when set, names a live `IDP` key (the action's `FOR SHARE` recheck plus spec 0006's blockers close the race both ways).
 - Edit, delete, and booking on one testbed serialize: edit and delete take `FOR UPDATE`, booking takes `FOR SHARE` (spec 0002 AC-14).
-- OS credentials never reach a learner's browser, an audit row, or a log line. They leave the server only in the admin console and, later, in the learner's booking email (feature 15).
+- OS credentials never reach a learner's browser, an audit row, or a log line. They leave the server only in the admin console and in the learner's booked, rescheduled, and reminder emails (AC-11), and are never copied into an email or job row.
 
 ### Security model
 
 - Every page and action here calls `requireAdmin()`; Authentik writes (create saga, teardown) use the provisioning token through the `pod-*` guard. No new Authentik rights.
 - Admins can read every client's OS username and password in the edit dialog (they enter them; plain text by the engineer's choice). They are sent only by `loadTestbedForEdit`, one testbed at a time, when an admin opens its edit dialog; the list page never carries them.
 - Client OS credentials are stored as **plain text**: a deliberate exception to the AGENTS.md "secrets at rest" rule, because they are shared lab VM logins that the booking email sends in clear to every learner of that testbed. Anyone who can read the database or a `pg_dump` can read them (accepted).
-- AC-10's source scan keeps `os_password` out of every module but `server/catalog/testbeds.ts`, so a learner read path cannot pick it up by accident. Feature 15's email builder will be added to that scan's allow list on purpose.
+- AC-10's source scan keeps `os_password` out of every module but `server/catalog/testbeds.ts`, so a learner read path cannot pick it up by accident. The booking email reads them through `clientLoginsForBooking` in that same module (AC-11), so the allow list stays one file.
+- The ops BCC mailbox (spec 0013) gets a copy of each booked and rescheduled email to a real address, so it receives the OS logins too and should stay a restricted internal mailbox. Reminders carry no Bcc (spec 0015 AC-9). Kept by the engineer on 2026-10-20 (runner up: leave the password out of the Bcc copy).
+- A test learner's email (`dev-`, `hol-test-`, and so on) goes to the `GOOGLE` key's dev inbox with no Bcc (spec 0013 AC-16), so that owner controlled mailbox receives the real OS logins of whatever testbed the test booked.
 - Audit metadata holds field names, ids, URLs, and counts, never credential values.
 
 ### Configuration required
@@ -170,6 +175,7 @@ None. Existing settings only (`DATABASE_*`, `AUTHENTIK_*` provisioning token, `W
 - Migration: the four checks refuse bad rows; codegen verify passes. Verifies **AC-8**.
 - Auth: a learner session calling each new action gets not authorized and writes nothing; the allow list test passes unchanged. Verifies **AC-9**.
 - Source scan: `os_password` appears only in `server/catalog/testbeds.ts` among app files. Verifies **AC-10**.
+- Email logins (amended 2026-10-20): the render shows "Username:" and "Password:" under the matching client, no password line for a client without one, no login for a client whose name or URL differs, and none on a cancellation (`server/email/compose.test.ts`, snapshots updated); the jobs step sends a booked email whose text part holds a seeded login while the `email_messages` row, the job rows, and the invite hold none (`server/jobs/jobs.test.ts`, DB, rolled back). Verifies **AC-11**.
 
 The real teardown against Authentik runs in the production worker (one host), so `/check verify` confirms it by deleting a `dev-` testbed and watching its `pod-<slug>` group disappear and the row get stamped within a tick or two.
 
@@ -183,6 +189,7 @@ Tracer Bullet: thicken the existing create thread into full CRUD one strand at a
 4. [x] Delete strand: `testbedBlockers` with phase labels, `deleteTestbed`, `checkTestbedDelete`, `deleteTestbedAction`, and the delete flow wiring on the page. Satisfies **AC-6**, **AC-9**
 5. [x] Teardown strand: `server/worker/teardown.ts` (on the existing `podGroupMembers` and `deletePodGroup`), the reconciler filter, and the worker step, with fake Authentik tests. Satisfies **AC-7**
 6. [x] Guards and end to end: the `os_password` source scan, the auth tests for the new actions, and the Playwright happy path. Satisfies **AC-1**, **AC-2**, **AC-3**, **AC-6**, **AC-9**, **AC-10**
+7. [x] Email logins (amended 2026-10-20): `ClientLogin` and `loginFor` in `lib/booking-email.ts`, `clientLoginsForBooking`, the `logins` input through `renderBookingEmail` and `composeBookingEmail`, the Username and Password lines in `lab-access-email.tsx`, the read in `runSendEmail` (skipped for a cancellation), `SAMPLE_CLIENT_LOGINS` in the worker's start up render, and the tests. Satisfies **AC-11**
 
 ## Consequences
 
@@ -193,13 +200,14 @@ Tracer Bullet: thicken the existing create thread into full CRUD one strand at a
 - The IDP key relation is now enforced from both sides (spec 0006 follow up closed).
 
 **Negative / tradeoffs**:
+- Each booked, rescheduled, and reminder email holds the testbed's OS logins in clear, in the learner's mailbox, the ops BCC mailbox, and the sender's Sent folder, for as long as those messages are kept. A password changed later does not reach emails already sent.
 - Client OS passwords sit in plain text in the database and in every `pg_dump`. Anyone with database or backup access can read them. Moving to encryption later needs a migration and either a backfill or admins entering them again.
 - An open edit dialog holds that testbed's OS passwords in the admin's browser (masked on screen only), and opening it costs one extra server round trip.
 - The owner must still bind each new group to the Nile tenant SAML app, Moodle, and the Cloudflare Access apps by hand, and unbind or remove those apps when a testbed is deleted. Until bound, a ready testbed can be booked but its URLs do not let the learner in.
 - A URL edit does not change any Authentik or Cloudflare setup; the owner updates those by hand.
 - A deleted testbed's group lingers until the worker runs (up to about 30 seconds, longer if the worker is down). Nothing can be booked on it meanwhile.
 - A type change leaves existing bookings on the old type's duration. Availability stays correct (busy ranges are per testbed), but the admin may see mixed types on one testbed's bookings.
-- Until feature 15 ships, an edit to URLs or credentials only records `accessChanged`; learners who already booked are not told.
+- An edit to URLs or credentials only records `accessChanged`; learners who already booked are not told. Emails still queued pick up the new logins (read at send time), but their links come from the snapshot taken when they were queued.
 - Concurrent edits by two admins are last write wins (as in features 7 and 8).
 
 **Neutral**:
@@ -210,7 +218,9 @@ Tracer Bullet: thicken the existing create thread into full CRUD one strand at a
 ## Follow-up
 
 - [ ] Scope row 9 (`/scope`): reword "protects its URLs with it; editing the URLs updates that protection" and the done line "its URLs are reachable only by members of that group" to "creates its Authentik group, which the owner binds to the lab's apps by hand (spec 0001)"; note the client OS username and password.
-- [ ] Feature 15: the booking email and calendar invite include each client's OS username and password (built server side, never in a browser), and a `testbed.updated` with `accessChanged: true` sends an updated access email to learners with Upcoming or Current bookings on that testbed. Add the email builder to the `os_password` scan allow list.
+- [x] Feature 15: the booking email includes each client's OS username and password, built in the worker, never in a browser (AC-11, 2026-10-20). Read through `clientLoginsForBooking`, so no change to the scan allow list was needed.
+- [ ] Calendar invite: decide whether the `.ics` should carry the OS logins. Left out on purpose 2026-10-20, because an invite stays in the learner's calendar (and any calendar it syncs to) indefinitely; needs an owner call before it is built.
+- [ ] A `testbed.updated` with `accessChanged: true` sends an updated access email to learners with Upcoming or Current bookings on that testbed (not built).
 - [ ] Feature 14: the lab access screens list clients (name, kind, URL) but never OS credentials (engineer call 2026-10-10).
 - [ ] Spec 0002: its follow ups "testbed delete saga that removes the Authentik group" and "create saga sets `authentik_group_pk`" are settled here and in spec 0004; its `testbeds` and `testbed_clients` tables gain the columns above.
 - [ ] Spec 0006 follow up (IDP select lists live `IDP` keys; save locks the key `FOR SHARE` and rechecks) is built here.
