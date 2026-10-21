@@ -2,12 +2,17 @@
 // 0001: the standalone build has no separate process). `server-only` maps to
 // the package's own empty.js, as worker/server-only-hook.mjs does under tsx,
 // so React Email still loads react-dom/server. Run by `npm run build:bundle`.
+import { cpSync } from "node:fs";
 import { build } from "esbuild";
 
 const ENTRIES = {
   worker: "worker/index.ts",
   migrate: "scripts/migrate.ts",
 } as const;
+
+// Files read at run time through `new URL("./assets/...", import.meta.url)`:
+// bundled, that URL is dist/assets/, so they are copied there.
+const ASSETS = ["server/email/assets"] as const;
 
 build({
   entryPoints: ENTRIES,
@@ -26,7 +31,11 @@ build({
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",
   },
   logLevel: "warning",
-}).catch(() => {
-  // esbuild has already printed the errors.
-  process.exit(1);
-});
+}).then(
+  () =>
+    ASSETS.forEach((dir) => cpSync(dir, "dist/assets", { recursive: true })),
+  () => {
+    // esbuild has already printed the errors.
+    process.exit(1);
+  },
+);
