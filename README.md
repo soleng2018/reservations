@@ -102,9 +102,58 @@ When the plan looks right, run it again with `-- --apply --secret-out ~/secrets/
 - prints `AUTHENTIK_CLIENT_ID=...`, which you copy into `.env.local`;
 - writes the client secret to the file you named, which `AUTHENTIK_CLIENT_SECRET_FILE` points to;
 - prints the HOL Labs client id, which goes into Cloudflare's "Reservations HOL Labs" login method;
-- prints the steps for the provisioning token. Create that token in Authentik (Directory → Tokens and App passwords, user `hol-webapp-provisioning`, intent API, one year expiry), save it to `~/secrets/authentik_provisioning_token`, and point `AUTHENTIK_PROVISIONING_TOKEN_FILE` at it.
+- prints the steps for the provisioning token. Create that token in Authentik (Directory → Tokens and App passwords, user `hol-webapp-provisioning`, intent **API**, one year expiry), save it to `~/secrets/authentik_provisioning_token`, and point `AUTHENTIK_PROVISIONING_TOKEN_FILE` at it. The App password token Authentik makes with the account won't work (see "Replacing the provisioning account or token" below).
 
 Add every admin to the `hol-admins` group and turn on MFA for them. Anyone signed in who isn't in that group is a learner.
+
+#### Replacing the provisioning account or token
+
+The web app and the worker reach Authentik only through the `hol-webapp-provisioning` service account's API token. If the account or its token is deleted, or the token is edited (saving the edit form can move the token to your own user), every Authentik call fails with `403 Token invalid/expired`. Guest bookings, adding learners, set password links, sign out, and lab access then stop working. Admin sign in keeps working.
+
+What the app needs in Authentik:
+
+| Object | Settings |
+| --- | --- |
+| Service account `hol-webapp-provisioning` | Type service account, not a superuser, in no group, account doesn't expire |
+| Role `hol-webapp-provisioning`, given to that account | Exactly these global permissions: `authentik_core.view_user`, `add_user`, `change_user`, `reset_user_password`, `view_group`, `add_group`, `delete_group`, `add_user_to_group`, `remove_user_from_group`, `view_authenticatedsession`, `delete_authenticatedsession` (the list is `PROVISIONING_PERMISSIONS` in [scripts/authentik-setup-plan.ts](scripts/authentik-setup-plan.ts)) |
+| An API token owned by that account | Intent API, expiry about one year out |
+
+The role has no `delete_user` on purpose. Authentik's permissions can't limit a role to learners, so a token with `delete_user` could delete any user, admins included. Remove test learners by hand in the Authentik UI.
+
+To put it back:
+
+1. In Authentik, open **Directory → Tokens and App passwords** and delete any token named `hol-webapp-provisioning-*` that no longer belongs to `hol-webapp-provisioning`. A token moved to an admin user carries that admin's rights.
+2. Recreate the account and the role with the setup script. It creates only what's missing and never changes what exists. Run the dry run first and check that the plan lists just the account, the role, and its permissions:
+
+   ```bash
+   AUTHENTIK_URL=https://<your authentik> \
+   AUTHENTIK_MASTER_TOKEN_FILE=~/secrets/authentik_master_token \
+   APP_URLS=https://<prod host>,http://10.1.255.18:3000 \
+   CLOUDFLARE_TEAM_DOMAIN=<team>.cloudflareaccess.com \
+   npm run authentik:setup
+   ```
+
+   Then run the same command again with `-- --apply` added. Without `--secret-out` the script prints the client secret instead of writing a file, so if it prints one, leave your existing secret files alone. It created nothing new there.
+
+   To do it by hand instead, create the service account under **Directory → Users → New Service Account** (turn off "Create group" and "Expiring"), create the role under **Directory → Roles** with the permissions above, and give the role to the account.
+3. Create the token under **Directory → Tokens and App passwords → Create**. Set User to `hol-webapp-provisioning` (not yourself), Intent to **API**, and an expiry about a year out. Save, then copy the key with the copy icon on its row, and check that the row's Intent column reads "API Access".
+
+   > Don't use the `service-account-hol-webapp-provisioning-password` token that Authentik makes along with the account. Its intent is **App password**, a sign in password, and the API rejects it with `403 Token invalid/expired` even though it belongs to the right account. You never need the service account's password; the app uses only the API token.
+4. Save it, replacing the old file:
+
+   ```bash
+   umask 077 && read -rs TOKEN && printf '%s' "$TOKEN" > ~/secrets/authentik_provisioning_token && unset TOKEN
+   ```
+
+5. Check it, then restart the containers, which read secrets only at start (dev picks it up on the next `npm run dev`):
+
+   ```bash
+   curl -s -H "Authorization: Bearer $(cat ~/secrets/authentik_provisioning_token)" \
+     https://<your authentik>/api/v3/core/users/me/ | grep -o '"username":"[^"]*"'
+   docker compose -f docker/compose.yaml restart web worker
+   ```
+
+   The check must print `"username":"hol-webapp-provisioning"`. Any other name means the token belongs to the wrong user.
 
 ### 6. Fill in `.env.local`
 
@@ -366,3 +415,4 @@ PGPASSWORD="$(cat ~/secrets/hol_app_password)" docker exec -i -e PGPASSWORD insf
 | `worker: another worker holds the lock, exiting` | A worker is already running somewhere (often `npm run worker` in dev). Stop that one; Compose restarts this one |
 | `reconciler: skipped group … (not_found)` every tick | A testbed's Authentik group is gone. Delete the testbed in the console if it's no longer used |
 | Sign in fails with a redirect URI error | Add the production URL to the provider with `npm run authentik:setup` (step 5) |
+| Guest bookings and adding learners fail, and Authentik answers `403 Token invalid/expired` | The provisioning account or its token is gone or was edited, or the saved token has intent App password instead of API. See "Replacing the provisioning account or token" under step 5 of Getting the webapp running |
