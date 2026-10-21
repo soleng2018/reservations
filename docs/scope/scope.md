@@ -324,6 +324,8 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Audit log export**: a CSV of the filtered Audit Log view, writing its own audit entry; deferred by owner choice on 2026-10-20 · from spec 0016
 - **Audit log search index**: add a `pg_trgm` index on `audit_events.summary` if free text search slows down (around a million entries) · from spec 0016
 - **Reconciler grant target fallback**: drop `booking?.bookingId ?? testbed.id` in `access.granted` so a testbed id can never be stored as a booking target (unreachable today) · from spec 0016
+- **Updated access email**: when an admin changes a testbed's URLs or client logins (`testbed.updated` with `accessChanged`), email the new access details to learners with Upcoming or Current bookings on it · from spec 0007
+- **OS logins in the calendar invite**: whether the `.ics` should also carry the client OS logins; left out on 2026-10-20 because an invite stays in calendars indefinitely · needs a decision · from spec 0007
 
 ## Legend
 

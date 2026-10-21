@@ -1,5 +1,6 @@
 import "server-only";
 import { sql, type Kysely } from "kysely";
+import type { ClientLogin } from "@/lib/booking-email";
 import type { TestbedClientInput, TestbedInput } from "@/lib/catalog-input";
 import { TestbedClientKind } from "@/lib/db-enums";
 import type { Blocker } from "@/lib/delete-flow";
@@ -25,7 +26,8 @@ import type { DB } from "@/server/db/types";
 // The testbed catalog (spec 0004 AC-2, spec 0007). This is the only module
 // that names a client's OS password column (tests/os-password-scan.test.ts):
 // those logins are plain text by design and leave the server only through
-// getTestbedForEdit, to an admin.
+// getTestbedForEdit, to an admin, and clientLoginsForBooking, into the
+// learner's booking email.
 
 // The row first group saga (spec 0004 AC-2): insert the testbed with no
 // group, create `pod-<slug>` stamped with the row id, then store its pk. A
@@ -325,6 +327,34 @@ async function clientsOf(
     osUsername: c.os_username,
     osPassword: c.os_password,
   }));
+}
+
+// Spec 0007: the OS logins of a booking's testbed, for the worker's booking
+// email only. Clients with no username have nothing to show.
+export async function clientLoginsForBooking(
+  conn: Kysely<DB>,
+  bookingId: string,
+): Promise<readonly ClientLogin[]> {
+  const rows = await conn
+    .selectFrom("testbed_clients as c")
+    .innerJoin("bookings as b", "b.testbed_id", "c.testbed_id")
+    .select(["c.name", "c.url", "c.os_username", "c.os_password"])
+    .where("b.id", "=", bookingId)
+    .where("c.os_username", "is not", null)
+    .orderBy("c.position")
+    .execute();
+  return rows.flatMap((c) =>
+    c.os_username === null
+      ? []
+      : [
+          {
+            name: c.name,
+            url: c.url,
+            username: c.os_username,
+            password: c.os_password,
+          },
+        ],
+  );
 }
 
 // AC-3. Everything the edit dialog shows, OS logins included. Used only by

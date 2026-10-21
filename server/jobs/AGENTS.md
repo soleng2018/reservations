@@ -27,7 +27,7 @@ The database backed job queue (the `jobs` table) and its handlers: booking email
 - A booking's emails go out in version order: `claimJob` skips an email while an older one of the same booking is still queued.
 - Staleness uses the DB clock (`dbNow`), never `Date.now()`; the process clock is only the step's own time budget.
 - Test addresses (`dev-`, `hol-test-`, `.test`, `example.com`, and so on, in `lib/email-routing.ts`) go to the key's dev inbox with a `[dev] ` subject prefix, or are suppressed when no dev inbox is set. Real addresses get the ops BCC, except a welcome, which never does (it carries a working set password link).
-- Reads name their columns. Lab links are copied into `email_messages.details` when queued; `messages.ts` never selects `details`, and no handler reads a client's OS login.
+- Reads name their columns. Lab links are copied into `email_messages.details` when queued; `messages.ts` never selects `details`. Client OS logins are never in `details`: `runSendEmail` reads them at send time through `clientLoginsForBooking` (`server/catalog/testbeds.ts`) and passes them to the renderer only, so no row keeps a copy.
 - Calendar handlers sync the booking's current row (event id = booking id without dashes), so a late or repeated job still leaves the right event. A calendar failure never touches the email.
 - To add a job kind: add it to `JobKind` in `lib/db-enums.ts` (it has a DB CHECK, so a migration too), a handler here, and an entry in `HANDLERS` in `worker/index.ts`.
 

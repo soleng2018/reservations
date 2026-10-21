@@ -2,8 +2,7 @@
 // Run by the `migrate` compose service (or `npm run db:migrate`), never by dev.
 // Take a pg_dump first: dev and production share one database.
 // Runs under `tsx --conditions=react-server` so `server-only` resolves to its
-// empty stub. The image needs either tsx or a bundled build of this script
-// (like dist/worker.js); settle that with the Dockerfile.
+// empty stub. The image runs the bundled dist/migrate.mjs (scripts/bundle.ts).
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { sql } from "kysely";

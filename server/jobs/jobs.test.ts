@@ -22,7 +22,7 @@ import {
   type RecordedRequest,
 } from "@/server/google/testing";
 import type { MintError, MintToken } from "@/server/google/token";
-import { inviteOf } from "@/server/email/testing";
+import { allParts, inviteOf, parseMime } from "@/server/email/testing";
 import { appUrl } from "@/server/env";
 import type { GoogleFetch } from "@/server/google/http";
 import {
@@ -111,6 +111,8 @@ async function confirmedBooking(
         name: "Wireless client",
         url: "https://c.example.test/wl",
         position: 0,
+        os_username: "lab-canary-user",
+        os_password: "lab-canary-pass",
       },
       {
         testbed_id: testbed.id,
@@ -535,7 +537,22 @@ describe.skipIf(!hasDb)(
         const invite = inviteOf(mime);
         expect(invite.method).toBe("REQUEST");
         expect(invite.ics).toMatch(/^SEQUENCE:1\r?$/m);
+        // Spec 0007: the client's OS login is in the email, read at send
+        // time, and in no row.
+        const text = allParts(parseMime(mime)).find(
+          (p) => p.type === "text/plain",
+        )?.body;
+        expect(text).toContain("Username: lab-canary-user");
+        expect(text).toContain("Password: lab-canary-pass");
+        expect(invite.ics).not.toContain("lab-canary");
         const [email] = await emailsOf(trx, bookingId);
+        expect(JSON.stringify(email)).not.toContain("lab-canary");
+        const jobRows = await trx
+          .selectFrom("jobs")
+          .select(["payload", "last_error"])
+          .where("idempotency_key", "like", `%${bookingId}%`)
+          .execute();
+        expect(JSON.stringify(jobRows)).not.toContain("lab-canary");
         expect(email).toMatchObject({
           status: "sent",
           provider_message_id: "gmail-msg-1",

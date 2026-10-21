@@ -57,6 +57,20 @@ Soft delete only; the owner removes the empty group by hand.
 **Cons**:
 - Contradicts the scope ("deleting the testbed removes the group") and leaves stale groups that the owner must remember.
 
+### Option 5 (amendment 2026-10-20): Show OS logins on the signed in lab access page, not in email
+
+Raised by the cross check of the AC-11 amendment. The lab access screen (spec 0012, only inside the booking window, behind Authentik) would show the logins, and the email would carry links only.
+
+**Pros**:
+- No password in any mailbox (learner, ops Bcc, dev inbox, Sent), so nothing is left stale when a password changes.
+- The calendar invite question goes away.
+
+**Cons**:
+- Reverses the engineer's 2026-10-10 call that the lab access screens never show OS credentials (feature 14) and that the email is where learners get everything they need.
+- Anonymous guests get no lab links on screen (spec 0012 AC-3), so they would lose the logins too.
+
+Declined: the engineer kept the logins in the booked, rescheduled, and reminder emails, and in the ops Bcc copy.
+
 ## Rationale
 
 Option 1 follows the shape the project already trusts: the database is the source of truth and the worker converges Authentik to it. Spec 0001 made the reconciler the only code that changes pod membership precisely so crashes and missed ticks heal by themselves; a teardown step that waits for the reconciler and then deletes the group extends that rule instead of creating a second path. The extra 30 seconds is harmless because the soft delete already makes the testbed unbookable, and the blocker check guarantees no Upcoming or Current booking exists.

@@ -14,6 +14,7 @@ import { purgeSetPasswordLinks } from "@/server/auth/set-password-links";
 import { renderBookingEmail, renderWelcomeEmail } from "@/server/email/compose";
 import {
   SAMPLE_BOOKING_DETAILS,
+  SAMPLE_CLIENT_LOGINS,
   SAMPLE_REMINDER_DETAILS,
   SAMPLE_WELCOME,
 } from "@/server/email/sample";
@@ -69,8 +70,16 @@ async function main(): Promise<number> {
   // react-dom/server, which only loads without the react-server condition
   // (the server-only hook).
   try {
-    await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
-    await renderBookingEmail("reminder", SAMPLE_REMINDER_DETAILS);
+    await renderBookingEmail(
+      "booked",
+      SAMPLE_BOOKING_DETAILS,
+      SAMPLE_CLIENT_LOGINS,
+    );
+    await renderBookingEmail(
+      "reminder",
+      SAMPLE_REMINDER_DETAILS,
+      SAMPLE_CLIENT_LOGINS,
+    );
     await renderWelcomeEmail(
       SAMPLE_WELCOME.details,
       SAMPLE_WELCOME.email,

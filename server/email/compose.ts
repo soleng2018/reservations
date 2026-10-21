@@ -13,6 +13,7 @@ import {
   messageId,
   SENDER_NAME,
   type BookingEmailDetails,
+  type ClientLogin,
   type BookingEmailKind,
   type InviteFields,
 } from "@/lib/booking-email";
@@ -87,14 +88,16 @@ async function renderParts(element: ReactElement): Promise<Rendered> {
   return { html, text };
 }
 
+// `logins` show under their clients; a cancellation shows none.
 export async function renderBookingEmail(
   kind: BookingEmailKind,
   details: BookingEmailDetails,
+  logins: readonly ClientLogin[] = [],
 ): Promise<Rendered> {
   return renderParts(
     kind === "cancelled"
       ? createElement(CancellationEmail, { details })
-      : createElement(LabAccessEmail, { kind, details }),
+      : createElement(LabAccessEmail, { kind, details, logins }),
   );
 }
 
@@ -115,6 +118,8 @@ export type ComposeInput = {
   readonly createdAt: Date;
   readonly kind: BookingEmailKind;
   readonly details: BookingEmailDetails;
+  // Read at send time, never stored (spec 0007).
+  readonly logins: readonly ClientLogin[];
   // As stored; the route's prefix is added here.
   readonly subject: string;
   readonly senderEmail: string;
@@ -129,7 +134,11 @@ export async function composeBookingEmail(
   input: ComposeInput,
 ): Promise<{ readonly subject: string; readonly raw: string }> {
   const subject = `${input.subjectPrefix}${input.subject}`;
-  const { html, text } = await renderBookingEmail(input.kind, input.details);
+  const { html, text } = await renderBookingEmail(
+    input.kind,
+    input.details,
+    input.logins,
+  );
   const invite = inviteFields({
     kind: input.kind,
     details: input.details,
