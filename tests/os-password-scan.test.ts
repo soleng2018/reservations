@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 // Spec 0007 AC-10: client OS passwords are plain text by design, so app code
 // names their column in one file only, the catalog module that writes them
 // and loads them for the admin's edit dialog. No learner page or public
-// action can select it by accident. Feature 15's email builder joins this
-// list on purpose. Tests and the generated schema types are not app code.
+// action can select it by accident. The booking email reads the logins
+// through clientLoginsForBooking there too, so the list stays one file.
+// Tests and the generated schema types are not app code.
 const ALLOWED = new Set(["server/catalog/testbeds.ts"]);
 const SKIPPED = new Set(["server/db/types.ts"]);
 const DIRS = ["app", "components", "lib", "server", "worker", "scripts"];

@@ -3,18 +3,21 @@ import { Heading, Link, Section, Text } from "react-email";
 import {
   emailEnd,
   emailStart,
+  loginFor,
   manageUrl,
   type BookingEmailDetails,
   type BookingEmailKind,
+  type ClientLogin,
 } from "@/lib/booking-email";
 import { firstName } from "@/lib/manage-reservations";
 import { CtaButton } from "./cta-button";
 import { DetailsCard } from "./details-card";
-import { BLUE, EmailFrame, LINE, MUTED, sectionPad } from "./email-frame";
+import { BLUE, EmailFrame, INK, LINE, MUTED, sectionPad } from "./email-frame";
 
 // Spec 0013 AC-12: the booked and rescheduled email, after
 // context/Nile HOL Lab Access Email Standalone.html; spec 0015 AC-7 adds the
-// reminder before start, with the same card, links, and footer.
+// reminder before start, with the same card, links, and footer. Spec 0007:
+// each client's OS login shows under its link.
 
 type LabAccessKind = Exclude<BookingEmailKind, "cancelled">;
 
@@ -69,12 +72,20 @@ const linkLabel = {
   wired: "Open the wired client",
 } as const;
 
+const loginLine = { margin: "4px 0 0", fontSize: "13px", color: MUTED };
+const loginValue = {
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  color: INK,
+};
+
 export function LabAccessEmail({
   kind,
   details,
+  logins = [],
 }: {
   readonly kind: LabAccessKind;
   readonly details: BookingEmailDetails;
+  readonly logins?: readonly ClientLogin[];
 }) {
   const text = copy(kind, details);
   const links = details.links;
@@ -86,6 +97,7 @@ export function LabAccessEmail({
           title: c.name,
           label: linkLabel[c.kind],
           url: c.url,
+          login: loginFor(logins, c),
         })),
       ]
     : [];
@@ -131,6 +143,18 @@ export function LabAccessEmail({
             >
               {r.label}
             </Link>
+            {"login" in r && r.login ? (
+              <>
+                <Text style={loginLine}>
+                  Username: <span style={loginValue}>{r.login.username}</span>
+                </Text>
+                {r.login.password === null ? null : (
+                  <Text style={loginLine}>
+                    Password: <span style={loginValue}>{r.login.password}</span>
+                  </Text>
+                )}
+              </>
+            ) : null}
           </Section>
         ))}
       </Section>

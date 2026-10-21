@@ -10,6 +10,7 @@ import {
 import { inviteFields } from "@/lib/booking-email";
 import {
   SAMPLE_BOOKING_DETAILS,
+  SAMPLE_CLIENT_LOGINS,
   SAMPLE_REMINDER_DETAILS,
   SAMPLE_WELCOME,
 } from "./sample";
@@ -76,7 +77,11 @@ describe("booking email render (spec 0013 AC-23)", () => {
   });
 
   it.each(cases)("renders %s for %s", async (kind, _zone, details) => {
-    const { html, text } = await renderBookingEmail(kind, details);
+    const { html, text } = await renderBookingEmail(
+      kind,
+      details,
+      SAMPLE_CLIENT_LOGINS,
+    );
     expect(html).toMatchSnapshot("html");
     expect(text).toMatchSnapshot("text");
     const ics = renderInvite(
@@ -91,6 +96,46 @@ describe("booking email render (spec 0013 AC-23)", () => {
       }),
     );
     expect(ics).toMatchSnapshot("ics");
+  });
+
+  // covers: spec 0007 (client OS logins in the booking email)
+  it("shows each client's OS login under its link, and only its own", async () => {
+    const { html, text } = await renderBookingEmail(
+      "booked",
+      SAMPLE_BOOKING_DETAILS,
+      [
+        ...SAMPLE_CLIENT_LOGINS,
+        // A client edited after the email was queued matches nothing.
+        {
+          name: "Wired client",
+          url: "https://example.nile/client/moved",
+          username: "stale-user",
+          password: "stale-pass",
+        },
+      ],
+    );
+    expect(text).toContain("Username: labuser");
+    expect(text).toContain("Password: Sample-Pass-1");
+    expect(text).toContain("Username: wired-user");
+    expect(html).toContain("Sample-Pass-1");
+    for (const body of [html, text]) {
+      expect(body).not.toContain("stale-user");
+      expect(body).not.toContain("stale-pass");
+    }
+    // The wired client has no password line.
+    expect(text.match(/Password:/g)).toHaveLength(1);
+  });
+
+  it("shows no logins on a cancellation", async () => {
+    const { html, text } = await renderBookingEmail(
+      "cancelled",
+      cancelled(SAMPLE_BOOKING_DETAILS),
+      SAMPLE_CLIENT_LOGINS,
+    );
+    for (const body of [html, text]) {
+      expect(body).not.toContain("labuser");
+      expect(body).not.toContain("Sample-Pass-1");
+    }
   });
 
   it.each(["booked", "cancelled"] as const)(
@@ -126,6 +171,7 @@ describe("composeBookingEmail (spec 0013 AC-15)", () => {
         over.kind === "cancelled"
           ? cancelled(SAMPLE_BOOKING_DETAILS)
           : SAMPLE_BOOKING_DETAILS,
+      logins: SAMPLE_CLIENT_LOGINS,
       subject: "Updated: Your Nile Hands-On Lab access - x",
       senderEmail: "labs@nile.example",
       to: "priya@acme.com",

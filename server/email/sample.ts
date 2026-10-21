@@ -1,5 +1,5 @@
 import "server-only";
-import type { BookingEmailDetails } from "@/lib/booking-email";
+import type { BookingEmailDetails, ClientLogin } from "@/lib/booking-email";
 import { setPasswordUrl, type WelcomeEmailDetails } from "@/lib/welcome-email";
 
 // Spec 0014 AC-17, AC-7: the same learner's set password email. The token is
@@ -53,3 +53,20 @@ export const SAMPLE_REMINDER_DETAILS: BookingEmailDetails = {
   ...SAMPLE_BOOKING_DETAILS,
   newAccount: false,
 };
+
+// Spec 0007: the sample clients' OS logins. The wired client has no password,
+// so the render shows both shapes.
+export const SAMPLE_CLIENT_LOGINS: readonly ClientLogin[] = [
+  {
+    name: "Wireless client",
+    url: "https://example.nile/client/wireless",
+    username: "labuser",
+    password: "Sample-Pass-1",
+  },
+  {
+    name: "Wired client",
+    url: "https://example.nile/client/wired",
+    username: "wired-user",
+    password: null,
+  },
+];

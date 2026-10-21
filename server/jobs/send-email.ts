@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { BookingEmailDetails, BookingEmailKind } from "@/lib/booking-email";
 import { routeEmail } from "@/lib/email-routing";
 import { LEAD_MS } from "@/lib/slots";
+import { clientLoginsForBooking } from "@/server/catalog/testbeds";
 import { dbNow } from "@/server/db/bookings";
 import { composeBookingEmail } from "@/server/email/compose";
 import { sendRaw } from "@/server/google/gmail";
@@ -98,6 +99,11 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
   );
   if (route.kind === "suppress") return suppress(route.reason);
 
+  // Spec 0007: the clients' OS logins, read now and never stored on the row.
+  const logins =
+    kind.data === "cancelled"
+      ? []
+      : await clientLoginsForBooking(trx, row.booking_id);
   const { raw } = await composeBookingEmail({
     emailId: row.id,
     bookingId: row.booking_id,
@@ -105,6 +111,7 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
     createdAt: row.created_at,
     kind: kind.data,
     details: details.data,
+    logins,
     subject: row.subject,
     senderEmail: ctx.cfg.senderEmail,
     to: route.to,

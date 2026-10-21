@@ -73,6 +73,24 @@ export const BookingEmailDetails = z.object({
 });
 export type BookingEmailDetails = z.infer<typeof BookingEmailDetails>;
 
+// Spec 0007: a client's OS login, read by the worker at send time and never
+// stored in `details`, so no row keeps a copy. A login names the client it
+// belongs to by name and URL.
+export type ClientLogin = {
+  readonly name: string;
+  readonly url: string;
+  readonly username: string;
+  readonly password: string | null;
+};
+
+// The login for one client the email shows. A client edited after the email
+// was queued matches none, so it never shows another client's login.
+export const loginFor = (
+  logins: readonly ClientLogin[],
+  client: { readonly name: string; readonly url: string },
+): ClientLogin | undefined =>
+  logins.find((l) => l.name === client.name && l.url === client.url);
+
 const when = (iso: string, details: BookingEmailDetails) =>
   formatEmailDateTime(new Date(iso), details.timezone);
 
