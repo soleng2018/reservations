@@ -26,6 +26,13 @@ export const ADMIN_ENTRY = "/l0gin";
 export const AUTHENTIK_URL = "https://authentik.dev.app.nile-global.cloud";
 export const haveSecrets = Boolean(admin.password && learner.password);
 
+// Writes for the tests' own throwaway groups go through the provisioning
+// token, the app's RBAC limited account. The app never creates a group (spec
+// 0017 AC-4): the owner's script makes the real ones, so the tests make theirs
+// here, named `dev-e2e-…`, and remove them again.
+const provisioningToken = secret("authentik_provisioning_token");
+export const haveProvisioning = provisioningToken !== undefined;
+
 // Read only Authentik API calls for the tests (the master token never
 // reaches web or worker; this is the test machine).
 const masterToken = secret("authentik_master_token");
@@ -81,4 +88,43 @@ export async function authentikSessions(username: string) {
       `/core/authenticated_sessions/?user__username=${encodeURIComponent(username)}&page_size=100`,
     )
   ).results;
+}
+
+export async function provision(
+  method: "POST" | "DELETE",
+  path: string,
+  body?: unknown,
+) {
+  const res = await fetch(`${AUTHENTIK_URL}/api/v3${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${provisioningToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  expect(res.ok, `${method} ${path} → ${res.status}`).toBe(true);
+  const text = await res.text();
+  return text ? (JSON.parse(text) as unknown) : undefined;
+}
+
+// A flat group (no parent, no role) like the owner's script makes. `marked`
+// carries `hol_testbed_group = true`, so a testbed can use it; without it the
+// app must refuse the group. Returns the group's pk.
+export async function makeTestbedGroup(
+  name: string,
+  marked = true,
+): Promise<string> {
+  const created = z.object({ pk: z.string() }).parse(
+    await provision("POST", "/core/groups/", {
+      name,
+      attributes: marked ? { hol_testbed_group: true } : { hol_test: true },
+    }),
+  );
+  return created.pk;
+}
+
+export async function removeGroup(pk: string): Promise<void> {
+  await provision("DELETE", `/core/groups/${pk}/`);
 }

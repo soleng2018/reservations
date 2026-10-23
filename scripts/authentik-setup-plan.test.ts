@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CALLBACK_PATH,
@@ -222,11 +224,16 @@ describe("HOL Labs", () => {
     });
   });
 
-  it("passes staff, and a learner only while in some pod-* group", () => {
+  // covers: spec 0017 AC-12
+  it("passes staff, and a learner only while in a group marked for testbeds", () => {
     const text = labsAccessExpression();
     expect(text).toContain('path == "hol/learners"');
     expect(text).toContain('path.startswith("hol/learners/")');
-    expect(text).toContain('name__startswith="pod-"');
+    expect(text).toContain(
+      "return request.user.groups.filter(attributes__hol_testbed_group=True).exists()",
+    );
+    // The marker, not a name prefix: no `pod-` anywhere in the policy.
+    expect(text).not.toContain("pod-");
     // Like isolation, its code never reads the app or the VM being opened.
     const code = text
       .split("\n")
@@ -297,5 +304,16 @@ describe("hol-recovery stages (spec 0014 AC-11)", () => {
       session_duration: "seconds=0",
     });
     expect(RECOVERY_STAGE_ORDER).toEqual({ prompt: 10, write: 20, login: 30 });
+  });
+});
+
+// covers: spec 0017 AC-12 (the plan's own text no longer speaks of pod- groups)
+describe("no pod- left in the setup plan (spec 0017 AC-12)", () => {
+  it("names no pod- group in the policy, the permission comment, or the plan", () => {
+    const source = readFileSync(
+      path.resolve(__dirname, "authentik-setup-plan.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/pod-/);
   });
 });

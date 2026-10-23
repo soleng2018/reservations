@@ -5,7 +5,9 @@ import {
   admin,
   authentikGet,
   haveApi,
+  haveProvisioning,
   haveSecrets,
+  makeTestbedGroup,
   results,
   signIn,
 } from "./authentik";
@@ -21,17 +23,21 @@ import {
 } from "./book-flow";
 
 // The booking loop end to end (spec 0004, spec 0010), against the real
-// database and real Authentik. It commits what it creates (a type, a testbed
-// and its pod group, learners, bookings), all named `e2e ` / `dev-` so they
-// can be found and cleaned up by hand; the app has no delete yet. In dev all
+// database and real Authentik. It commits what it creates (a type, a testbed,
+// learners, bookings), all named `e2e ` / `dev-` so they can be found and
+// cleaned up by hand. The testbed is named like an Authentik group, so the
+// test makes a throwaway marked group `dev-e2e-bench-…` first (the app creates
+// no group, spec 0017) and leaves it: the testbed keeps a booking. In dev all
 // callers share the per IP buckets, so this file makes 3 real bookings and 6
 // Step 1 checks (limits 5 and 20 per 10 minutes).
-test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+test.skip(
+  !haveSecrets || !haveProvisioning,
+  "hol-test passwords or the provisioning token are not on this machine",
+);
 
 const id = crypto.randomUUID().slice(0, 8);
 const typeName = `e2e type ${id}`;
-const testbedName = `e2e bench ${id}`;
-const slug = `e2e-bench-${id}`;
+const testbedName = `dev-e2e-bench-${id}`;
 const first = guest(`guest-${id}`);
 
 async function choose(page: Page, combobox: string, option: string) {
@@ -67,9 +73,13 @@ test.describe.serial("booking", () => {
 
     await page.getByRole("link", { name: "Testbeds", exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/testbeds$/);
+    await makeTestbedGroup(testbedName, true);
     await page.getByRole("button", { name: "Add testbed" }).click();
     const testbedDialog = page.getByRole("dialog", { name: "Add testbed" });
-    await testbedDialog.getByLabel("Name").fill(testbedName);
+    await testbedDialog.getByLabel("Name", { exact: true }).fill(testbedName);
+    await testbedDialog
+      .getByLabel("Domain", { exact: true })
+      .fill(`dev-e2e-${id}.nile-test.invalid`);
     await choose(page, "Testbed type", typeName);
     await testbedDialog
       .getByLabel("Nile Portal URL")
@@ -82,7 +92,7 @@ test.describe.serial("booking", () => {
       timeout: 30_000,
     });
     await page.getByLabel("Search testbeds").fill(testbedName);
-    // Ready: the group pk is stored (spec 0007 AC-1 shows a badge otherwise).
+    // A live testbed always has its group pk (spec 0017 AC-11).
     const testbedRow = page.getByRole("row").filter({ hasText: testbedName });
     await expect(testbedRow).toBeVisible();
     await expect(testbedRow).not.toContainText("Not ready");
@@ -92,11 +102,13 @@ test.describe.serial("booking", () => {
         results(
           z.looseObject({ name: z.string(), attributes: z.looseObject({}) }),
         ),
-        `/core/groups/?name=pod-${slug}`,
+        `/core/groups/?name=${testbedName}`,
       );
+      // The test's own group, untouched by the app (spec 0017 AC-4).
       expect(groups.results).toHaveLength(1);
-      expect(groups.results[0]?.attributes.hol_testbed_id).toEqual(
-        expect.any(String),
+      expect(groups.results[0]?.attributes.hol_testbed_group).toBe(true);
+      expect(groups.results[0]?.attributes).not.toHaveProperty(
+        "hol_testbed_id",
       );
     }
   });

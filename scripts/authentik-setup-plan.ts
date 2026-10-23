@@ -35,8 +35,9 @@ export const PROVISIONING_ROLE = "hol-webapp-provisioning";
 export const CALLBACK_PATH = "/api/auth/callback/authentik";
 
 // Global permissions for the provisioning role (spec 0003 security model).
-// Object level containment (never an admin, only `pod-*` groups) is the
-// app's guard, since Authentik RBAC cannot express it.
+// Object level containment (never an admin, only groups the owner marked
+// `hol_testbed_group`) is the app's guard, since Authentik RBAC cannot
+// express it.
 export const PROVISIONING_PERMISSIONS: readonly string[] = [
   "authentik_core.view_user",
   "authentik_core.add_user",
@@ -280,8 +281,9 @@ export const uncoveredProviders = (
 
 // ---- HOL Labs (AC-19, spec 0012) ------------------------------------------
 // The login Cloudflare Access uses for the lab VMs. Learners pass only while
-// they are in a testbed `pod-*` group; each VM's Cloudflare policy then checks
-// the exact `pod-<slug>` in the groups claim.
+// they are in a group the owner marked `hol_testbed_group` (spec 0017); each
+// VM's Cloudflare policy then checks the exact group name, the testbed's name,
+// in the groups claim.
 
 export const LABS_APP_SLUG = "hol-labs";
 export const LABS_APP_NAME = "HOL Labs";
@@ -343,13 +345,13 @@ export const desiredLabsProvider = (i: LabsProviderInputs) => ({
 export const labsAccessExpression = (): string =>
   [
     "# HOL Labs (Cloudflare Access for the lab VMs). Staff and admins pass;",
-    "# a booking created learner passes only while in a testbed pod-* group,",
-    "# which the HOL worker manages on the booking clock. Cloudflare's own",
-    "# per app rule then checks the exact pod-<slug> in the groups claim.",
+    "# a booking created learner passes only while in a group marked with the",
+    "# hol_testbed_group attribute, which the HOL worker manages on the booking",
+    "# clock. Cloudflare's own per app rule then checks the exact group name.",
     'path = getattr(request.user, "path", "") or ""',
     `if not (path == "${LEARNER_PATH}" or path.startswith("${LEARNER_PATH}/")):`,
     "    return True",
-    'return request.user.groups.filter(name__startswith="pod-").exists()',
+    "return request.user.groups.filter(attributes__hol_testbed_group=True).exists()",
   ].join("\n");
 
 export const LABS_BINDING_SETTINGS = ISOLATION_BINDING_SETTINGS;
