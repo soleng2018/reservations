@@ -1,11 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  addToPodGroup,
-  createPodGroup,
-  deletePodGroup,
-  findPodGroupByName,
-  podGroupMembers,
-  removeFromPodGroup,
+  addToTestbedGroup,
+  findTestbedGroup,
+  readTestbedGroup,
+  removeFromTestbedGroup,
+  testbedGroupMembers,
 } from "./groups";
 import {
   ADMINS,
@@ -13,108 +12,159 @@ import {
   fakeGroup,
   fakeLearner,
   fakeUser,
-  POD,
+  groupWrites,
+  markedGroup,
+  TESTBED_GROUP,
 } from "./testing";
 
-const TESTBED = "6f1c2f9e-0000-4000-8000-000000000001";
+const NAME = "NileWorkshop1Admin";
 
-// covers: spec 0004 AC-2
-describe("createPodGroup (AC-2)", () => {
-  it("creates the group stamped with the testbed id", async () => {
+// covers: spec 0017 AC-3 (the exact name, the marker, the failures)
+describe("findTestbedGroup (spec 0017 AC-3)", () => {
+  it("finds the marked group with exactly that name", async () => {
     const ak = fakeAuthentik([]);
-    const r = await createPodGroup(ak.api, "pod-lab-2", TESTBED);
-    expect(r).toMatchObject({
+    expect(await findTestbedGroup(ak.api, NAME)).toEqual({
       ok: true,
-      value: { name: "pod-lab-2", testbedId: TESTBED },
-    });
-    expect(ak.writes).toEqual(["POST /core/groups/"]);
-    expect(ak.groups.at(-1)?.attributes).toEqual({ hol_testbed_id: TESTBED });
-  });
-
-  it("never adopts an existing group of that name", async () => {
-    const ak = fakeAuthentik([]);
-    expect(await createPodGroup(ak.api, POD.name, TESTBED)).toEqual({
-      ok: false,
-      error: "exists",
+      value: { pk: TESTBED_GROUP.pk, name: NAME },
     });
     expect(ak.writes).toEqual([]);
   });
 
-  it("refuses a name outside pod-, without writing", async () => {
-    const ak = fakeAuthentik([]);
-    expect(await createPodGroup(ak.api, "hol-admins", TESTBED)).toEqual({
-      ok: false,
-      error: "not_pod_group",
-    });
-    expect(ak.writes).toEqual([]);
-  });
-
-  it("returns unavailable when Authentik is down", async () => {
-    const ak = fakeAuthentik([], { down: true });
-    expect(await createPodGroup(ak.api, "pod-lab-2", TESTBED)).toEqual({
-      ok: false,
-      error: "unavailable",
-    });
-  });
-});
-
-describe("findPodGroupByName", () => {
-  it("finds the exact name, or nothing", async () => {
+  it("matches the name exactly, and case sensitively", async () => {
     const ak = fakeAuthentik([], {
-      groups: [fakeGroup("g2", "pod-lab-2", { hol_testbed_id: TESTBED })],
+      groups: [
+        markedGroup("x-uuid", "NileWorkshop1AdminX"),
+        markedGroup("lower-uuid", "nileworkshop1admin"),
+      ],
     });
-    expect(await findPodGroupByName(ak.api, "pod-lab-2")).toEqual({
+    expect(await findTestbedGroup(ak.api, NAME)).toMatchObject({
       ok: true,
-      value: { pk: "g2", name: "pod-lab-2", testbedId: TESTBED },
+      value: { pk: TESTBED_GROUP.pk },
     });
-    expect(await findPodGroupByName(ak.api, "pod-lab-9")).toEqual({
-      ok: true,
-      value: undefined,
+    expect(await findTestbedGroup(ak.api, "NileWorkshop1")).toEqual({
+      ok: false,
+      error: "not_found",
     });
+    expect(await findTestbedGroup(ak.api, "NILEWORKSHOP1ADMIN")).toEqual({
+      ok: false,
+      error: "not_found",
+    });
+  });
+
+  it("says not_found when no group has the name", async () => {
+    const ak = fakeAuthentik([]);
+    expect(await findTestbedGroup(ak.api, "NoSuchGroup")).toEqual({
+      ok: false,
+      error: "not_found",
+    });
+  });
+
+  it("refuses two groups with the same exact name, never the first", async () => {
+    const ak = fakeAuthentik([], {
+      groups: [markedGroup("dup-uuid", NAME)],
+    });
+    expect(await findTestbedGroup(ak.api, NAME)).toEqual({
+      ok: false,
+      error: "not_testbed_group",
+    });
+  });
+
+  it("refuses a group without the marker, with the string true, or hol-admins", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ak = fakeAuthentik([], {
+      groups: [
+        fakeGroup("plain-uuid", "Plain"),
+        fakeGroup("str-uuid", "Stringly", { hol_testbed_group: "true" }),
+        markedGroup("super-uuid", "Super", { is_superuser: true }),
+        markedGroup("role-uuid", "Roled", { roles: ["r1"] }),
+        markedGroup("parent-uuid", "Parented", { parents: ["p1"] }),
+      ],
+    });
+    for (const name of ["Plain", "Stringly", "Super", "Roled", "Parented"])
+      expect(await findTestbedGroup(ak.api, name)).toEqual({
+        ok: false,
+        error: "not_testbed_group",
+      });
+    const admins = ak.groups.find((g) => g.pk === ADMINS.pk);
+    if (admins) admins.attributes = { hol_testbed_group: true };
+    expect(await findTestbedGroup(ak.api, "hol-admins")).toEqual({
+      ok: false,
+      error: "not_testbed_group",
+    });
+    warn.mockRestore();
+  });
+
+  it("asks for the group without its members", async () => {
+    const ak = fakeAuthentik([]);
+    await findTestbedGroup(ak.api, NAME);
+    expect(ak.groupReads.length).toBeGreaterThan(0);
+    expect(ak.groupReads.every((g) => g.includeUsers === "false")).toBe(true);
+  });
+
+  it("is unavailable when Authentik is down, answers 403 or 500, or sends a body that does not parse", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onList = (m: string, p: string) =>
+      m === "GET" && p === "/core/groups/" && true;
+    const cases = [
+      fakeAuthentik([], { down: true }),
+      fakeAuthentik([], {
+        reply: (m, p) =>
+          onList(m, p) ? new Response("{}", { status: 403 }) : undefined,
+      }),
+      fakeAuthentik([], { fail: onList }),
+      fakeAuthentik([], {
+        reply: (m, p) =>
+          onList(m, p)
+            ? new Response("<html>", {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              })
+            : undefined,
+      }),
+      fakeAuthentik([], {
+        reply: (m, p) =>
+          onList(m, p)
+            ? new Response(JSON.stringify({ unexpected: true }), {
+                status: 200,
+                headers: { "Content-Type": "application/json" },
+              })
+            : undefined,
+      }),
+    ];
+    for (const ak of cases)
+      expect(await findTestbedGroup(ak.api, NAME)).toEqual({
+        ok: false,
+        error: "unavailable",
+      });
+    error.mockRestore();
   });
 });
 
-describe("deletePodGroup (AC-11 invariant)", () => {
-  const owned = fakeGroup("g2", "pod-lab-2", { hol_testbed_id: TESTBED });
-
-  it("deletes a group that carries this testbed's id", async () => {
-    const ak = fakeAuthentik([], { groups: [owned] });
-    expect((await deletePodGroup(ak.api, "g2", TESTBED)).ok).toBe(true);
-    expect(ak.writes).toEqual(["DELETE /core/groups/g2/"]);
-  });
-
-  it("leaves a group stamped with another id, or none, alone", async () => {
-    const ak = fakeAuthentik([], { groups: [owned] });
-    expect(
-      await deletePodGroup(ak.api, "g2", crypto.randomUUID()),
-    ).toMatchObject({ ok: false, error: "not_owned" });
-    expect(await deletePodGroup(ak.api, POD.pk, TESTBED)).toMatchObject({
-      ok: false,
-      error: "not_owned",
-    });
-    expect(ak.writes).toEqual([]);
-  });
-
-  it("never deletes a group outside pod-", async () => {
+describe("readTestbedGroup", () => {
+  it("returns the group's current name, or not_found", async () => {
     const ak = fakeAuthentik([]);
-    expect(await deletePodGroup(ak.api, ADMINS.pk, TESTBED)).toEqual({
-      ok: false,
-      error: "not_pod_group",
+    expect(await readTestbedGroup(ak.api, TESTBED_GROUP.pk)).toEqual({
+      ok: true,
+      value: { pk: TESTBED_GROUP.pk, name: NAME },
     });
-    expect(ak.writes).toEqual([]);
+    expect(await readTestbedGroup(ak.api, "gone-uuid")).toEqual({
+      ok: false,
+      error: "not_found",
+    });
+    expect(ak.groupReads.every((g) => g.includeUsers === "false")).toBe(true);
   });
 });
 
 // covers: spec 0004 AC-12
-describe("podGroupMembers (AC-12)", () => {
+describe("testbedGroupMembers (AC-12)", () => {
   it("reads every member across pages, with the learner tag", async () => {
     const members = Array.from({ length: 205 }, (_, i) =>
-      fakeLearner(1000 + i, { groups: [POD.pk] }),
+      fakeLearner(1000 + i, { groups: [TESTBED_GROUP.pk] }),
     );
-    const staff = fakeUser({ pk: 5, groups: [POD.pk] });
+    const staff = fakeUser({ pk: 5, groups: [TESTBED_GROUP.pk] });
     const outside = fakeLearner(6);
     const ak = fakeAuthentik([...members, staff, outside]);
-    const r = await podGroupMembers(ak.api, POD.pk);
+    const r = await testbedGroupMembers(ak.api, TESTBED_GROUP.pk);
     if (!r.ok) throw new Error(r.error);
     expect(r.value).toHaveLength(206);
     expect(r.value).toContainEqual({ pk: 1204, holLearner: true });
@@ -123,27 +173,43 @@ describe("podGroupMembers (AC-12)", () => {
   });
 
   it("returns unavailable when a page fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const ak = fakeAuthentik([], { fail: (m, p) => p === "/core/users/" });
-    expect(await podGroupMembers(ak.api, POD.pk)).toEqual({
+    expect(await testbedGroupMembers(ak.api, TESTBED_GROUP.pk)).toEqual({
       ok: false,
       error: "unavailable",
     });
+    error.mockRestore();
   });
 });
 
-describe("addToPodGroup", () => {
+describe("addToTestbedGroup", () => {
   it("adds a tagged learner, which the member list then shows", async () => {
     const ak = fakeAuthentik([fakeLearner(3)]);
-    expect((await addToPodGroup(ak.api, POD.pk, 3)).ok).toBe(true);
-    expect(await podGroupMembers(ak.api, POD.pk)).toEqual({
+    expect((await addToTestbedGroup(ak.api, TESTBED_GROUP.pk, 3)).ok).toBe(
+      true,
+    );
+    expect(await testbedGroupMembers(ak.api, TESTBED_GROUP.pk)).toEqual({
       ok: true,
       value: [{ pk: 3, holLearner: true }],
     });
+    expect(groupWrites(ak.writes)).toEqual([]);
+  });
+
+  it("refuses a group without the marker, writing nothing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const ak = fakeAuthentik([fakeLearner(3)]);
+    expect(await addToTestbedGroup(ak.api, "other-uuid", 3)).toEqual({
+      ok: false,
+      error: "not_testbed_group",
+    });
+    expect(ak.writes).toEqual([]);
+    warn.mockRestore();
   });
 });
 
-// covers: AC-4
-describe("removeFromPodGroup (AC-4)", () => {
+// covers: spec 0003 AC-4, spec 0017 AC-10
+describe("removeFromTestbedGroup (AC-4)", () => {
   const learner = fakeUser({ pk: 3, attributes: { hol_learner: true } });
   const admin = fakeUser({
     pk: 1,
@@ -152,43 +218,57 @@ describe("removeFromPodGroup (AC-4)", () => {
   });
   const untagged = fakeUser({ pk: 2 });
 
-  it("refuses any group that is not a pod- group, without writing", async () => {
+  it("refuses hol-admins, without writing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const ak = fakeAuthentik([learner]);
-    expect(await removeFromPodGroup(ak.api, ADMINS.pk, 3)).toEqual({
+    expect(await removeFromTestbedGroup(ak.api, ADMINS.pk, 3)).toEqual({
       ok: false,
-      error: "not_pod_group",
-    });
-    expect(await removeFromPodGroup(ak.api, "other-uuid", 3)).toEqual({
-      ok: false,
-      error: "not_pod_group",
+      error: "not_testbed_group",
     });
     expect(ak.writes).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("still lets a learner out of a group that lost its marker", async () => {
+    const ak = fakeAuthentik([{ ...learner, groups: ["other-uuid"] }]);
+    expect((await removeFromTestbedGroup(ak.api, "other-uuid", 3)).ok).toBe(
+      true,
+    );
+    expect(ak.writes).toEqual(["POST /core/groups/other-uuid/remove_user/"]);
   });
 
   it("refuses an admin or an untagged user, without writing", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const ak = fakeAuthentik([admin, untagged]);
-    expect(await removeFromPodGroup(ak.api, POD.pk, 1)).toEqual({
+    expect(await removeFromTestbedGroup(ak.api, TESTBED_GROUP.pk, 1)).toEqual({
       ok: false,
       error: "is_admin",
     });
-    expect(await removeFromPodGroup(ak.api, POD.pk, 2)).toEqual({
+    expect(await removeFromTestbedGroup(ak.api, TESTBED_GROUP.pk, 2)).toEqual({
       ok: false,
       error: "not_learner",
     });
     expect(ak.writes).toEqual([]);
+    warn.mockRestore();
   });
 
-  it("removes a learner from a pod- group", async () => {
+  it("removes a learner from a testbed group", async () => {
     const ak = fakeAuthentik([learner]);
-    expect((await removeFromPodGroup(ak.api, POD.pk, 3)).ok).toBe(true);
-    expect(ak.writes).toEqual([`POST /core/groups/${POD.pk}/remove_user/`]);
+    expect((await removeFromTestbedGroup(ak.api, TESTBED_GROUP.pk, 3)).ok).toBe(
+      true,
+    );
+    expect(ak.writes).toEqual([
+      `POST /core/groups/${TESTBED_GROUP.pk}/remove_user/`,
+    ]);
   });
 
   it("returns unavailable when Authentik cannot be reached (AC-15)", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const ak = fakeAuthentik([learner], { down: true });
-    expect(await removeFromPodGroup(ak.api, POD.pk, 3)).toEqual({
+    expect(await removeFromTestbedGroup(ak.api, TESTBED_GROUP.pk, 3)).toEqual({
       ok: false,
       error: "unavailable",
     });
+    error.mockRestore();
   });
 });

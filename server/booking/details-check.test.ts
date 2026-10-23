@@ -165,7 +165,7 @@ describe.skipIf(!hasDb)("checkGuestDetails (AC-2)", () => {
     inRollback(async (trx) => {
       const { check } = await setup(trx);
       const empty = await makeType(trx);
-      await makeTestbed(trx, empty.id, { authentik_group_pk: null });
+      await makeTestbed(trx, empty.id, { deleted_at: new Date() });
       expect(await check("new@example.test", empty.id)).toEqual({
         ok: false,
         error: "type_unavailable",

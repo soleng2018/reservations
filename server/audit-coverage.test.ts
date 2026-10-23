@@ -4,8 +4,8 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { TestbedInput } from "@/lib/catalog-input";
 import {
   fakeAuthentik,
-  fakeGroup,
   fakeLearner,
+  markedGroup,
 } from "@/server/authentik/testing";
 import { deactivateLearner } from "@/server/authentik/learners";
 import { createApiKey, updateApiKey } from "@/server/catalog/api-keys";
@@ -34,7 +34,7 @@ import {
 import type { DB } from "@/server/db/types";
 import { cancelBookingByAdmin } from "@/server/users/learners";
 import { reconcileAccess } from "@/server/worker/reconcile";
-import { teardownDeletedTestbeds } from "@/server/worker/teardown";
+import { releaseDeletedTestbeds } from "@/server/worker/release";
 
 // Spec 0016 AC-12: each action the scope names writes one entry with its
 // actor, action, target, and time, through the real server function. Admin
@@ -189,13 +189,16 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
       );
     }));
 
-  it("records a testbed's creation with its access group, edit, deletion, and group teardown", () =>
+  it("records a testbed's creation, edit, deletion, and group release", () =>
     inRollback(async (trx) => {
       quiet();
       const admin = await makeUser(trx, { role: "admin" });
       const type = await makeType(trx);
+      const tag = unique();
+      const name = `NileLab${tag}Admin`;
       const input: TestbedInput = {
-        name: `Lab ${unique()}`,
+        name,
+        domain: `lab-${tag}.example.test`,
         testbedTypeId: type.id,
         idpApiKeyId: null,
         portalUrl: "https://portal.example.test",
@@ -210,26 +213,13 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
           },
         ],
       };
-      const ak = fakeAuthentik([]);
+      const groupPk = crypto.randomUUID();
+      const ak = fakeAuthentik([], { groups: [markedGroup(groupPk, name)] });
       const created = await createTestbed(ak.api, asConn(trx), input, admin.id);
       if (!created.ok) throw new Error(JSON.stringify(created.error));
       const id = created.value.id;
-      const { authentik_group_pk: groupPk } = await trx
-        .selectFrom("testbeds")
-        .select("authentik_group_pk")
-        .where("id", "=", id)
-        .executeTakeFirstOrThrow();
-      if (groupPk === null) throw new Error("expected a group");
       expect(await entryFor(trx, "testbed.created", id)).toEqual(
         expected(admin.id, "testbed.created", "testbed", id),
-      );
-      expect(await entryFor(trx, "authentik_group.created", groupPk)).toEqual(
-        expected(
-          admin.id,
-          "authentik_group.created",
-          "authentik_group",
-          groupPk,
-        ),
       );
 
       expect(
@@ -237,7 +227,7 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
           await updateTestbed(
             asConn(trx),
             id,
-            { ...input, name: `${input.name} v2` },
+            { ...input, domain: `moved-${tag}.example.test` },
             admin.id,
           )
         ).ok,
@@ -251,10 +241,10 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
         expected(admin.id, "testbed.deleted", "testbed", id),
       );
 
-      // The worker tears the emptied group down, as the system.
-      await teardownDeletedTestbeds(ak.api, asConn(trx));
-      expect(await entryFor(trx, "authentik_group.deleted", groupPk)).toEqual(
-        expected(null, "authentik_group.deleted", "authentik_group", groupPk),
+      // The worker lets the emptied group go, as the system; it deletes none.
+      await releaseDeletedTestbeds(ak.api, asConn(trx));
+      expect(await entryFor(trx, "authentik_group.released", groupPk)).toEqual(
+        expected(null, "authentik_group.released", "authentik_group", groupPk),
       );
     }));
 
@@ -278,7 +268,7 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
       const ended = await makeUser(trx, { authentik_user_pk: PK + 2 });
       const ak = fakeAuthentik(
         [fakeLearner(PK + 1), fakeLearner(PK + 2, { groups: [pk] })],
-        { groups: [fakeGroup(pk, `pod-${testbed.slug}`)] },
+        { groups: [markedGroup(pk, testbed.name)] },
       );
 
       await reconcileAccess(ak.api, asConn(trx), OFF);

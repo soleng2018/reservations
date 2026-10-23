@@ -51,6 +51,7 @@ describe("AUDIT_ACTION_INFO", () => {
       "authentik_group.deleted",
       "access.granted",
       "access.revoked",
+      "authentik_group.released",
     ]);
     expect(areaActions("users")).toContain("set_password.resent");
     expect(areaActions("admin")).toEqual([
@@ -92,7 +93,8 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "booking.refused_duplicate_email": "booking_form",
   "user.created_in_authentik": "booking_form",
   "user.tagged_in_authentik": "booking_form",
-  "authentik_group.deleted": "system",
+  "authentik_group.released": "system",
+  "testbed.group_relinked": "system",
   "access.granted": "system",
   "access.revoked": "system",
   "admin.sign_in_refused": "system",

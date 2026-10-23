@@ -46,5 +46,10 @@ export const AuditAction = z.enum([
   "booking.rescheduled",
   // The admin's own row, the first time the console learns their zone.
   "admin.timezone_set",
+  // Feature 19 (spec 0017). The groups are predefined, so the app never
+  // creates or deletes one: the worker releases a deleted testbed's group
+  // (AC-9), and the reconciler found a recreated group again by name (AC-10).
+  "authentik_group.released",
+  "testbed.group_relinked",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

@@ -120,6 +120,9 @@ export async function makeTestbed(
     .values({
       name: `Testbed ${id}`,
       slug: `testbed-${id}`,
+      // A live row needs a domain and a group pk (spec 0017 AC-11), each
+      // unique among live rows.
+      domain: `t-${id}.example.test`,
       testbed_type_id: testbedTypeId,
       portal_url: "https://portal.example.test",
       lms_url: "https://lms.example.test",

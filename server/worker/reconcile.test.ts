@@ -2,9 +2,11 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fakeAuthentik,
-  fakeGroup,
   fakeLearner,
   fakeUser,
+  fakeGroup,
+  groupWrites,
+  markedGroup,
 } from "@/server/authentik/testing";
 import {
   cancelOwnBooking,
@@ -70,7 +72,7 @@ const audited = (trx: Kysely<DB>, action: string) =>
 // pk numbers high enough never to meet a real Authentik pk in the shared DB.
 const PK = 900_000 + Math.floor(Math.random() * 90_000);
 
-// covers: AC-12
+// covers: AC-12, spec 0017 AC-4 (no group is ever written)
 describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
   it("adds the Current learner, removes the ended one, keeps untagged members", () =>
     inRollback(async (trx) => {
@@ -88,7 +90,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
           fakeUser({ pk: PK + 3, groups: [pk] }),
         ],
         {
-          groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+          groups: [markedGroup(pk, testbed.name)],
           sessions: [
             {
               uuid: "s1",
@@ -103,6 +105,8 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
       const members = ak.users.filter((u) => u.groups.includes(pk));
       expect(members.map((u) => u.pk).sort()).toEqual([PK + 1, PK + 3]);
       expect(ak.sessions).toEqual([]);
+      expect(groupWrites(ak.writes)).toEqual([]);
+      expect(ak.groupReads.every((g) => g.includeUsers === "false")).toBe(true);
       expect(await audited(trx, "access.granted")).toEqual([
         expect.objectContaining({
           target_type: "booking",
@@ -128,7 +132,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         .where("id", "=", testbed.id)
         .execute();
       const ak = fakeAuthentik([fakeLearner(PK + 1, { groups: [pk] })], {
-        groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+        groups: [markedGroup(pk, testbed.name)],
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.users[0]?.groups).toEqual([]);
@@ -147,10 +151,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
       const ak = fakeAuthentik(
         [fakeLearner(PK + 1), fakeLearner(PK + 2), fakeLearner(PK + 3)],
         {
-          groups: [
-            fakeGroup(broken, `pod-${b.slug}`),
-            fakeGroup(good, `pod-${c.slug}`),
-          ],
+          groups: [markedGroup(broken, b.name), markedGroup(good, c.name)],
           fail: (m, p) => p.startsWith(`/core/groups/${broken}/`),
         },
       );
@@ -175,7 +176,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         2,
       );
       const ak = fakeAuthentik([fakeLearner(PK + 1)], {
-        groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+        groups: [markedGroup(pk, testbed.name)],
         fail: (m, p) => p.endsWith("/add_user/"),
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -194,7 +195,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         fakeLearner(PK + 10 + i, { groups: [pk] }),
       );
       const ak = fakeAuthentik(stale, {
-        groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+        groups: [markedGroup(pk, testbed.name)],
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.users.filter((u) => u.groups.includes(pk))).toEqual([]);
@@ -218,7 +219,7 @@ describe.skipIf(!hasDb)("reconcileAccess skips deactivated learners", () => {
         .where("id", "=", user.id)
         .execute();
       const ak = fakeAuthentik([fakeLearner(PK + 7, { groups: [pk] })], {
-        groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+        groups: [markedGroup(pk, testbed.name)],
       });
 
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -267,10 +268,7 @@ describe.skipIf(!hasDb)(
           .executeTakeFirstOrThrow()
       ).version;
       const ak = fakeAuthentik([fakeLearner(PK + 20, { groups: [pkA] })], {
-        groups: [
-          fakeGroup(pkA, `pod-${a.slug}`),
-          fakeGroup(pkB, `pod-${b.slug}`),
-        ],
+        groups: [markedGroup(pkA, a.name), markedGroup(pkB, b.name)],
         sessions: [
           { uuid: "s20", user: PK + 20, username: `learner-${PK + 20}@x.test` },
         ],
@@ -412,7 +410,7 @@ describe.skipIf(!hasDb)(
         fakeAuthentik(
           pks.map((p) => fakeLearner(p, { groups: [pk] })),
           {
-            groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+            groups: [markedGroup(pk, testbed.name)],
             sessions: pks.map((p) => ({
               uuid: `s${p}`,
               user: p,
@@ -519,7 +517,7 @@ describe.skipIf(!hasDb)(
           authentik_group_pk: pk,
         });
         const fake = fakeAuthentik([fakeLearner(PK + 43, { groups: [pk] })], {
-          groups: [fakeGroup(pk, `pod-${testbed.slug}`)],
+          groups: [markedGroup(pk, testbed.name)],
         });
         const revoker = fakeRevoker();
         vi.spyOn(console, "error").mockImplementation(() => {});
@@ -615,7 +613,7 @@ describe.skipIf(!hasDb)(
             groups: [
               ...(await trx
                 .selectFrom("testbeds")
-                .select(["authentik_group_pk", "slug"])
+                .select(["authentik_group_pk", "name"])
                 .where("authentik_group_pk", "in", [
                   ...first.ak().users.flatMap((u) => u.groups),
                   ...second.ak().users.flatMap((u) => u.groups),
@@ -623,7 +621,7 @@ describe.skipIf(!hasDb)(
                 .execute()
                 .then((rows) =>
                   rows.map((r) =>
-                    fakeGroup(r.authentik_group_pk ?? "", `pod-${r.slug}`),
+                    markedGroup(r.authentik_group_pk ?? "", r.name),
                   ),
                 )),
             ],
@@ -646,3 +644,322 @@ describe.skipIf(!hasDb)(
       }));
   },
 );
+
+const errorsAbout = (spy: { mock: { calls: unknown[][] } }, id: string) =>
+  spy.mock.calls.map((c) => String(c[0])).filter((line) => line.includes(id));
+
+// covers: spec 0017 AC-10 (the guard on every write, the stale check)
+describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("refuses an add to a group without the marker, yet still removes ended learners from it", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      await bookingOn(trx, testbed.id, type.id, PK + 60, -1, 2);
+      const ak = fakeAuthentik(
+        [
+          fakeLearner(PK + 60),
+          // Tagged, in the group, no booking: goes on the first tick.
+          fakeLearner(PK + 62, { groups: [pk] }),
+          // Untagged: never touched.
+          fakeUser({ pk: PK + 63, groups: [pk] }),
+        ],
+        { groups: [fakeGroup(pk, testbed.name)] },
+      );
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+
+      const members = ak.users.filter((u) => u.groups.includes(pk));
+      expect(members.map((u) => u.pk)).toEqual([PK + 63]);
+      expect(await audited(trx, "access.granted")).toEqual([]);
+      // One line for the testbed, with the count of refused adds.
+      const lines = errorsAbout(error, testbed.id);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("1 add(s) refused");
+      expect(lines[0]).toContain("not_testbed_group");
+    }));
+
+  it("never adds to a group with a role, a parent, or a superuser flag", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const [rolePk, parentPk, superPk] = [groupPk(), groupPk(), groupPk()];
+      const tb = (pk: string) =>
+        makeTestbed(trx, type.id, { authentik_group_pk: pk });
+      const [a, b, c] = [
+        await tb(rolePk),
+        await tb(parentPk),
+        await tb(superPk),
+      ];
+      await bookingOn(trx, a.id, type.id, PK + 64, -1, 2);
+      await bookingOn(trx, b.id, type.id, PK + 65, -1, 2);
+      await bookingOn(trx, c.id, type.id, PK + 66, -1, 2);
+      const ak = fakeAuthentik(
+        [fakeLearner(PK + 64), fakeLearner(PK + 65), fakeLearner(PK + 66)],
+        {
+          groups: [
+            markedGroup(rolePk, a.name, { roles: ["r1"] }),
+            markedGroup(parentPk, b.name, { parents: ["admins-uuid"] }),
+            markedGroup(superPk, c.name, { is_superuser: true }),
+          ],
+        },
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users.flatMap((u) => u.groups)).toEqual([]);
+      expect(ak.writes).toEqual([]);
+    }));
+
+  it("finds a recreated group by name, stores its pk, audits it, and adds the learner in the same run", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const [oldPk, newPk] = [groupPk(), groupPk()];
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: oldPk,
+      });
+      const { booking, user } = await bookingOn(
+        trx,
+        testbed.id,
+        type.id,
+        PK + 70,
+        -1,
+        2,
+      );
+      // The owner deleted the old group and made it again: a new pk.
+      const ak = fakeAuthentik([fakeLearner(PK + 70)], {
+        groups: [markedGroup(newPk, testbed.name)],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+
+      const stored = await trx
+        .selectFrom("testbeds")
+        .select("authentik_group_pk")
+        .where("id", "=", testbed.id)
+        .executeTakeFirstOrThrow();
+      expect(stored.authentik_group_pk).toBe(newPk);
+      expect(await audited(trx, "testbed.group_relinked")).toEqual([
+        expect.objectContaining({
+          target_type: "testbed",
+          target_id: testbed.id,
+          metadata: { testbedId: testbed.id, from: oldPk, to: newPk },
+        }),
+      ]);
+      expect(ak.users[0]?.groups).toEqual([newPk]);
+      expect(await audited(trx, "access.granted")).toEqual([
+        expect.objectContaining({ target_id: booking.id }),
+      ]);
+      expect(user.id).toBeDefined();
+      expect(groupWrites(ak.writes)).toEqual([]);
+    }));
+
+  it("treats a group the owner renamed as stale: relinks by name, and writes nothing to the renamed group", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const [renamedPk, namedPk] = [groupPk(), groupPk()];
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: renamedPk,
+      });
+      await bookingOn(trx, testbed.id, type.id, PK + 71, -1, 2);
+      const ak = fakeAuthentik(
+        [
+          fakeLearner(PK + 71),
+          // A tagged member of the renamed group, who must stay.
+          fakeLearner(PK + 72, { groups: [renamedPk] }),
+        ],
+        {
+          groups: [
+            markedGroup(renamedPk, "RenamedByTheOwner"),
+            markedGroup(namedPk, testbed.name),
+          ],
+        },
+      );
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users.find((u) => u.pk === PK + 71)?.groups).toEqual([namedPk]);
+      expect(ak.users.find((u) => u.pk === PK + 72)?.groups).toEqual([
+        renamedPk,
+      ]);
+      expect(ak.writes).toEqual([`POST /core/groups/${namedPk}/add_user/`]);
+    }));
+
+  it("skips a stale testbed whose name matches no usable group, logging once and writing nothing", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const [stalePk, goodPk] = [groupPk(), groupPk()];
+      const stale = await makeTestbed(trx, type.id, {
+        authentik_group_pk: stalePk,
+      });
+      const good = await makeTestbed(trx, type.id, {
+        authentik_group_pk: goodPk,
+      });
+      await bookingOn(trx, stale.id, type.id, PK + 73, -1, 2);
+      await bookingOn(trx, good.id, type.id, PK + 74, -1, 2);
+      const ak = fakeAuthentik(
+        [
+          fakeLearner(PK + 73),
+          fakeLearner(PK + 74),
+          fakeLearner(PK + 75, { groups: [stalePk] }),
+        ],
+        {
+          groups: [
+            markedGroup(stalePk, "RenamedByTheOwner"),
+            markedGroup(goodPk, good.name),
+          ],
+        },
+      );
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+
+      expect(errorsAbout(error, stale.id)).toHaveLength(1);
+      expect(ak.users.find((u) => u.pk === PK + 73)?.groups).toEqual([]);
+      // The stale group is untouched, its tagged member included.
+      expect(ak.users.find((u) => u.pk === PK + 75)?.groups).toEqual([stalePk]);
+      // The other testbed still reconciled.
+      expect(ak.users.find((u) => u.pk === PK + 74)?.groups).toEqual([goodPk]);
+      expect(await audited(trx, "testbed.group_relinked")).toEqual([]);
+    }));
+
+  it("does not relink to a group another live testbed holds", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const [stalePk, takenPk] = [groupPk(), groupPk()];
+      const stale = await makeTestbed(trx, type.id, {
+        authentik_group_pk: stalePk,
+      });
+      // `stale`'s name is a group another live testbed already holds.
+      const owner = await makeTestbed(trx, type.id, {
+        name: "Other",
+        authentik_group_pk: takenPk,
+      });
+      await bookingOn(trx, stale.id, type.id, PK + 76, -1, 2);
+      const ak = fakeAuthentik([fakeLearner(PK + 76)], {
+        groups: [markedGroup(takenPk, stale.name)],
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+
+      const row = await trx
+        .selectFrom("testbeds")
+        .select("authentik_group_pk")
+        .where("id", "=", stale.id)
+        .executeTakeFirstOrThrow();
+      expect(row.authentik_group_pk).toBe(stalePk);
+      expect(errorsAbout(error, stale.id)).toHaveLength(1);
+      expect(owner.id).toBeDefined();
+      expect(ak.writes).toEqual([]);
+    }));
+
+  it("leaves a deleted testbed's missing group alone: no relink, no error log", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const gone = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+        deleted_at: new Date(),
+      });
+      // A group with the deleted testbed's name exists, but is not relinked.
+      const ak = fakeAuthentik([], {
+        groups: [markedGroup(groupPk(), gone.name)],
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(errorsAbout(error, gone.id)).toEqual([]);
+      expect(await audited(trx, "testbed.group_relinked")).toEqual([]);
+      const row = await trx
+        .selectFrom("testbeds")
+        .select("authentik_group_pk")
+        .where("id", "=", gone.id)
+        .executeTakeFirstOrThrow();
+      expect(row.authentik_group_pk).toBe(pk);
+    }));
+
+  // covers: AC-10 (a), a deleted testbed and a new live one on one group
+  it.each([
+    ["deleted first", -2, 0],
+    ["live first", 0, -2],
+  ] as const)(
+    "does not let a deleted testbed's row remove the live one's learners (%s)",
+    (_, liveAge, deletedAge) =>
+      inRollback(async (trx) => {
+        const type = await makeType(trx);
+        const pk = groupPk();
+        const at = (hours: number) => new Date(Date.now() + hours * 3_600_000);
+        const live = await makeTestbed(trx, type.id, {
+          authentik_group_pk: pk,
+          created_at: at(liveAge),
+        });
+        // The same name and group again after a delete and re-add.
+        await makeTestbed(trx, type.id, {
+          name: `${live.name} old`,
+          authentik_group_pk: pk,
+          deleted_at: new Date(),
+          created_at: at(deletedAge),
+        });
+        await bookingOn(trx, live.id, type.id, PK + 80, -1, 2);
+        const ak = fakeAuthentik(
+          [
+            fakeLearner(PK + 80, { groups: [pk] }),
+            // Tagged and with no booking: this one does go.
+            fakeLearner(PK + 81, { groups: [pk] }),
+          ],
+          { groups: [markedGroup(pk, live.name)] },
+        );
+        await reconcileAccess(ak.api, asConn(trx), OFF);
+        expect(ak.users.find((u) => u.pk === PK + 80)?.groups).toEqual([pk]);
+        expect(ak.users.find((u) => u.pk === PK + 81)?.groups).toEqual([]);
+        expect(await audited(trx, "access.revoked")).toHaveLength(1);
+      }),
+  );
+
+  it("skips a released testbed: its group is not even read", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+        deleted_at: new Date(),
+        authentik_group_deleted_at: new Date(),
+      });
+      const ak = fakeAuthentik([fakeLearner(PK + 82, { groups: [pk] })], {
+        groups: [markedGroup(pk, "Released")],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.groupReads.filter((g) => g.path.includes(pk))).toEqual([]);
+      expect(ak.writes).toEqual([]);
+    }));
+
+  // covers: AC-10 (d), a not found answer on the read just before a write
+  it("skips the write when the group is gone at the fresh read, logging once", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      await bookingOn(trx, testbed.id, type.id, PK + 83, -1, 2);
+      // The first read (the reconciler's own) answers; later ones are 404.
+      let reads = 0;
+      const ak = fakeAuthentik([fakeLearner(PK + 83)], {
+        groups: [markedGroup(pk, testbed.name)],
+        reply: (m, p) =>
+          m === "GET" && p === `/core/groups/${pk}/` && ++reads > 1
+            ? new Response('{"detail":"Not found."}', {
+                status: 404,
+                headers: { "Content-Type": "application/json" },
+              })
+            : undefined,
+      });
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.writes).toEqual([]);
+      const lines = errorsAbout(error, testbed.id);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("1 add(s) refused");
+    }));
+});

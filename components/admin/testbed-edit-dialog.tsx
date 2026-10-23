@@ -11,11 +11,6 @@ import type { SelectOption } from "@/components/form-select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { Result } from "@/lib/result";
 import { TESTBED_MESSAGES, type TestbedEditDefaults } from "@/lib/testbeds";
 
@@ -27,15 +22,13 @@ type Loaded =
 
 const LOADING: Loaded = { kind: "loading" };
 
-// Spec 0007 AC-3 and AC-4: a row's edit button. A ready testbed's dialog
+// Spec 0007 AC-3: a row's edit button. A ready testbed's dialog
 // loads the testbed on open (the only payload with OS logins), shows a
 // loading state until then, and keeps Save off until the form is there. The
-// loaded values are dropped once the dialog has closed. A testbed still
-// being set up gets a disabled button with a tooltip.
+// loaded values are dropped once the dialog has closed.
 export function TestbedEditDialog({
   id,
   name,
-  ready,
   types,
   idps,
   load,
@@ -43,7 +36,6 @@ export function TestbedEditDialog({
 }: {
   readonly id: string;
   readonly name: string;
-  readonly ready: boolean;
   readonly types: readonly SelectOption[];
   readonly idps: readonly SelectOption[];
   readonly load: (
@@ -54,8 +46,6 @@ export function TestbedEditDialog({
   const [loaded, setLoaded] = useState<Loaded>(LOADING);
   // Only the latest open's answer counts.
   const latest = useRef(0);
-
-  if (!ready) return <NotReadyEditButton name={name} />;
 
   const onOpen = () => {
     latest.current += 1;
@@ -138,29 +128,5 @@ function LoadAlert({ message }: { readonly message: string }) {
       <CircleAlertIcon aria-hidden="true" />
       <AlertDescription>{message}</AlertDescription>
     </Alert>
-  );
-}
-
-// AC-4. aria-disabled, not disabled, so keyboard users can still reach the
-// button and hear why.
-function NotReadyEditButton({ name }: { readonly name: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label={`Edit ${name}, still being set up`}
-            aria-disabled="true"
-            className="cursor-not-allowed opacity-50"
-            onClick={(e) => e.preventDefault()}
-          />
-        }
-      >
-        <PencilIcon aria-hidden="true" />
-      </TooltipTrigger>
-      <TooltipContent>Still being set up</TooltipContent>
-    </Tooltip>
   );
 }

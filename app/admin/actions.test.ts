@@ -12,6 +12,7 @@ import {
   fakeOAuthClientText,
   fakeServiceAccountKey,
 } from "@/server/google/testing";
+import type { CoreApi } from "@/server/authentik/client";
 import type { DB } from "@/server/db/types";
 import type {
   VerifySignInError,
@@ -43,6 +44,9 @@ const ctx = vi.hoisted(() => ({
   signInCalls: [] as VerifySignInInput[],
   // The response cookies a Server Action set, by name.
   cookies: new Map<string, { value: string; options: unknown }>(),
+  // The fake Authentik the testbed create looks its group up in. Never the
+  // real one: dev and production share it.
+  authentik: undefined as CoreApi | undefined,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -122,11 +126,20 @@ vi.mock("@/server/google/verify", async (importOriginal) => ({
       : ctx.signIn;
   },
 }));
+vi.mock("@/server/authentik/client", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  authentik: () => {
+    if (!ctx.authentik) throw new Error("the test did not set ctx.authentik");
+    return ctx.authentik;
+  },
+}));
 vi.mock("@/server/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/server/db")>();
   return { ...real, db: () => ctx.conn ?? real.db() };
 });
 
+const { fakeAuthentik, markedGroup, fakeGroup } =
+  await import("@/server/authentik/testing");
 const {
   checkApiKeyDelete,
   checkTestbedDelete,
@@ -165,9 +178,17 @@ const typeForm = (name: string) => {
   return f;
 };
 
-const testbedForm = (name: string, typeId: string) => {
+const uniqueDomain = () =>
+  `lab-${crypto.randomUUID().slice(0, 8)}.example.test`;
+
+const testbedForm = (
+  name: string,
+  typeId: string,
+  domain: string = uniqueDomain(),
+) => {
   const f = new FormData();
   f.set("name", name);
+  f.set("domain", domain);
   f.set("testbedTypeId", typeId);
   f.set("portalUrl", "https://portal.example.test");
   f.set("lmsUrl", "https://lms.example.test");
@@ -278,6 +299,37 @@ describe.skipIf(!hasDb)("admin create actions require an admin (AC-13)", () => {
           "clients.0.name": "Enter a name.",
         },
       });
+    }));
+
+  // covers: spec 0017 AC-1
+  it("asks for a valid domain with field errors, before any lookup", () =>
+    run(async (trx) => {
+      const authId = await makeAuthUser(trx, 9004);
+      await makeUser(trx, {
+        role: "admin",
+        company: null,
+        auth_user_id: authId,
+      });
+      ctx.authUserId = authId;
+      const type = await makeType(trx);
+      const empty = testbedForm("Lab", type.id, "  ");
+      expect(await createTestbedAction(IDLE, empty)).toEqual({
+        kind: "error",
+        fields: { domain: "Enter the domain." },
+      });
+      const missing = testbedForm("Lab", type.id);
+      missing.delete("domain");
+      expect(await createTestbedAction(IDLE, missing)).toEqual({
+        kind: "error",
+        fields: { domain: "Enter the domain." },
+      });
+      for (const bad of ["nile", "a..b.com", "nile.global.", "nile.c0m"])
+        expect(
+          await createTestbedAction(IDLE, testbedForm("Lab", type.id, bad)),
+        ).toEqual({
+          kind: "error",
+          fields: { domain: "Enter a domain name, like nile.global." },
+        });
     }));
 });
 
@@ -1607,7 +1659,8 @@ describe.skipIf(!hasDb)("API key actions", () => {
   });
 });
 
-// Feature 9 (spec 0007): testbed load, edit, and delete actions.
+// Feature 9 (spec 0007) and feature 19 (spec 0017): testbed create, load,
+// edit, and delete actions.
 describe.skipIf(!hasDb)("testbed actions", () => {
   const GONE = "This testbed no longer exists.";
 
@@ -1634,6 +1687,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       } finally {
         ctx.conn = undefined;
         ctx.authUserId = undefined;
+        ctx.authentik = undefined;
       }
     });
 
@@ -1653,11 +1707,13 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         position: 0,
       })
       .execute();
-    return { type, testbed };
+    return { type, testbed, domain: testbed.domain ?? "" };
   };
 
-  const editForm = (name: string, typeId: string) => {
-    const f = testbedForm(name, typeId);
+  // The edit form posts no name: the name is the Authentik group.
+  const editForm = (typeId: string, domain: string) => {
+    const f = testbedForm("", typeId, domain);
+    f.delete("name");
     f.set("idpApiKeyId", "");
     f.append("clientKind", "wireless");
     f.append("clientName", "Air 1");
@@ -1670,46 +1726,172 @@ describe.skipIf(!hasDb)("testbed actions", () => {
   const row = (trx: Kysely<DB>, id: string) =>
     trx
       .selectFrom("testbeds")
-      .select(["name", "deleted_at"])
+      .select(["name", "domain", "deleted_at"])
       .where("id", "=", id)
       .executeTakeFirstOrThrow();
 
-  // covers: AC-9
+  // covers: AC-9, spec 0017 AC-13
   it.each([
     ["anonymous", "/l0gin"],
     ["learner", "/auth/error?reason=not_authorized"],
   ] as const)("sends a %s caller to %s and changes nothing (AC-9)", (who, to) =>
     as(who, async (trx) => {
-      const { type, testbed } = await makeLab(trx);
+      const { type, testbed, domain } = await makeLab(trx);
+      ctx.authentik = fakeAuthentik([]).api;
+      const created = testbedForm(`Blocked${crypto.randomUUID()}`, type.id);
 
       expect(await redirectOf(() => loadTestbedForEdit(testbed.id))).toBe(to);
       expect(
         await redirectOf(() =>
-          updateTestbedAction(testbed.id, IDLE, editForm("Changed", type.id)),
+          updateTestbedAction(
+            testbed.id,
+            IDLE,
+            editForm(type.id, `moved-${domain}`),
+          ),
         ),
       ).toBe(to);
+      expect(await redirectOf(() => createTestbedAction(IDLE, created))).toBe(
+        to,
+      );
       expect(await redirectOf(() => checkTestbedDelete(testbed.id))).toBe(to);
       expect(await redirectOf(() => deleteTestbedAction(testbed.id))).toBe(to);
       expect(await row(trx, testbed.id)).toEqual({
         name: testbed.name,
+        domain,
         deleted_at: null,
       });
     }),
   );
 
-  // covers: AC-3
-  it("loads a testbed for edit, OS logins included, or says it is gone", () =>
+  // covers: spec 0017 AC-3, AC-4, AC-7: create through the action
+  describe("create", () => {
+    const labGroup = () => {
+      const name = `NileLab${crypto.randomUUID().slice(0, 8)}Admin`;
+      return { name, group: markedGroup(crypto.randomUUID(), name) };
+    };
+
+    it("creates a testbed on the owner's group", () =>
+      as("admin", async (trx) => {
+        const { type } = await makeLab(trx);
+        const { name, group } = labGroup();
+        const ak = fakeAuthentik([], { groups: [group] });
+        ctx.authentik = ak.api;
+        const form = testbedForm(name, type.id);
+        expect(await createTestbedAction(IDLE, form)).toEqual({
+          kind: "saved",
+          message: `Created ${name}.`,
+        });
+        const made = await trx
+          .selectFrom("testbeds")
+          .select(["domain", "authentik_group_pk"])
+          .where("name", "=", name)
+          .executeTakeFirstOrThrow();
+        expect(made).toEqual({
+          domain: form.get("domain"),
+          authentik_group_pk: group.pk,
+        });
+        expect(ak.writes).toEqual([]);
+      }));
+
+    it("shows a taken name or domain as a field error", () =>
+      as("admin", async (trx) => {
+        const { type, testbed, domain } = await makeLab(trx);
+        const { name, group } = labGroup();
+        ctx.authentik = fakeAuthentik([], { groups: [group] }).api;
+        expect(
+          await createTestbedAction(
+            IDLE,
+            testbedForm(testbed.name.toUpperCase(), type.id),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: { name: "A testbed with this name already exists." },
+        });
+        expect(
+          await createTestbedAction(IDLE, testbedForm(name, type.id, domain)),
+        ).toEqual({
+          kind: "error",
+          fields: { domain: "A testbed with this domain already exists." },
+        });
+        // Both taken: the name only.
+        expect(
+          await createTestbedAction(
+            IDLE,
+            testbedForm(testbed.name, type.id, domain),
+          ),
+        ).toEqual({
+          kind: "error",
+          fields: { name: "A testbed with this name already exists." },
+        });
+      }));
+
+    it("shows a missing, unmarked, or used group under the Name field", () =>
+      as("admin", async (trx) => {
+        const { type, testbed } = await makeLab(trx);
+        const plain = labGroup();
+        const used = labGroup();
+        await makeTestbed(trx, type.id, { authentik_group_pk: used.group.pk });
+        ctx.authentik = fakeAuthentik([], {
+          groups: [fakeGroup(plain.group.pk, plain.name), used.group],
+        }).api;
+        const refuse = async (name: string) =>
+          createTestbedAction(IDLE, testbedForm(name, type.id));
+
+        expect(await refuse(`${labGroup().name}Missing`)).toEqual({
+          kind: "error",
+          fields: { name: "No Authentik group with this name exists." },
+        });
+        expect(await refuse(plain.name)).toEqual({
+          kind: "error",
+          fields: {
+            name: "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
+          },
+        });
+        expect(await refuse(used.name)).toEqual({
+          kind: "error",
+          fields: { name: "Another testbed already uses that group." },
+        });
+        expect(testbed.id).toBeDefined();
+      }));
+
+    it("says Authentik could not be checked, as a form level message", () =>
+      as("admin", async (trx) => {
+        const { type } = await makeLab(trx);
+        const { name } = labGroup();
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        ctx.authentik = fakeAuthentik([], { down: true }).api;
+        expect(
+          await createTestbedAction(IDLE, testbedForm(name, type.id)),
+        ).toEqual({
+          kind: "error",
+          message: "Couldn't check the Authentik group, try again.",
+          fields: {},
+        });
+        error.mockRestore();
+        const written = await trx
+          .selectFrom("testbeds")
+          .select("id")
+          .where("name", "=", name)
+          .execute();
+        expect(written).toEqual([]);
+      }));
+  });
+
+  // covers: AC-3, spec 0017 AC-5
+  it("loads a testbed for edit, OS logins and domain included, or says it is gone", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
-      expect(await loadTestbedForEdit(testbed.id)).toMatchObject({
+      const { type, testbed, domain } = await makeLab(trx);
+      const loaded = await loadTestbedForEdit(testbed.id);
+      expect(loaded).toMatchObject({
         ok: true,
         value: {
           name: testbed.name,
-          groupName: `pod-${testbed.slug}`,
+          domain,
           testbedTypeId: type.id,
           clients: [{ name: "Air 1", osUsername: "lab", osPassword: "pw" }],
         },
       });
+      expect(loaded.ok && loaded.value).not.toHaveProperty("groupName");
       const gone = { ok: false, error: "not_found" };
       expect(await loadTestbedForEdit("not-a-uuid")).toEqual(gone);
       await trx
@@ -1720,29 +1902,36 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       expect(await loadTestbedForEdit(testbed.id)).toEqual(gone);
     }));
 
-  // covers: AC-3, AC-4
+  // covers: AC-3, AC-4, spec 0017 AC-2, AC-5, AC-6
   it("saves an edit and maps every refusal", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
-      const name = `Edited ${crypto.randomUUID().slice(0, 8)}`;
+      const { type, testbed, domain } = await makeLab(trx);
+      const moved = `moved-${crypto.randomUUID().slice(0, 8)}.example.test`;
       expect(
-        await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id)),
-      ).toEqual({ kind: "saved", message: `Updated ${name}.` });
-      expect((await row(trx, testbed.id)).name).toBe(name);
+        await updateTestbedAction(testbed.id, IDLE, editForm(type.id, moved)),
+      ).toEqual({ kind: "saved", message: `Updated ${testbed.name}.` });
+      expect((await row(trx, testbed.id)).domain).toBe(moved);
 
       const taken = await makeTestbed(trx, type.id);
       expect(
         await updateTestbedAction(
           testbed.id,
           IDLE,
-          editForm(taken.name.toLowerCase(), type.id),
+          editForm(type.id, taken.domain ?? ""),
         ),
       ).toEqual({
         kind: "error",
-        fields: { name: "A testbed with this name already exists." },
+        fields: { domain: "A testbed with this domain already exists." },
       });
 
-      const noUser = editForm(name, type.id);
+      expect(
+        await updateTestbedAction(testbed.id, IDLE, editForm(type.id, "nile")),
+      ).toEqual({
+        kind: "error",
+        fields: { domain: "Enter a domain name, like nile.global." },
+      });
+
+      const noUser = editForm(type.id, moved);
       noUser.set("clientOsUsername", "");
       expect(await updateTestbedAction(testbed.id, IDLE, noUser)).toEqual({
         kind: "error",
@@ -1751,26 +1940,79 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         },
       });
 
-      const notReady = await makeTestbed(trx, type.id, {
-        authentik_group_pk: null,
-      });
-      expect(
-        await updateTestbedAction(notReady.id, IDLE, editForm("X", type.id)),
-      ).toEqual({
-        kind: "error",
-        message: "This testbed is still being set up. Try again in a minute.",
-        fields: {},
-      });
       const gone = { kind: "error", message: GONE, fields: {} };
       expect(
-        await updateTestbedAction("not-a-uuid", IDLE, editForm("X", type.id)),
+        await updateTestbedAction(
+          "not-a-uuid",
+          IDLE,
+          editForm(type.id, domain),
+        ),
       ).toEqual(gone);
+    }));
+
+  // covers: spec 0017 AC-5, a forged name is never read
+  it("ignores a posted name: the name and group never change", () =>
+    as("admin", async (trx) => {
+      const { type, testbed, domain } = await makeLab(trx);
+      const before = await trx
+        .selectFrom("testbeds")
+        .select(["name", "slug", "authentik_group_pk"])
+        .where("id", "=", testbed.id)
+        .executeTakeFirstOrThrow();
+      const forged = editForm(type.id, domain);
+      forged.set("name", "Forged name");
+      forged.set("portalUrl", "https://portal2.example.test");
+      expect(await updateTestbedAction(testbed.id, IDLE, forged)).toEqual({
+        kind: "saved",
+        message: `Updated ${testbed.name}.`,
+      });
+      const after = await trx
+        .selectFrom("testbeds")
+        .select(["name", "slug", "authentik_group_pk", "portal_url"])
+        .where("id", "=", testbed.id)
+        .executeTakeFirstOrThrow();
+      expect(after).toEqual({
+        ...before,
+        portal_url: "https://portal2.example.test",
+      });
+    }));
+
+  // covers: spec 0017 AC-6
+  it("refuses a domain change while a reservation is live, on the domain field", () =>
+    as("admin", async (trx) => {
+      const { type, testbed, domain } = await makeLab(trx);
+      const learner = await makeUser(trx);
+      await trx
+        .insertInto("bookings")
+        .values({
+          user_id: learner.id,
+          testbed_id: testbed.id,
+          testbed_type_id: type.id,
+          starts_at: slot(-1),
+          ends_at: slot(1),
+          status: "confirmed",
+        })
+        .execute();
+      expect(
+        await updateTestbedAction(
+          testbed.id,
+          IDLE,
+          editForm(type.id, `moved-${domain}`),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: {
+          domain:
+            "You can't change the domain while this testbed has Upcoming or Current reservations.",
+        },
+      });
+      expect((await row(trx, testbed.id)).domain).toBe(domain);
     }));
 
   // covers: AC-2 (the IDP must be a live IDP key)
   it("refuses an IDP key deleted meanwhile, on create and edit", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
+      const { type, testbed, domain } = await makeLab(trx);
       const key = await trx
         .insertInto("api_keys")
         .values({
@@ -1786,10 +2028,16 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         kind: "error",
         fields: { idpApiKeyId: "That IDP key no longer exists." },
       };
-      const form = editForm(`New ${crypto.randomUUID().slice(0, 8)}`, type.id);
-      form.set("idpApiKeyId", key.id);
-      expect(await createTestbedAction(IDLE, form)).toEqual(idpGone);
-      expect(await updateTestbedAction(testbed.id, IDLE, form)).toEqual(
+      const name = `NileLab${crypto.randomUUID().slice(0, 8)}Admin`;
+      ctx.authentik = fakeAuthentik([], {
+        groups: [markedGroup(crypto.randomUUID(), name)],
+      }).api;
+      const create = testbedForm(name, type.id);
+      create.set("idpApiKeyId", key.id);
+      expect(await createTestbedAction(IDLE, create)).toEqual(idpGone);
+      const edit = editForm(type.id, domain);
+      edit.set("idpApiKeyId", key.id);
+      expect(await updateTestbedAction(testbed.id, IDLE, edit)).toEqual(
         idpGone,
       );
     }));
@@ -1853,9 +2101,16 @@ describe.skipIf(!hasDb)("testbed actions", () => {
   // covers: AC-2, AC-3 (the form's parallel lists keep each login on its row)
   it("keeps each OS login with its own client when only a later row has one", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
-      const f = testbedForm(testbed.name, type.id);
-      f.set("idpApiKeyId", "");
+      const { type, testbed, domain } = await makeLab(trx);
+      const f = editForm(type.id, domain);
+      for (const key of [
+        "clientKind",
+        "clientName",
+        "clientUrl",
+        "clientOsUsername",
+        "clientOsPassword",
+      ])
+        f.delete(key);
       for (const [kind, name, user, pass] of [
         ["wired", "Wired 1", "", ""],
         ["wireless", "Air 2", "  ops ", " p w "],
@@ -1883,27 +2138,32 @@ describe.skipIf(!hasDb)("testbed actions", () => {
   // covers: AC-3 (a save that changes nothing)
   it("says Updated for a save that changes nothing, and audits nothing more", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
-      const name = `Same ${crypto.randomUUID().slice(0, 8)}`;
-      await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id));
+      const { type, testbed, domain } = await makeLab(trx);
+      const form = () => {
+        const f = editForm(type.id, domain);
+        f.set("lmsUrl", "https://lms2.example.test");
+        return f;
+      };
+      await updateTestbedAction(testbed.id, IDLE, form());
       expect(await updatedAudits(trx, testbed.id)).toHaveLength(1);
 
-      expect(
-        await updateTestbedAction(testbed.id, IDLE, editForm(name, type.id)),
-      ).toEqual({ kind: "saved", message: `Updated ${name}.` });
+      expect(await updateTestbedAction(testbed.id, IDLE, form())).toEqual({
+        kind: "saved",
+        message: `Updated ${testbed.name}.`,
+      });
       expect(await updatedAudits(trx, testbed.id)).toHaveLength(1);
     }));
 
   // covers: AC-3 (gone testbed or type, by a well formed id)
   it("says the testbed is gone, or the type is, after a delete elsewhere", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
+      const { type, testbed, domain } = await makeLab(trx);
       const goneType = await makeType(trx, { deleted_at: new Date() });
       expect(
         await updateTestbedAction(
           testbed.id,
           IDLE,
-          editForm(testbed.name, goneType.id),
+          editForm(goneType.id, domain),
         ),
       ).toEqual({
         kind: "error",
@@ -1916,16 +2176,16 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         .where("id", "=", testbed.id)
         .execute();
       expect(
-        await updateTestbedAction(testbed.id, IDLE, editForm("X", type.id)),
+        await updateTestbedAction(testbed.id, IDLE, editForm(type.id, domain)),
       ).toEqual({ kind: "error", message: GONE, fields: {} });
     }));
 
   // covers: AC-2, AC-5 (an OS login never comes back in a refusal)
   it("never echoes an OS username or password in its errors", () =>
     as("admin", async (trx) => {
-      const { type, testbed } = await makeLab(trx);
+      const { type, testbed, domain } = await makeLab(trx);
       const canary = `canary-${crypto.randomUUID()}`;
-      const f = editForm(testbed.name, type.id);
+      const f = editForm(type.id, domain);
       f.set("clientOsUsername", canary.repeat(10));
       f.set("clientOsPassword", canary.repeat(10));
       const refused = await updateTestbedAction(testbed.id, IDLE, f);

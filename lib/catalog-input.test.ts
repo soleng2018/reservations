@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   ApiKeyCreateInput,
   ApiKeyUpdateInput,
+  DOMAIN_PATTERN,
+  DomainInput,
   HttpsUrl,
   TestbedInput,
   TestbedTypeInput,
+  TestbedUpdateInput,
 } from "./catalog-input";
+import { INVALID_DOMAINS, VALID_DOMAINS } from "./domain-samples";
 import { fieldErrors } from "./form-errors";
 
 const TYPE_ID = "6f1c2f9e-0000-4000-8000-000000000001";
@@ -80,6 +84,7 @@ describe("TestbedTypeInput (AC-1)", () => {
 describe("TestbedInput (AC-2)", () => {
   const valid = {
     name: "Bench 1",
+    domain: "nile.global",
     testbedTypeId: TYPE_ID,
     portalUrl: "https://portal.example.test",
     lmsUrl: "https://lms.example.test",
@@ -448,4 +453,65 @@ describe("a GOOGLE key's fields (spec 0013 AC-1, AC-25)", () => {
       });
     },
   );
+});
+
+// covers: spec 0017 AC-1
+describe("DomainInput (spec 0017 AC-1)", () => {
+  it.each(VALID_DOMAINS)("accepts %s", (domain) => {
+    expect(DomainInput.parse(domain)).toBe(domain);
+    expect(DOMAIN_PATTERN.test(domain)).toBe(true);
+  });
+
+  it.each(INVALID_DOMAINS)("refuses %s with the shape message", (domain) => {
+    const r = DomainInput.safeParse(domain);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toBe(
+      "Enter a domain name, like nile.global.",
+    );
+  });
+
+  it("trims and lower cases before checking", () => {
+    expect(DomainInput.parse("  NileWorkshop-1.COM ")).toBe(
+      "nileworkshop-1.com",
+    );
+  });
+
+  it("asks for the domain when it is empty, blank, or missing", () => {
+    ["", "   ", undefined].forEach((v) => {
+      const r = DomainInput.safeParse(v);
+      expect(r.error?.issues[0]?.message).toBe("Enter the domain.");
+    });
+  });
+
+  it("refuses a value over 253 characters before the pattern runs", () => {
+    const long = `${"a".repeat(60)}.`.repeat(5) + "com";
+    expect(long.length).toBeGreaterThan(253);
+    const r = DomainInput.safeParse(long);
+    expect(r.error?.issues).toHaveLength(1);
+  });
+
+  it("is a required field error on domain in the testbed form", () => {
+    const e = errorsOf(
+      TestbedInput.safeParse({
+        name: "Bench 1",
+        testbedTypeId: TYPE_ID,
+        portalUrl: "https://portal.example.test",
+        lmsUrl: "https://lms.example.test",
+        clients: [],
+      }),
+    );
+    expect(fieldErrors(e)).toEqual({ domain: "Enter the domain." });
+  });
+
+  it("drops a posted name from the update input (spec 0017 AC-5)", () => {
+    const parsed = TestbedUpdateInput.parse({
+      name: "Forged",
+      domain: "nile.global",
+      testbedTypeId: TYPE_ID,
+      portalUrl: "https://portal.example.test",
+      lmsUrl: "https://lms.example.test",
+      clients: [],
+    });
+    expect(parsed).not.toHaveProperty("name");
+  });
 });

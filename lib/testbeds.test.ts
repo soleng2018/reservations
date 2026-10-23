@@ -16,7 +16,7 @@ const client = {
 } as const;
 
 const before: TestbedValues = {
-  name: "Bench 1",
+  domain: "nile.global",
   testbedTypeId: "6f1c2f9e-0000-4000-8000-000000000001",
   idpApiKeyId: null,
   portalUrl: "https://portal.example.test",
@@ -24,8 +24,8 @@ const before: TestbedValues = {
   clients: [client],
 };
 
-// covers: spec 0007 AC-1 (client count label, search text)
-describe("list helpers (AC-1)", () => {
+// covers: spec 0007 AC-1 (client count label), spec 0017 AC-8 (search text)
+describe("list helpers (AC-1, spec 0017 AC-8)", () => {
   it.each([
     [0, "0 clients"],
     [1, "1 client"],
@@ -34,19 +34,24 @@ describe("list helpers (AC-1)", () => {
     expect(clientCountLabel(n)).toBe(label);
   });
 
-  it("searches name, type, and IDP name, leaving out a missing IDP", () => {
-    expect(
-      testbedSearchText({ name: "Bench", typeName: "Wi-Fi", idpName: "Okta" }),
-    ).toBe("Bench Wi-Fi Okta");
-    expect(
-      testbedSearchText({ name: "Bench", typeName: "Wi-Fi", idpName: null }),
-    ).toBe("Bench Wi-Fi");
+  const row = {
+    name: "NileWorkshop1Admin",
+    typeName: "Wi-Fi",
+    domain: "nileworkshop-1.com",
+    idpName: "Okta",
+  };
+
+  it("searches name, type, domain, and IDP name, leaving out a missing IDP", () => {
+    expect(testbedSearchText(row)).toBe(
+      "NileWorkshop1Admin Wi-Fi nileworkshop-1.com Okta",
+    );
+    expect(testbedSearchText({ ...row, idpName: null })).toBe(
+      "NileWorkshop1Admin Wi-Fi nileworkshop-1.com",
+    );
   });
 
   it("never matches the dash shown for a missing IDP", () => {
-    expect(
-      testbedSearchText({ name: "Bench", typeName: "Wi-Fi", idpName: null }),
-    ).not.toContain("—");
+    expect(testbedSearchText({ ...row, idpName: null })).not.toContain("—");
   });
 });
 
@@ -58,10 +63,12 @@ describe("testbedEditChange (AC-3, AC-5)", () => {
     );
   });
 
-  it("lists a renamed testbed's name without an access change", () => {
-    expect(testbedEditChange(before, { ...before, name: "Bench 2" })).toEqual({
+  it("lists a changed domain without an access change (spec 0017 AC-7)", () => {
+    expect(
+      testbedEditChange(before, { ...before, domain: "rw.nile.global" }),
+    ).toEqual({
       clientsChanged: false,
-      metadata: { name: { from: "Bench 1", to: "Bench 2" } },
+      metadata: { domain: { from: "nile.global", to: "rw.nile.global" } },
     });
   });
 
@@ -115,19 +122,19 @@ describe("testbedEditChange (AC-3, AC-5)", () => {
     });
   });
 
-  it("puts a rename, an LMS change, and a client change in one metadata", () => {
+  it("puts a domain change, an LMS change, and a client change in one metadata", () => {
     const lmsUrl = "https://lms2.example.test";
     expect(
       testbedEditChange(before, {
         ...before,
-        name: "Bench 2",
+        domain: "rw.nile.global",
         lmsUrl,
         clients: [],
       }),
     ).toEqual({
       clientsChanged: true,
       metadata: {
-        name: { from: "Bench 1", to: "Bench 2" },
+        domain: { from: "nile.global", to: "rw.nile.global" },
         lmsUrl: { from: before.lmsUrl, to: lmsUrl },
         clients: { from: 1, to: 0 },
         accessChanged: true,

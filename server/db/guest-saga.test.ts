@@ -220,12 +220,12 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
       });
     }));
 
-  it("refuses a testbed that cannot take bookings and writes no booking", () =>
+  it("refuses a deleted testbed and writes no booking", () =>
     inRollback(async (trx) => {
       const { input, testbed } = await setup(trx);
       await trx
         .updateTable("testbeds")
-        .set({ authentik_group_pk: null })
+        .set({ deleted_at: new Date() })
         .where("id", "=", testbed.id)
         .execute();
       expect(await startGuestBooking(trx, input)).toEqual({
