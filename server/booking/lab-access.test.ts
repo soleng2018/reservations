@@ -104,6 +104,20 @@ describe.skipIf(!hasDb)("ownLabAccess (AC-1)", () => {
       expect(json).not.toContain("student");
     }));
 
+  // covers: spec 0018 AC-5
+  it("shows the friendly name and never the group name", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(-1, 1);
+      const found = await ownLabAccess(trx, w.user.id, b.id);
+      expect(w.testbed.name).not.toBe(w.testbed.group_name);
+      expect(found).toMatchObject({
+        kind: "ok",
+        access: { testbedName: w.testbed.name },
+      });
+      expect(JSON.stringify(found)).not.toContain(w.testbed.group_name);
+    }));
+
   it("returns missing for every miss", () =>
     inRollback(async (trx) => {
       const w = await world(trx);

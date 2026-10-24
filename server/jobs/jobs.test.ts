@@ -1256,6 +1256,10 @@ describe.skipIf(!hasDb)("the calendar mirror (spec 0013 AC-19, AC-20)", () => {
       expect(cal.events.get(eventId)?.summary).toBe(
         `${user.name} · ${type.name} · ${testbed.name}`,
       );
+      // spec 0018 AC-5: the title carries the Name, not the group name.
+      expect(cal.events.get(eventId)?.summary).not.toContain(
+        testbed.group_name,
+      );
       expect(cal.requests[0]?.url).toContain(
         "/calendars/c_abc%40group.calendar.google.com/events/",
       );

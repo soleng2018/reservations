@@ -37,7 +37,9 @@ test.skip(
 
 const id = crypto.randomUUID().slice(0, 8);
 const typeName = `e2e type ${id}`;
+// The group name is the Authentik group; learners see only the friendly name.
 const testbedName = `dev-e2e-bench-${id}`;
+const friendlyName = `Bench ${id}`;
 const first = guest(`guest-${id}`);
 
 async function choose(page: Page, combobox: string, option: string) {
@@ -76,7 +78,10 @@ test.describe.serial("booking", () => {
     await makeTestbedGroup(testbedName, true);
     await page.getByRole("button", { name: "Add testbed" }).click();
     const testbedDialog = page.getByRole("dialog", { name: "Add testbed" });
-    await testbedDialog.getByLabel("Name", { exact: true }).fill(testbedName);
+    await testbedDialog.getByLabel("Name", { exact: true }).fill(friendlyName);
+    await testbedDialog
+      .getByLabel("Group Name", { exact: true })
+      .fill(testbedName);
     await testbedDialog
       .getByLabel("Domain", { exact: true })
       .fill(`dev-e2e-${id}.nile-test.invalid`);
@@ -88,12 +93,12 @@ test.describe.serial("booking", () => {
       .getByLabel("LMS URL")
       .fill("https://lms.nile-test.invalid");
     await testbedDialog.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText(`Created ${testbedName}.`)).toBeVisible({
+    await expect(page.getByText(`Created ${friendlyName}.`)).toBeVisible({
       timeout: 30_000,
     });
     await page.getByLabel("Search testbeds").fill(testbedName);
     // A live testbed always has its group pk (spec 0017 AC-11).
-    const testbedRow = page.getByRole("row").filter({ hasText: testbedName });
+    const testbedRow = page.getByRole("row").filter({ hasText: friendlyName });
     await expect(testbedRow).toBeVisible();
     await expect(testbedRow).not.toContainText("Not ready");
 
@@ -160,7 +165,8 @@ test.describe.serial("booking", () => {
 
     // Step 3 (AC-7): the preview names the one testbed.
     await expect(page).toHaveURL(/\/book\?step=3$/);
-    await expect(page.getByText(testbedName)).toBeVisible();
+    await expect(page.getByText(friendlyName)).toBeVisible();
+    await expect(page.getByText(testbedName)).toHaveCount(0);
     await expect(
       page.getByText(/America\/New York \(GMT-[45]\)/),
     ).toBeVisible();
@@ -175,7 +181,8 @@ test.describe.serial("booking", () => {
       page.getByRole("heading", { name: /^You're all set, E2E!$/ }),
     ).toBeVisible({ timeout: 30_000 });
     await expect(page).toHaveURL(/\/book$/);
-    await expect(page.getByText(testbedName)).toBeVisible();
+    await expect(page.getByText(friendlyName)).toBeVisible();
+    await expect(page.getByText(testbedName)).toHaveCount(0);
     await expect(page.getByText(typeName)).toBeVisible();
     await expect(page.getByText(first.email)).toBeVisible();
     await expect(
@@ -291,7 +298,7 @@ test.describe.serial("booking", () => {
 
     const winner = outcomes[0] ? a : b;
     const loser = outcomes[0] ? b : a;
-    await expect(winner.getByText(testbedName)).toBeVisible();
+    await expect(winner.getByText(friendlyName)).toBeVisible();
     await expect(loser).toHaveURL(/\/book\?step=2$/);
     await expect(
       loser.getByRole("heading", { name: "Choose a time" }),

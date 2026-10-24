@@ -255,6 +255,24 @@ describe.skipIf(!hasDb)("queueReminders: when a reminder is due", () => {
       expect(row?.booking_version).toBe(2);
     }));
 
+  // covers: spec 0018 AC-5, AC-6. The reminder is built when it is queued,
+  // from the live row, so a rename since the booked email shows.
+  it("names the testbed by its current Name when queued after a rename", () =>
+    inRollback(async (trx) => {
+      const { bookingId, startsAt, testbed } = await bookingAt(trx);
+      await trx
+        .updateTable("testbeds")
+        .set({ name: "Renamed Lab" })
+        .where("id", "=", testbed.id)
+        .execute();
+      await sweepAt(trx, shift(startsAt, -5 * HOUR));
+      const [row] = await remindersOf(trx, bookingId);
+      expect(row?.details).toMatchObject({ testbedName: "Renamed Lab" });
+      const seen = JSON.stringify([row?.subject, row?.details]);
+      expect(seen).not.toContain(testbed.name);
+      expect(seen).not.toContain(testbed.group_name);
+    }));
+
   it("never picks a cancelled booking (AC-2, AC-11)", () =>
     inRollback(async (trx) => {
       const { bookingId, startsAt } = await bookingAt(trx);

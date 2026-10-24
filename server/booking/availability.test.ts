@@ -141,6 +141,11 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
         testbedName: "alpha bench",
         endsAt: new Date(start + 2 * HOUR),
       });
+      // spec 0018 AC-5: the preview names the Name, never the group name.
+      expect(JSON.stringify(a)).toContain(a.group_name);
+      expect(
+        JSON.stringify(await firstFreeTestbed(trx, type.id, new Date(start))),
+      ).not.toContain(a.group_name);
 
       // The first one busy for part of the window: the second is named.
       await book(trx, a, start + HOUR, start + 3 * HOUR);
