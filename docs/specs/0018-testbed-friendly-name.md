@@ -1,7 +1,7 @@
 # 0018. Testbed friendly name
 
 **Date**: 2026-10-23
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
