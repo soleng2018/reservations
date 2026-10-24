@@ -396,6 +396,33 @@ describe.skipIf(!hasDb)("booking data rules", () => {
       );
     }));
 
+  // covers: spec 0018 AC-6. The order follows the Name, so a rename can
+  // reorder it on purpose; the group name never counts.
+  it("orders by the Name, and a rename moves a testbed in the order", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const tag = crypto.randomUUID().slice(0, 8);
+      // The group names sort the opposite way to the Names.
+      const a = await makeTestbed(trx, type.id, {
+        name: `a ${tag}`,
+        group_name: `z group ${tag}`,
+      });
+      const b = await makeTestbed(trx, type.id, {
+        name: `b ${tag}`,
+        group_name: `a group ${tag}`,
+      });
+      const ids = async () =>
+        (await bookableTestbedsOfType(trx, type.id)).map((t) => t.id);
+      expect(await ids()).toEqual([a.id, b.id]);
+
+      await trx
+        .updateTable("testbeds")
+        .set({ name: `c ${tag}` })
+        .where("id", "=", a.id)
+        .execute();
+      expect(await ids()).toEqual([b.id, a.id]);
+    }));
+
   // covers: spec 0004 AC-3, AC-7 (the DB is the clock)
   it("reads now() from the database, fixed for the whole transaction", () =>
     inRollback(async (trx) => {

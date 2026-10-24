@@ -50,9 +50,11 @@ async function deleteRow(page: Page, path: string, name: string) {
 const tag = id();
 const typeName = `dev e2e type ${tag}`;
 const idpName = `dev e2e idp ${tag}`;
-// The testbed's name is its Authentik group's name, and its domain is its
-// Nile tenant's.
+// The testbed's group name is its Authentik group's name, its name is what
+// learners see (spec 0018), and its domain is its Nile tenant's.
 const labName = `dev-e2e-lab-${tag}`;
+const friendly = `Friendly Lab ${tag}`;
+const renamedTo = `Renamed Lab ${tag}`;
 const plainName = `dev-e2e-plain-${tag}`;
 const labDomain = `dev-e2e-${tag}.nile-test.invalid`;
 const movedDomain = `dev-e2e-${tag}-v2.nile-test.invalid`;
@@ -66,7 +68,8 @@ test.beforeAll(async () => {
 test.afterAll(async ({ browser }) => {
   const context = await adminContext(browser);
   const page = await context.newPage();
-  await deleteRow(page, "/admin/testbeds", labName);
+  await deleteRow(page, "/admin/testbeds", renamedTo);
+  await deleteRow(page, "/admin/testbeds", friendly);
   await deleteRow(page, "/admin/testbed-types", typeName);
   await deleteRow(page, "/admin/api-keys", idpName);
   await context.close();
@@ -107,7 +110,8 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
       "Must be the exact name of an Authentik group the owner has set up for this lab.",
     ),
   ).toBeVisible();
-  await dialog.getByLabel("Name", { exact: true }).fill(labName);
+  await dialog.getByLabel("Name", { exact: true }).fill(friendly);
+  await dialog.getByLabel("Group Name", { exact: true }).fill(labName);
   await dialog.getByLabel("Domain", { exact: true }).fill(labDomain);
   await choose(page, dialog, "Testbed type", typeName);
   await expect(
@@ -138,13 +142,14 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
     .fill("https://wired1.nile-test.invalid");
   await choose(page, second, "Kind", "Wired");
   await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(`Created ${labName}.`)).toBeVisible({
+  await expect(page.getByText(`Created ${friendly}.`)).toBeVisible({
     timeout: 30_000,
   });
 
   // AC-1, spec 0017 AC-8: the columns, found by IDP name and by domain.
   await page.getByLabel("Search testbeds").fill(idpName.toUpperCase());
-  const row = rowOf(page, labName);
+  const row = rowOf(page, friendly);
+  await expect(row).toContainText(labName);
   await expect(row).toContainText(typeName);
   await expect(row).toContainText(labDomain);
   await expect(row).toContainText(idpName);
@@ -162,15 +167,18 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   expect(html).not.toContain("labuser");
 
   // AC-3, spec 0017 AC-5: edit loads the testbed, OS login included, masked
-  // until shown. The name is the Authentik group, so it is read only.
-  await row.getByRole("button", { name: `Edit ${labName}` }).click();
+  // until shown. The group name is read only, the name can change (spec 0018 AC-2, AC-4).
+  await row.getByRole("button", { name: `Edit ${friendly}` }).click();
   const edit = page.getByRole("dialog", { name: "Edit testbed" });
   const nameField = edit.getByLabel("Name", { exact: true });
-  await expect(nameField).toHaveValue(labName);
-  await expect(nameField).toHaveAttribute("readonly", "");
+  await expect(nameField).toHaveValue(friendly);
+  await expect(nameField).not.toHaveAttribute("readonly", "");
+  const groupField = edit.getByLabel("Group Name", { exact: true });
+  await expect(groupField).toHaveValue(labName);
+  await expect(groupField).toHaveAttribute("readonly", "");
   await expect(
     edit.getByText(
-      "The name is the Authentik group, so it can't change. To use another group, delete this testbed and add a new one.",
+      "The group name can't change. To use another group, delete this testbed and add a new one.",
     ),
   ).toBeVisible();
   await expect(edit.getByLabel("Domain", { exact: true })).toHaveValue(
@@ -192,16 +200,18 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   // Spec 0017 AC-6: no reservation, so the domain can change.
   await edit.getByLabel("Domain", { exact: true }).fill(movedDomain);
   await editPassword.fill("second pass");
+  await nameField.fill(renamedTo);
   await edit.getByRole("button", { name: "Remove client 2" }).click();
   await edit.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText(`Updated ${labName}.`)).toBeVisible();
+  await expect(page.getByText(`Updated ${renamedTo}.`)).toBeVisible();
   await expect(edit).toHaveCount(0);
-  const renamed = rowOf(page, labName);
+  const renamed = rowOf(page, renamedTo);
+  await expect(renamed).toContainText(labName);
   await expect(renamed).toContainText("1 client");
   await expect(renamed).toContainText(movedDomain);
 
   // Reopening loads the saved values.
-  await renamed.getByRole("button", { name: `Edit ${labName}` }).click();
+  await renamed.getByRole("button", { name: `Edit ${renamedTo}` }).click();
   await expect(edit.getByLabel("Domain", { exact: true })).toHaveValue(
     movedDomain,
   );
@@ -215,15 +225,15 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   await expect(edit).toHaveCount(0);
 
   // AC-6: no reservations, so the confirm shows, then the row goes.
-  await renamed.getByRole("button", { name: `Delete ${labName}` }).click();
+  await renamed.getByRole("button", { name: `Delete ${renamedTo}` }).click();
   await expect(page.getByRole("alertdialog")).toContainText(
-    `Delete "${labName}"? This can't be undone.`,
+    `Delete "${renamedTo}"? This can't be undone.`,
   );
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.getByText("Deleted.")).toBeVisible();
   await expect(renamed).toHaveCount(0);
   await page.reload();
-  await expect(rowOf(page, labName)).toHaveCount(0);
+  await expect(rowOf(page, renamedTo)).toHaveCount(0);
 });
 
 // covers: spec 0017 AC-2, AC-3 (the add form checks the name and the group;
@@ -248,13 +258,16 @@ test("the add form refuses a name that is no usable Authentik group", async ({
     .getByLabel("Domain", { exact: true })
     .fill(`dev-e2e-${id()}.nile-test.invalid`);
 
-  const name = dialog.getByLabel("Name", { exact: true });
+  await dialog
+    .getByLabel("Name", { exact: true })
+    .fill(`Plain friendly ${id()}`);
+  const name = dialog.getByLabel("Group Name", { exact: true });
   const save = dialog.getByRole("button", { name: "Save" });
 
   await name.fill(`dev-e2e-nothing-${id()}`);
   await save.click();
   await expect(
-    dialog.getByText("No Authentik group with this name exists."),
+    dialog.getByText("No Authentik group with this group name exists."),
   ).toBeVisible();
 
   await name.fill(plainName);
