@@ -22,7 +22,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@base-ui/react": "^1.8.0",
+    "@base-ui/react": "^1.9.0",
     "@goauthentik/api": "2026.2.1",
     "better-auth": "1.7.12",
     "class-variance-authority": "^0.7.1",
