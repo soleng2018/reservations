@@ -15,7 +15,7 @@ git -C "$root" diff --quiet HEAD || tag="$tag-dirty"
 export IMAGE_TAG="$tag"
 
 echo "building reservations:$tag"
-"${compose[@]}" build migrate
+"${compose[@]}" build --pull migrate
 docker tag "reservations:$tag" reservations:latest
 
 dump="$backups/hol_before_deploy_$(date -u +%Y%m%dT%H%M%SZ).dump"
