@@ -197,7 +197,8 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
       const tag = unique();
       const name = `NileLab${tag}Admin`;
       const input: TestbedInput = {
-        name,
+        name: `Friendly ${tag}`,
+        groupName: name,
         domain: `lab-${tag}.example.test`,
         testbedTypeId: type.id,
         idpApiKeyId: null,
@@ -268,7 +269,7 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
       const ended = await makeUser(trx, { authentik_user_pk: PK + 2 });
       const ak = fakeAuthentik(
         [fakeLearner(PK + 1), fakeLearner(PK + 2, { groups: [pk] })],
-        { groups: [markedGroup(pk, testbed.name)] },
+        { groups: [markedGroup(pk, testbed.group_name)] },
       );
 
       await reconcileAccess(ak.api, asConn(trx), OFF);

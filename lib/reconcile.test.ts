@@ -47,7 +47,7 @@ describe("revokeStateLine (spec 0012 AC-11)", () => {
 
 const row = (id: string, groupPk: string, deleted = false): GroupRow => ({
   id,
-  name: `Name ${id}`,
+  groupName: `Group ${id}`,
   groupPk,
   deleted,
 });
@@ -76,13 +76,13 @@ describe("groupByPk (spec 0017 AC-10)", () => {
 
 // covers: spec 0017 AC-10 (c), when a stored pk is stale
 describe("isStalePk (spec 0017 AC-10)", () => {
-  const live = { name: "NileWorkshop1Admin" };
+  const live = { groupName: "NileWorkshop1Admin" };
 
   it("is stale when the group is gone", () => {
     expect(isStalePk(live, undefined)).toBe(true);
   });
 
-  it("is stale when the group's name is no longer the testbed's, in any case", () => {
+  it("is stale when the group's name is no longer the testbed's group name, in any case", () => {
     expect(isStalePk(live, { name: "Renamed" })).toBe(true);
     expect(isStalePk(live, { name: "nileworkshop1admin" })).toBe(true);
   });

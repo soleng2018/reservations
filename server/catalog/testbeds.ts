@@ -28,13 +28,15 @@ import type { DB } from "@/server/db/types";
 // leave the server only through getTestbedForEdit, to an admin, and
 // clientLoginsForBooking, into the learner's booking email.
 
-// Spec 0017 AC-3: the testbed's name is the name of an Authentik group the
-// owner already made and marked. Create checks for duplicates, then looks the
-// group up, then inserts one row with the group's pk, so a testbed is bookable
-// at once and nothing is half made. The app never creates or deletes a group.
+// Spec 0017 AC-3, spec 0018: the testbed's group name is the name of an
+// Authentik group the owner already made and marked; its name is the free text
+// learners see. Create checks for duplicates, then looks the group up, then
+// inserts one row with the group's pk, so a testbed is bookable at once and
+// nothing is half made. The app never creates or deletes a group.
 
 export type CreateTestbedError =
   | "duplicate_name"
+  | "duplicate_group_name"
   | "duplicate_domain"
   | "type_not_found"
   | "idp_not_found"
@@ -46,6 +48,7 @@ export type CreateTestbedError =
 export type AdminTestbedRow = {
   readonly id: string;
   readonly name: string;
+  readonly groupName: string;
   readonly typeName: string;
   readonly domain: string;
   readonly idpName: string | null;
@@ -54,12 +57,22 @@ export type AdminTestbedRow = {
 
 const MAX_SLUG_ATTEMPTS = 100;
 
-// Live testbeds only: a soft deleted one frees its name, domain, and group.
-const liveByName = (conn: Kysely<DB>, name: string) =>
+// Live testbeds only: a soft deleted one frees its name, group name, domain,
+// and group. `exceptId` leaves the row being edited out.
+const liveByName = (conn: Kysely<DB>, name: string, exceptId?: string) =>
   conn
     .selectFrom("testbeds")
     .select("id")
     .where(sql<string>`lower(name)`, "=", name.toLowerCase())
+    .where("deleted_at", "is", null)
+    .$if(exceptId !== undefined, (qb) => qb.where("id", "<>", exceptId ?? ""))
+    .executeTakeFirst();
+
+const liveByGroupName = (conn: Kysely<DB>, groupName: string) =>
+  conn
+    .selectFrom("testbeds")
+    .select("id")
+    .where(sql<string>`lower(group_name)`, "=", groupName.toLowerCase())
     .where("deleted_at", "is", null)
     .executeTakeFirst();
 
@@ -79,13 +92,18 @@ const liveByGroup = (conn: Kysely<DB>, groupPk: string) =>
     .where("deleted_at", "is", null)
     .executeTakeFirst();
 
-// AC-2: the name is checked before the domain, and both before Authentik is
-// called, so a taken name shows its message even when Authentik is down.
+// Spec 0018 AC-3: the name, then the group name, then the domain, all before
+// Authentik is called, so a taken one shows its message even when Authentik is
+// down.
 async function duplicateOf(
   conn: Kysely<DB>,
-  input: Pick<TestbedInput, "name" | "domain">,
-): Promise<"duplicate_name" | "duplicate_domain" | undefined> {
+  input: Pick<TestbedInput, "name" | "groupName" | "domain">,
+): Promise<
+  "duplicate_name" | "duplicate_group_name" | "duplicate_domain" | undefined
+> {
   if (await liveByName(conn, input.name)) return "duplicate_name";
+  if (await liveByGroupName(conn, input.groupName))
+    return "duplicate_group_name";
   if (await liveByDomain(conn, input.domain)) return "duplicate_domain";
   return undefined;
 }
@@ -102,7 +120,7 @@ export async function createTestbed(
   if (duplicate) return err(duplicate);
 
   // The Authentik read happens before the transaction opens.
-  const group = await findTestbedGroup(api, input.name);
+  const group = await findTestbedGroup(api, input.groupName);
   if (!group.ok) {
     switch (group.error) {
       case "not_found":
@@ -119,7 +137,12 @@ export async function createTestbed(
   }
   if (await liveByGroup(conn, group.value.pk)) return err("group_in_use");
 
-  return insertTestbed(conn, input, group.value.pk, actorId);
+  return insertTestbed(
+    conn,
+    input,
+    { pk: group.value.pk, name: group.value.name },
+    actorId,
+  );
 }
 
 // When set, the IDP must be a live `IDP` key, held FOR SHARE until commit so
@@ -177,19 +200,21 @@ async function insertClients(
 }
 
 // One transaction: the type and IDP must be live; the slug takes the first
-// free `-2`, `-3` suffix. ON CONFLICT DO NOTHING covers every unique index,
-// so a miss is told apart in order: a live testbed of the same name, of the
-// same domain, or on the same group (two admins saving at once get the same
-// messages as the precheck), else it was a slug clash.
+// free `-2`, `-3` suffix, built from the group name. ON CONFLICT DO NOTHING
+// covers every unique index, so a miss is told apart in order: a live testbed
+// of the same name, of the same group name, of the same domain, or on the same
+// group (two admins saving at once get the same messages as the precheck),
+// else it was a slug clash. The stored group name is the found group's.
 async function insertTestbed(
   conn: Kysely<DB>,
   input: TestbedInput,
-  groupPk: string,
+  group: { readonly pk: string; readonly name: string },
   actorId: string,
 ): Promise<
   Result<
     { readonly id: string; readonly slug: string },
     | "duplicate_name"
+    | "duplicate_group_name"
     | "duplicate_domain"
     | "group_in_use"
     | "type_not_found"
@@ -201,13 +226,16 @@ async function insertTestbed(
       return err("type_not_found");
     if (!(await idpIsLive(trx, input.idpApiKeyId))) return err("idp_not_found");
 
-    const base = slugify(input.name);
+    const base = slugify(input.groupName);
     const attempt = async (
       n: number,
     ): Promise<
       Result<
         { readonly id: string; readonly slug: string },
-        "duplicate_name" | "duplicate_domain" | "group_in_use"
+        | "duplicate_name"
+        | "duplicate_group_name"
+        | "duplicate_domain"
+        | "group_in_use"
       >
     > => {
       if (n > MAX_SLUG_ATTEMPTS)
@@ -217,9 +245,10 @@ async function insertTestbed(
         .insertInto("testbeds")
         .values({
           name: input.name,
+          group_name: group.name,
           slug,
           domain: input.domain,
-          authentik_group_pk: groupPk,
+          authentik_group_pk: group.pk,
           testbed_type_id: input.testbedTypeId,
           idp_api_key_id: input.idpApiKeyId,
           portal_url: input.portalUrl,
@@ -231,7 +260,7 @@ async function insertTestbed(
       if (row) return ok({ id: row.id, slug });
       const duplicate = await duplicateOf(trx, input);
       if (duplicate) return err(duplicate);
-      if (await liveByGroup(trx, groupPk)) return err("group_in_use");
+      if (await liveByGroup(trx, group.pk)) return err("group_in_use");
       return attempt(n + 1);
     };
     const created = await attempt(1);
@@ -245,8 +274,10 @@ async function insertTestbed(
       summary: "Testbed created",
       metadata: {
         slug: created.value.slug,
+        name: input.name,
+        groupName: group.name,
         domain: input.domain,
-        groupPk,
+        groupPk: group.pk,
         clients: input.clients.length,
       },
     });
@@ -254,8 +285,8 @@ async function insertTestbed(
   });
 }
 
-// Spec 0017 AC-8. Live testbeds by name, with their type, domain, IDP name,
-// and client count. No client details: the list never carries an OS login.
+// Spec 0018 AC-8. Live testbeds by name, with their group name, type, domain,
+// IDP name, and client count. No client details: the list never carries an OS login.
 export async function listTestbedsForAdmin(
   conn: Kysely<DB>,
 ): Promise<readonly AdminTestbedRow[]> {
@@ -266,6 +297,7 @@ export async function listTestbedsForAdmin(
     .select((eb) => [
       "t.id",
       "t.name",
+      "t.group_name",
       "ty.name as typeName",
       "t.domain",
       "k.name as idpName",
@@ -281,6 +313,7 @@ export async function listTestbedsForAdmin(
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
+    groupName: r.group_name,
     typeName: r.typeName,
     // A live row always has a domain (testbeds_domain_live_check).
     domain: r.domain ?? "",
@@ -346,6 +379,7 @@ export async function getTestbedForEdit(
     .selectFrom("testbeds")
     .select([
       "name",
+      "group_name",
       "slug",
       "domain",
       "testbed_type_id",
@@ -359,6 +393,7 @@ export async function getTestbedForEdit(
   if (!row) return err("not_found");
   return ok({
     name: row.name,
+    groupName: row.group_name,
     slug: row.slug,
     domain: row.domain ?? "",
     testbedTypeId: row.testbed_type_id,
@@ -374,15 +409,17 @@ export type UpdateTestbedError =
   | "type_not_found"
   | "idp_not_found"
   | "domain_locked"
+  | "duplicate_name"
   | "duplicate_domain";
 
-// Spec 0017 AC-5, AC-6 and spec 0007 AC-3, AC-4, AC-5 in one transaction. The
-// testbed is locked FOR UPDATE, so a booking (FOR SHARE) and a delete wait.
-// The name, slug, and group never change: the name is never read here. A
-// domain change is refused while an Upcoming or Current reservation exists.
-// Clients are replaced as a set, delete first, so the position index never
-// trips. A save that changes nothing writes nothing. A taken domain aborts
-// the transaction, so it is mapped outside it.
+// Spec 0018 AC-4, spec 0017 AC-6 and spec 0007 AC-3, AC-4, AC-5 in one
+// transaction. The testbed is locked FOR UPDATE, so a booking (FOR SHARE) and a
+// delete wait. The slug and group name never change. The Name does, with no
+// booking lock and no Authentik call. A domain change is refused while an
+// Upcoming or Current reservation exists. Clients are replaced as a set,
+// delete first, so the position index never trips. A save that changes nothing
+// writes nothing. A taken name or domain aborts the transaction on a race, so
+// that is mapped outside it.
 export async function updateTestbed(
   conn: Kysely<DB>,
   id: string,
@@ -412,6 +449,7 @@ export async function updateTestbed(
         return err("idp_not_found");
 
       const before: TestbedValues = {
+        name: row.name,
         domain: row.domain ?? "",
         testbedTypeId: row.testbed_type_id,
         idpApiKeyId: row.idp_api_key_id,
@@ -427,10 +465,17 @@ export async function updateTestbed(
         (await testbedBlockers(trx, id)).length > 0
       )
         return err("domain_locked");
+      if (input.name !== before.name && (await liveByName(trx, input.name, id)))
+        return err("duplicate_name");
+      if (input.domain !== before.domain) {
+        const taken = await liveByDomain(trx, input.domain);
+        if (taken && taken.id !== id) return err("duplicate_domain");
+      }
 
       await trx
         .updateTable("testbeds")
         .set({
+          name: input.name,
           domain: input.domain,
           testbed_type_id: input.testbedTypeId,
           idp_api_key_id: input.idpApiKeyId,
@@ -454,10 +499,12 @@ export async function updateTestbed(
         summary: "Testbed updated",
         metadata: change.metadata,
       });
-      return ok({ name: row.name });
+      return ok({ name: input.name });
     });
   } catch (e) {
     const mapped = mapConstraintError(e);
+    if (!mapped.ok && mapped.error === "duplicate_name")
+      return err("duplicate_name");
     if (!mapped.ok && mapped.error === "duplicate_domain")
       return err("duplicate_domain");
     throw e;

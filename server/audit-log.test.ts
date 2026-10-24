@@ -127,7 +127,10 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
     inRollback(async (trx) => {
       const admin = await makeUser(trx, { role: "admin", name: "Old Admin" });
       const type = await makeType(trx);
-      const testbed = await makeTestbed(trx, type.id, { name: "Old Pod" });
+      const testbed = await makeTestbed(trx, type.id, {
+        name: "Old Pod",
+        group_name: "PodGroup",
+      });
       await entry(trx, {
         actorUserId: admin.id,
         action: "testbed.updated",
@@ -149,7 +152,11 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
       const [top] = (await listAuditEvents(trx, {}, "UTC")).rows;
 
       expect(top.actor).toMatchObject({ kind: "admin", label: "New Admin" });
-      expect(top.target).toMatchObject({ label: "New Pod", deleted: false });
+      // The friendly name and the group name, both from today's row (spec 0018).
+      expect(top.target).toMatchObject({
+        label: "New Pod (group PodGroup)",
+        deleted: false,
+      });
     }));
 });
 
@@ -168,6 +175,7 @@ describe.skipIf(!hasDb)("resolveTargets", () => {
       });
       const testbed = await makeTestbed(trx, type.id, {
         name: "Pod 7",
+        group_name: "PodGroup7",
         deleted_at: new Date(),
       });
       const booking = await trx
@@ -233,7 +241,7 @@ describe.skipIf(!hasDb)("resolveTargets", () => {
       expect(label("api_key", "not-a-uuid")?.label).toBe("API key (not found)");
       expect(
         label("authentik_group", testbed.authentik_group_pk ?? "")?.label,
-      ).toBe("Pod 7 access group");
+      ).toBe("PodGroup7 access group");
       expect(label("authentik_group", "undone-1")?.label).toBe(
         "pod-undone access group",
       );
@@ -484,7 +492,10 @@ describe.skipIf(!hasDb)("listAuditEvents filters", () => {
       });
       const learner = await makeUser(trx, { name: `Lin ${tag}` });
       const type = await makeType(trx, { name: `Type ${tag}` });
-      const testbed = await makeTestbed(trx, type.id, { name: `Pod ${tag}` });
+      const testbed = await makeTestbed(trx, type.id, {
+        name: `Pod ${tag}`,
+        group_name: `Group ${tag}`,
+      });
       const booking = await trx
         .insertInto("bookings")
         .values({
@@ -533,6 +544,33 @@ describe.skipIf(!hasDb)("listAuditEvents filters", () => {
       expect(wild.rows.map((r) => r.id)).toEqual([bySummary.id]);
       const none = await listAuditEvents(trx, { q: `${tag} 50__` }, "UTC");
       expect(none.rows).toEqual([]);
+    }));
+
+  // covers: spec 0018 AC-8, the group name alone is searchable
+  it("matches q against the group name only for testbed and group targets", () =>
+    inRollback(async (trx) => {
+      const tag = crypto.randomUUID().slice(0, 8);
+      const type = await makeType(trx, { name: `Type ${tag}` });
+      const testbed = await makeTestbed(trx, type.id, {
+        name: `Pod ${tag}`,
+        group_name: `Group ${tag}`,
+      });
+      const byTestbed = await entry(trx, {
+        action: "testbed.updated",
+        targetType: "testbed",
+        targetId: testbed.id,
+      });
+      const byGroup = await entry(trx, {
+        action: "authentik_group.created",
+        targetType: "authentik_group",
+        targetId: testbed.authentik_group_pk ?? "",
+      });
+      // "Group <tag>" is held by group_name alone.
+      expect(await ids(trx, { q: `Group ${tag}` })).toEqual(
+        [byTestbed.id, byGroup.id].sort(),
+      );
+      // "Pod <tag>" is the Name: the testbed row matches, the group row does not.
+      expect(await ids(trx, { q: `Pod ${tag}` })).toEqual([byTestbed.id]);
     }));
 
   it("matches q against an action's name and its label", () =>

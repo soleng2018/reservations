@@ -54,8 +54,9 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
-| 19 | Testbed domain & predefined groups | Slice 6 | in-progress |
+| 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | planned |
+| 21 | Testbed friendly name | Slice 6 | done |
 
 ## Foundations
 
@@ -319,18 +320,18 @@ spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts
 
 ## Slice 6: Nile tenants
 
-### 19. Testbed domain & predefined groups · in-progress · Full
+### 19. Testbed domain & predefined groups · done · Full
 Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creating and deleting testbed groups: an admin names the testbed exactly like a group that already exists in Authentik (for example `NileWorkshop1Admin`, made by a separate script), and the app refuses the testbed when no such group exists. A small hint under the Name field says the name must be the group name. Cloudflare Access per VM rules use the same group name. This replaces the app made `pod-<slug>` groups of features 6, 9, and 14.
 **Done when:** an admin cannot save a testbed without a Domain, or with one that is not a valid domain name; a second live testbed with the same name, or the same domain (ignoring case), is refused with a clear message and nothing is written; a name that matches no Authentik group is refused with a clear message and nothing is written; the app creates and deletes no group in Authentik; a booked learner is added to the group named like the testbed and removed from it when the booking ends; deleting a testbed leaves its group alone; the HOL Labs gate no longer depends on `pod-` names.
 - [x] Design it (spec): `/architect testbed domain & predefined groups`
-- [ ] Build it: `/develop testbed domain & predefined groups` (owner steps first: mark the groups, delete the live testbeds; see the spec's migration plan)
+- [x] Build it: `/develop testbed domain & predefined groups` (owner steps first: mark the groups, delete the live testbeds; see the spec's migration plan)
   - [x] Foundation and guard: migration `0013`, domain input, constraint mappings, audit actions, the marker guard and group lookup (AC-1, 2, 3, 4, 7, 10, 11)
   - [x] Create thread: lookup then insert, Domain field and Name hint, list column, the old group machinery removed (AC-1, 2, 3, 5, 7, 8)
   - [x] Edit thread: name locked, domain edit with the booking lock (AC-5, 6, 7)
   - [x] Delete and reconcile: the release step, the reconciler per group pk with stale check and relink by name (AC-9, 10)
-  - [ ] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
-- [ ] Verify it: `/check verify testbed domain & predefined groups`
-- [ ] Test it: `/test testbed domain & predefined groups`
+  - [x] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
+- [x] Verify it: `/check verify testbed domain & predefined groups`
+- [x] Test it: `/test testbed domain & predefined groups`
 - [x] Review it (fresh model): `/check review testbed domain & predefined groups`
 - [ ] Document it: `/document testbed domain & predefined groups`
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
@@ -339,6 +340,20 @@ spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 When a learner is booked on a testbed, they get an Authentik user in that testbed's domain, so they can sign in to that Nile tenant. The username is first name, a dot, last name and 4 random digits at the domain (a one word name becomes the name plus 4 digits, and a clash gets a new random number). The email stays the learner's real address, because the set password email needs it. The Nile attributes from the `nile-idp` script are set (`mail` set to the username, plus `firstName`, `lastName`, and `mobile`). A learner can have one user per domain, each with its own set password email. The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens. Builds on feature 19.
 **Done when:** a new booking creates or reuses the learner's Authentik user for the testbed's domain, with that username, those attributes, and the real email; a booking in another domain creates a second user, and never a second user in the same domain; each new user gets its own set password email; the reconciler adds the user of the booking's domain to the group and removes it at the end; sign in, deactivation, and ending sessions cover all of a learner's users; the Nile login reaches only the booking's own learner, in emails and on screens.
 - [ ] Design it (spec): `/architect nile identity per domain`
+
+### 21. Testbed friendly name · done
+Builds on feature 19. Today a testbed's Name is the Authentik group name, so learners see something like `NileWorkshop1Admin` in invites and emails. Rename that field to Group Name (still must match a marked Authentik group, still unique among live testbeds). Add a new Name field, free text the admin chooses, which is what learners see in the booked, rescheduled, cancelled, and reminder emails, the calendar invite, and the booking and reservation screens. The group name stays on the admin side only.
+**Done when:** the testbed form shows Group Name (with the group hint) and a new Name; a testbed cannot be saved without a Name; existing testbeds start with their current name copied into both fields so nothing changes until an admin edits it; every learner facing place shows Name and never the group name; admin lists and the audit log show both; Cloudflare and Authentik behavior is unchanged.
+- [x] Design it (spec): `/architect testbed friendly name`
+- [x] Build it: `/develop testbed friendly name` (owner steps first: the one deploy carries migrations 0013 and 0014; see the spec's migration plan)
+  - [x] Migration and thin thread: `0014`, codegen, constraint mapping, the add form with both fields, the booked email showing only the Name (AC-1, 2, 3, 5, 7)
+  - [x] Create and edit rules: duplicate order, Group Name errors, editable Name with the read only Group Name (AC-2, 3, 4)
+  - [x] Group facing code and admin views: reconciler, audit log, list columns and search (AC-7, 8)
+  - [x] Learner surface scan, rename behavior, auth and tests (AC-5, 6, 9)
+- [x] Verify it: `/check verify testbed friendly name`
+- [x] Test it: `/test testbed friendly name`
+- [x] Review it (fresh model): `/check review testbed friendly name`
+spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.

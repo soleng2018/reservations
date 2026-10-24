@@ -1,7 +1,7 @@
 # 0017. Testbed domain and predefined groups
 
 **Date**: 2026-10-23
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 

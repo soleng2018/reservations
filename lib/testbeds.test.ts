@@ -16,6 +16,7 @@ const client = {
 } as const;
 
 const before: TestbedValues = {
+  name: "Wireless Lab 1",
   domain: "nile.global",
   testbedTypeId: "6f1c2f9e-0000-4000-8000-000000000001",
   idpApiKeyId: null,
@@ -35,18 +36,19 @@ describe("list helpers (AC-1, spec 0017 AC-8)", () => {
   });
 
   const row = {
-    name: "NileWorkshop1Admin",
+    name: "Wireless Lab 1",
+    groupName: "NileWorkshop1Admin",
     typeName: "Wi-Fi",
     domain: "nileworkshop-1.com",
     idpName: "Okta",
   };
 
-  it("searches name, type, domain, and IDP name, leaving out a missing IDP", () => {
+  it("searches name, group name, type, domain, and IDP name, leaving out a missing IDP", () => {
     expect(testbedSearchText(row)).toBe(
-      "NileWorkshop1Admin Wi-Fi nileworkshop-1.com Okta",
+      "Wireless Lab 1 NileWorkshop1Admin Wi-Fi nileworkshop-1.com Okta",
     );
     expect(testbedSearchText({ ...row, idpName: null })).toBe(
-      "NileWorkshop1Admin Wi-Fi nileworkshop-1.com",
+      "Wireless Lab 1 NileWorkshop1Admin Wi-Fi nileworkshop-1.com",
     );
   });
 

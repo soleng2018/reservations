@@ -84,6 +84,7 @@ describe("TestbedTypeInput (AC-1)", () => {
 describe("TestbedInput (AC-2)", () => {
   const valid = {
     name: "Bench 1",
+    groupName: "NileBench1Admin",
     domain: "nile.global",
     testbedTypeId: TYPE_ID,
     portalUrl: "https://portal.example.test",
@@ -494,6 +495,7 @@ describe("DomainInput (spec 0017 AC-1)", () => {
     const e = errorsOf(
       TestbedInput.safeParse({
         name: "Bench 1",
+        groupName: "NileBench1Admin",
         testbedTypeId: TYPE_ID,
         portalUrl: "https://portal.example.test",
         lmsUrl: "https://lms.example.test",
@@ -503,15 +505,17 @@ describe("DomainInput (spec 0017 AC-1)", () => {
     expect(fieldErrors(e)).toEqual({ domain: "Enter the domain." });
   });
 
-  it("drops a posted name from the update input (spec 0017 AC-5)", () => {
+  it("keeps the name and drops a posted group name from the update input (spec 0018 AC-4)", () => {
     const parsed = TestbedUpdateInput.parse({
-      name: "Forged",
+      name: "Bench 1",
+      groupName: "Forged",
       domain: "nile.global",
       testbedTypeId: TYPE_ID,
       portalUrl: "https://portal.example.test",
       lmsUrl: "https://lms.example.test",
       clients: [],
     });
-    expect(parsed).not.toHaveProperty("name");
+    expect(parsed).not.toHaveProperty("groupName");
+    expect(parsed.name).toBe("Bench 1");
   });
 });

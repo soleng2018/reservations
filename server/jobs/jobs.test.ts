@@ -232,6 +232,29 @@ describe.skipIf(!hasDb)("queueBookingNotice (spec 0013 AC-6, AC-11)", () => {
       ]);
     }));
 
+  // covers: spec 0018 AC-5, AC-6
+  it("shows the friendly name, never the group name, and keeps it after a rename", () =>
+    inRollback(async (trx) => {
+      const { testbed, bookingId } = await confirmedBooking(trx);
+      const [email] = await emailsOf(trx, bookingId);
+      const seen = JSON.stringify([email?.subject, email?.details]);
+      expect(seen).toContain(testbed.name);
+      expect(seen).not.toContain(testbed.group_name);
+
+      const jobs = () => jobsFor(trx, "");
+      const before = (await jobs()).length;
+      await trx
+        .updateTable("testbeds")
+        .set({ name: "Renamed Lab" })
+        .where("id", "=", testbed.id)
+        .execute();
+      // A rename queues nothing, and the queued email keeps the old name.
+      expect((await jobs()).length).toBe(before);
+      const [after] = await emailsOf(trx, bookingId);
+      expect(JSON.stringify(after?.details)).toContain(testbed.name);
+      expect(JSON.stringify(after?.details)).not.toContain("Renamed Lab");
+    }));
+
   // AC-6, AC-11 (amended 2026-10-16, 2026-10-17): a returning learner who
   // books as a guest keeps their stored zone; the booked email follows the
   // screen, and every later email for that booking keeps the booked zone.
