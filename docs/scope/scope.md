@@ -56,7 +56,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 18 | Admin audit log | Slice 5 | done |
 | 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | planned |
-| 21 | Testbed friendly name | Slice 6 | in-progress |
+| 21 | Testbed friendly name | Slice 6 | done |
 
 ## Foundations
 
@@ -341,7 +341,7 @@ When a learner is booked on a testbed, they get an Authentik user in that testbe
 **Done when:** a new booking creates or reuses the learner's Authentik user for the testbed's domain, with that username, those attributes, and the real email; a booking in another domain creates a second user, and never a second user in the same domain; each new user gets its own set password email; the reconciler adds the user of the booking's domain to the group and removes it at the end; sign in, deactivation, and ending sessions cover all of a learner's users; the Nile login reaches only the booking's own learner, in emails and on screens.
 - [ ] Design it (spec): `/architect nile identity per domain`
 
-### 21. Testbed friendly name · in-progress
+### 21. Testbed friendly name · done
 Builds on feature 19. Today a testbed's Name is the Authentik group name, so learners see something like `NileWorkshop1Admin` in invites and emails. Rename that field to Group Name (still must match a marked Authentik group, still unique among live testbeds). Add a new Name field, free text the admin chooses, which is what learners see in the booked, rescheduled, cancelled, and reminder emails, the calendar invite, and the booking and reservation screens. The group name stays on the admin side only.
 **Done when:** the testbed form shows Group Name (with the group hint) and a new Name; a testbed cannot be saved without a Name; existing testbeds start with their current name copied into both fields so nothing changes until an admin edits it; every learner facing place shows Name and never the group name; admin lists and the audit log show both; Cloudflare and Authentik behavior is unchanged.
 - [x] Design it (spec): `/architect testbed friendly name`
@@ -350,8 +350,9 @@ Builds on feature 19. Today a testbed's Name is the Authentik group name, so lea
   - [x] Create and edit rules: duplicate order, Group Name errors, editable Name with the read only Group Name (AC-2, 3, 4)
   - [x] Group facing code and admin views: reconciler, audit log, list columns and search (AC-7, 8)
   - [x] Learner surface scan, rename behavior, auth and tests (AC-5, 6, 9)
-- [ ] Verify it: `/check verify testbed friendly name`
+- [x] Verify it: `/check verify testbed friendly name`
 - [x] Test it: `/test testbed friendly name`
+- [x] Review it (fresh model): `/check review testbed friendly name`
 spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
 
 ## Deferred
