@@ -63,8 +63,29 @@ export const TestbedClientInput = z
   });
 export type TestbedClientInput = z.infer<typeof TestbedClientInput>;
 
+// Spec 0017 AC-1: two or more dot separated labels (1 to 63 letters, digits,
+// or inner hyphens) with a last label of 2 to 63 letters. The length cap sits
+// beside it. The same pattern is the check `testbeds_domain_format_check`.
+export const DOMAIN_PATTERN =
+  /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+export const DOMAIN_MAX_LENGTH = 253;
+
+const DOMAIN_SHAPE_MESSAGE = "Enter a domain name, like nile.global.";
+
+// Trimmed, then lower cased, so `NileWorkshop-1.COM` is stored as
+// `nileworkshop-1.com`. The cap aborts first, so the pattern never runs on
+// an oversized value.
+export const DomainInput = z
+  .string({ error: "Enter the domain." })
+  .trim()
+  .toLowerCase()
+  .min(1, "Enter the domain.")
+  .max(DOMAIN_MAX_LENGTH, { error: DOMAIN_SHAPE_MESSAGE, abort: true })
+  .regex(DOMAIN_PATTERN, DOMAIN_SHAPE_MESSAGE);
+
 export const TestbedInput = z.object({
   name: CatalogName,
+  domain: DomainInput,
   testbedTypeId: z.uuid("Choose a type."),
   // Empty (the None option) or missing means no IDP.
   idpApiKeyId: z.preprocess(
@@ -78,6 +99,11 @@ export const TestbedInput = z.object({
     .max(MAX_TESTBED_CLIENTS, `Use at most ${MAX_TESTBED_CLIENTS} clients.`),
 });
 export type TestbedInput = z.infer<typeof TestbedInput>;
+
+// Spec 0017 AC-5: an edit never reads a posted name (the name is the
+// Authentik group), so a forged `name` field is dropped here.
+export const TestbedUpdateInput = TestbedInput.omit({ name: true });
+export type TestbedUpdateInput = z.infer<typeof TestbedUpdateInput>;
 
 // Spec 0006 AC-3. The base URL is shown and audited, so no secret may hide
 // in it: no user, password, or query string. Zod runs these even when the

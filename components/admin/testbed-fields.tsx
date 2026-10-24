@@ -12,7 +12,7 @@ import {
   MAX_TESTBED_CLIENTS,
   type TestbedClientInput,
 } from "@/lib/catalog-input";
-import type { TestbedEditDefaults } from "@/lib/testbeds";
+import { TESTBED_NAME_HINT, type TestbedEditDefaults } from "@/lib/testbeds";
 
 // The mock's order: Wireless first, and the default for a new row.
 const KINDS = [
@@ -24,10 +24,12 @@ const NONE = { value: "", label: "None" } as const;
 
 type Row = { readonly key: number; readonly client?: TestbedClientInput };
 
-// Spec 0004 AC-2 and spec 0007 AC-2, AC-3, inside the form modal: empty to
-// add, the loaded testbed to edit. Defaults are read once (the admin row
-// edit rule). Saving a new testbed also creates its Authentik access group,
-// so a failure there arrives as the modal's form level message.
+// Spec 0004 AC-2, spec 0007 AC-2, AC-3, and spec 0017 AC-1, AC-5, inside the
+// form modal: empty to add, the loaded testbed to edit. Defaults are read
+// once (the admin row edit rule). The name is the Authentik group's name: typed
+// on add, then shown read only on edit (and never posted). Saving a new
+// testbed looks that group up, so a failure there arrives under the Name field
+// or as the modal's form level message.
 export function TestbedFields({
   types,
   idps,
@@ -53,13 +55,39 @@ export function TestbedFields({
 
   return (
     <>
-      <Field path="name" label="Name">
+      {defaults ? (
+        <Field path="name" label="Name" description={TESTBED_NAME_HINT.edit}>
+          <Input
+            readOnly
+            value={defaults.name}
+            className="bg-bg-inset font-mono text-fg2"
+          />
+        </Field>
+      ) : (
+        <Field path="name" label="Name" description={TESTBED_NAME_HINT.create}>
+          <Input
+            name="name"
+            required
+            maxLength={200}
+            autoComplete="off"
+            spellCheck={false}
+            className="font-mono"
+            placeholder="e.g. NileWorkshop1Admin"
+          />
+        </Field>
+      )}
+      <Field path="domain" label="Domain">
         <Input
-          name="name"
+          name="domain"
           required
-          maxLength={200}
-          placeholder="e.g. Nile Workshop 1"
-          defaultValue={defaults?.name}
+          maxLength={253}
+          inputMode="url"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          className="font-mono"
+          placeholder="nile.global"
+          defaultValue={defaults?.domain}
         />
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -110,19 +138,6 @@ export function TestbedFields({
           defaultValue={defaults?.lmsUrl}
         />
       </Field>
-      {defaults ? (
-        <Field
-          path="groupName"
-          label="Access group"
-          description="The owner binds this group to the lab's apps in Authentik."
-        >
-          <Input
-            readOnly
-            value={defaults.groupName}
-            className="bg-bg-inset font-mono text-fg2"
-          />
-        </Field>
-      ) : null}
 
       <FieldSet
         className="gap-2.5"

@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
-import { addToPodGroup } from "./groups";
+import { describe, expect, it, vi } from "vitest";
+import { addToTestbedGroup } from "./groups";
 import {
   deleteSagaLearner,
   findOrCreateLearner,
   issueSetPasswordLink,
 } from "./learners";
-import { ADMINS, FAKE_NEW_PK, fakeAuthentik, fakeUser, POD } from "./testing";
+import {
+  ADMINS,
+  FAKE_NEW_PK,
+  fakeAuthentik,
+  fakeUser,
+  TESTBED_GROUP,
+} from "./testing";
 
 const user = fakeUser;
 
@@ -202,22 +208,28 @@ describe("guarded writes (AC-4, AC-6)", () => {
     expect(ak.writes).toEqual([]);
   });
 
-  it("adds learners to pod- groups only", async () => {
+  it("adds learners to marked testbed groups only", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const ak = fakeAuthentik([learner, admin]);
-    expect(await addToPodGroup(ak.api, ADMINS.pk, 3)).toEqual({
+    expect(await addToTestbedGroup(ak.api, ADMINS.pk, 3)).toEqual({
       ok: false,
-      error: "not_pod_group",
+      error: "not_testbed_group",
     });
-    expect(await addToPodGroup(ak.api, "other-uuid", 3)).toEqual({
+    expect(await addToTestbedGroup(ak.api, "other-uuid", 3)).toEqual({
       ok: false,
-      error: "not_pod_group",
+      error: "not_testbed_group",
     });
-    expect(await addToPodGroup(ak.api, POD.pk, 1)).toEqual({
+    expect(await addToTestbedGroup(ak.api, TESTBED_GROUP.pk, 1)).toEqual({
       ok: false,
       error: "is_admin",
     });
     expect(ak.writes).toEqual([]);
-    expect((await addToPodGroup(ak.api, POD.pk, 3)).ok).toBe(true);
-    expect(ak.writes).toEqual([`POST /core/groups/${POD.pk}/add_user/`]);
+    expect((await addToTestbedGroup(ak.api, TESTBED_GROUP.pk, 3)).ok).toBe(
+      true,
+    );
+    expect(ak.writes).toEqual([
+      `POST /core/groups/${TESTBED_GROUP.pk}/add_user/`,
+    ]);
+    warn.mockRestore();
   });
 });

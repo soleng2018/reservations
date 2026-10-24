@@ -23,6 +23,10 @@ export type FakeGroup = {
   pk: string;
   name: string;
   attributes: Record<string, unknown>;
+  is_superuser: boolean;
+  // Parent group uuids and role ids, both empty on a flat group.
+  parents: string[];
+  roles: string[];
   // The SDK's mappers require this field on every group.
   roles_obj: never[];
 };
@@ -31,13 +35,33 @@ export const fakeGroup = (
   pk: string,
   name: string,
   attributes: Record<string, unknown> = {},
-): FakeGroup => ({ pk, name, attributes, roles_obj: [] });
+  over: Partial<Pick<FakeGroup, "is_superuser" | "parents" | "roles">> = {},
+): FakeGroup => ({
+  pk,
+  name,
+  attributes,
+  is_superuser: false,
+  parents: [],
+  roles: [],
+  roles_obj: [],
+  ...over,
+});
+
+// A group the owner's script made and marked for testbeds (spec 0017).
+export const markedGroup = (
+  pk: string,
+  name: string,
+  over: Partial<Pick<FakeGroup, "is_superuser" | "parents" | "roles">> = {},
+): FakeGroup => fakeGroup(pk, name, { hol_testbed_group: true }, over);
 
 // The pk the fake gives the first user it creates; the next gets one more.
 export const FAKE_NEW_PK = 900_100;
 
 export const ADMINS = fakeGroup("admins-uuid", "hol-admins");
-export const POD = fakeGroup("pod-uuid", "pod-lab-1");
+export const TESTBED_GROUP = markedGroup(
+  "testbed-group-uuid",
+  "NileWorkshop1Admin",
+);
 
 export function fakeAuthentik(
   initial: readonly FakeUser[],
@@ -47,12 +71,17 @@ export function fakeAuthentik(
     readonly groups?: readonly FakeGroup[];
     // Answer 500 to the matching requests, e.g. one group's reads.
     readonly fail?: (method: string, path: string) => boolean;
+    // Answer with this exact response to the matching requests, e.g. a 403
+    // or a body that is not JSON.
+    readonly reply?: (method: string, path: string) => Response | undefined;
   } = {},
 ) {
   const users = initial.map((u) => ({ ...u, groups: [...u.groups] }));
   const sessions = (opts.sessions ?? []).map((s) => ({ ...s }));
   const writes: string[] = [];
-  const groups = [ADMINS, POD, fakeGroup("other-uuid", "staff")]
+  // Every group read, so a test can check none asked for the members.
+  const groupReads: { path: string; includeUsers: string | null }[] = [];
+  const groups = [ADMINS, TESTBED_GROUP, fakeGroup("other-uuid", "staff")]
     .concat(opts.groups ?? [])
     .map((g) => ({ ...g, attributes: { ...g.attributes } }));
   const json = (body: unknown, status = 200) =>
@@ -82,8 +111,13 @@ export function fakeAuthentik(
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (opts.fail?.(method, path)) return json({ detail: "boom" }, 500);
+    const replied = opts.reply?.(method, path);
+    if (replied) return replied;
     if (method !== "GET") writes.push(`${method} ${path}`);
     const q = url.searchParams;
+
+    if (method === "GET" && /^\/core\/groups\//.test(path))
+      groupReads.push({ path, includeUsers: q.get("include_users") });
 
     if (method === "GET" && path === "/core/groups/")
       return json(
@@ -190,12 +224,20 @@ export function fakeAuthentik(
     sessions,
     groups,
     writes,
+    groupReads,
     api: createCoreApi(
       { AUTHENTIK_URL: "https://auth.test", token: "t" },
       fetchApi,
     ),
   };
 }
+
+// The recorded writes that create, update, or delete a group (spec 0017
+// AC-4): everything but a membership change. Always empty in a correct app.
+export const groupWrites = (writes: readonly string[]) =>
+  writes.filter(
+    (w) => /\/core\/groups\//.test(w) && !/\/(add|remove)_user\/$/.test(w),
+  );
 
 export const fakeUser = (over: Partial<FakeUser>): FakeUser => ({
   pk: 7,

@@ -49,13 +49,13 @@ describe.skipIf(!hasDb)("availability (AC-3)", () => {
         duration_unit: "hours",
       });
       await makeTestbed(trx, ready.id);
-      const noGroup = await makeType(trx);
-      await makeTestbed(trx, noGroup.id, { authentik_group_pk: null });
+      const allDeleted = await makeType(trx);
+      await makeTestbed(trx, allDeleted.id, { deleted_at: new Date() });
       const empty = await makeType(trx);
       const types = await bookableTypes(trx);
       const ids = types.map((t) => t.id);
       expect(ids).toContain(ready.id);
-      expect(ids).not.toContain(noGroup.id);
+      expect(ids).not.toContain(allDeleted.id);
       expect(ids).not.toContain(empty.id);
       expect(types.find((t) => t.id === ready.id)).toMatchObject({
         durationValue: 4,
@@ -117,10 +117,10 @@ describe.skipIf(!hasDb)("availability (AC-3)", () => {
         .set({ deleted_at: await dbNow(trx) })
         .where("id", "=", deleted.id)
         .execute();
-      const noGroup = await makeType(trx);
-      await makeTestbed(trx, noGroup.id, { authentik_group_pk: null });
+      const allDeleted = await makeType(trx);
+      await makeTestbed(trx, allDeleted.id, { deleted_at: new Date() });
 
-      for (const id of [deleted.id, noGroup.id])
+      for (const id of [deleted.id, allDeleted.id])
         expect(await startsFor(trx, id)).toMatchObject({
           starts: [],
           durationMs: 0,
@@ -213,16 +213,12 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
     }));
 
   // The preview must never name a testbed the saga would not assign.
-  it("skips a deleted testbed and one without an Authentik group", () =>
+  it("skips a deleted testbed", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx);
       await makeTestbed(trx, type.id, {
         name: "aa gone",
         deleted_at: await dbNow(trx),
-      });
-      await makeTestbed(trx, type.id, {
-        name: "bb no group",
-        authentik_group_pk: null,
       });
       await makeTestbed(trx, type.id, { name: "cc bench" });
       const start = (await firstStart(trx)) + HOUR;

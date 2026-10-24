@@ -184,6 +184,7 @@ export interface Testbeds {
   authentik_group_pk: string | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
+  domain: string | null;
   id: Generated<string>;
   idp_api_key_id: string | null;
   lms_url: string;

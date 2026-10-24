@@ -218,7 +218,7 @@ describe.skipIf(!hasDb)("bookAsGuest (AC-5, AC-6)", () => {
 
       await trx
         .updateTable("testbeds")
-        .set({ authentik_group_pk: null })
+        .set({ deleted_at: new Date() })
         .where("id", "=", testbed.id)
         .execute();
       expect(await bookAsGuest(ak.api, asConn(trx), input)).toEqual({

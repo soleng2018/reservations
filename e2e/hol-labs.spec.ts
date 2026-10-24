@@ -9,54 +9,41 @@ import {
   authentikGet,
   authentikLogin,
   haveApi,
+  haveProvisioning,
   haveSecrets,
   learner,
+  makeTestbedGroup,
+  provision,
+  removeGroup,
   results,
 } from "./authentik";
 
 // HOL Labs, the login Cloudflare Access uses for the lab VMs, against the
-// real shared Authentik (spec 0003 AC-19, spec 0012 AC-9). A learner passes
-// only while in some `pod-*` group; staff and admins always pass.
+// real shared Authentik (spec 0003 AC-19, spec 0012 AC-9, spec 0017 AC-12). A
+// learner passes only while in a group marked `hol_testbed_group = true`;
+// staff and admins always pass. This needs the marker based gate in place
+// (`npm run authentik:setup -- --apply`, run by the owner).
 //
-// The test puts hol-test-learner in its own throwaway group, never a
-// testbed's: no Cloudflare policy names it, so no VM opens, and the access
-// reconciler only manages testbed groups. Codes meant for Cloudflare are
-// caught in the browser and never reach it; the test swaps one for tokens
-// itself to read the groups claim.
+// The test puts hol-test-learner in its own throwaway groups, one marked and
+// one not, never a testbed's: no Cloudflare policy names them, so no VM opens,
+// and the access reconciler only manages the groups of testbeds. Codes meant
+// for Cloudflare are caught in the browser and never reach it; the test swaps
+// one for tokens itself to read the groups claim.
 const secret = (name: string) => {
   const file = join(homedir(), "secrets", name);
   return existsSync(file) ? readFileSync(file, "utf8").trim() : undefined;
 };
-const provisioningToken = secret("authentik_provisioning_token");
 const labsClientSecret = secret("hol_labs_client_secret");
 
 test.skip(
-  !haveSecrets || !haveApi || !provisioningToken || !labsClientSecret,
+  !haveSecrets || !haveApi || !haveProvisioning || !labsClientSecret,
   "hol-test and HOL Labs secrets are not on this machine",
 );
 
-const TEST_GROUP = "pod-hol-test-e2e-labs";
-
-// Writes go through the provisioning token (the app's own RBAC limited
-// account), and only to the test's own group.
-async function provision(
-  method: "POST" | "DELETE",
-  path: string,
-  body?: unknown,
-) {
-  const res = await fetch(`${AUTHENTIK_URL}/api/v3${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${provisioningToken}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  expect(res.ok, `${method} ${path} → ${res.status}`).toBe(true);
-  const text = await res.text();
-  return text ? (JSON.parse(text) as unknown) : undefined;
-}
+// Writes go only to the test's own groups. A leftover from a failed run is
+// reused, so a rerun never trips on its name.
+const TEST_GROUP = "dev-e2e-hol-labs";
+const PLAIN_GROUP = "dev-e2e-hol-labs-plain";
 
 type Labs = {
   readonly clientId: string;
@@ -198,7 +185,19 @@ async function groupsClaim(labs: Labs, code: string): Promise<string[]> {
 
 let labs: Labs;
 let groupPk = "";
+let plainPk = "";
 let learnerPk = 0;
+
+// The pk of the group with exactly this name, made if it is not there yet.
+async function ensureGroup(name: string, marked: boolean): Promise<string> {
+  const existing = (
+    await authentikGet(
+      results(z.looseObject({ pk: z.string(), name: z.string() })),
+      `/core/groups/?name=${name}`,
+    )
+  ).results.find((g) => g.name === name);
+  return existing?.pk ?? (await makeTestbedGroup(name, marked));
+}
 
 test.beforeAll(async () => {
   labs = await labsApp();
@@ -209,32 +208,21 @@ test.beforeAll(async () => {
         `/core/users/?username=${encodeURIComponent(learner.username)}`,
       )
     ).results.find((u) => u.username === learner.username)?.pk ?? 0;
-  const existing = (
-    await authentikGet(
-      results(z.looseObject({ pk: z.string(), name: z.string() })),
-      `/core/groups/?name=${TEST_GROUP}`,
-    )
-  ).results.find((g) => g.name === TEST_GROUP);
-  groupPk =
-    existing?.pk ??
-    z.object({ pk: z.string() }).parse(
-      await provision("POST", "/core/groups/", {
-        name: TEST_GROUP,
-        attributes: { hol_test: true },
-      }),
-    ).pk;
+  groupPk = await ensureGroup(TEST_GROUP, true);
+  plainPk = await ensureGroup(PLAIN_GROUP, false);
 });
 
 test.afterAll(async () => {
-  if (groupPk) await provision("DELETE", `/core/groups/${groupPk}/`);
+  if (groupPk) await removeGroup(groupPk);
+  if (plainPk) await removeGroup(plainPk);
 });
 
 // Group changes reach Authentik's policy result within seconds (spike 3), so
 // each check retries in a fresh browser until it holds.
 const settle = { timeout: 45_000, intervals: [2_000, 5_000] };
 
-// covers: spec 0003 AC-17, AC-19
-test("a learner passes HOL Labs only while in a pod-* group", async ({
+// covers: spec 0003 AC-17, AC-19, spec 0017 AC-12
+test("a learner passes HOL Labs only while in a marked testbed group", async ({
   browser,
 }) => {
   expect(learnerPk).toBeGreaterThan(0);
@@ -243,6 +231,14 @@ test("a learner passes HOL Labs only while in a pod-* group", async ({
     await expect(async () => {
       expect(await tryLabs(browser, labs, learner)).toBeNull();
     }).toPass(settle);
+
+    // A group without the marker opens nothing. Group changes settle within
+    // seconds, so wait before the one check that must stay closed.
+    await provision("POST", `/core/groups/${plainPk}/add_user/`, {
+      pk: learnerPk,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 6_000));
+    expect(await tryLabs(browser, labs, learner)).toBeNull();
 
     await provision("POST", `/core/groups/${groupPk}/add_user/`, {
       pk: learnerPk,
@@ -258,9 +254,10 @@ test("a learner passes HOL Labs only while in a pod-* group", async ({
     }).toPass(settle);
     expect(await groupsClaim(labs, code ?? "")).toContain(TEST_GROUP);
   } finally {
-    await provision("POST", `/core/groups/${groupPk}/remove_user/`, {
-      pk: learnerPk,
-    });
+    for (const pk of [groupPk, plainPk])
+      await provision("POST", `/core/groups/${pk}/remove_user/`, {
+        pk: learnerPk,
+      });
   }
 
   await expect(async () => {
@@ -269,7 +266,7 @@ test("a learner passes HOL Labs only while in a pod-* group", async ({
 });
 
 // covers: spec 0003 AC-19
-test("an admin passes HOL Labs with no pod-* group", async ({ browser }) => {
+test("an admin passes HOL Labs with no testbed group", async ({ browser }) => {
   expect(await tryLabs(browser, labs, admin)).not.toBeNull();
 });
 

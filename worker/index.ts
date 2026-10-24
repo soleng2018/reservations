@@ -38,14 +38,13 @@ import {
   type Step,
 } from "@/server/worker/loop";
 import { reconcileAccess } from "@/server/worker/reconcile";
+import { releaseDeletedTestbeds } from "@/server/worker/release";
 import {
   completeEnded,
   purgeRateLimits,
   sweepGuestSagas,
-  sweepTestbedCreates,
   sweepUnlinkedLearners,
 } from "@/server/worker/sweep";
-import { teardownDeletedTestbeds } from "@/server/worker/teardown";
 
 const PURGE = "purge rate limits";
 
@@ -172,16 +171,12 @@ async function main(): Promise<number> {
         run: () => sweepUnlinkedLearners(conn),
       },
       {
-        name: "testbed create sweeper",
-        run: () => sweepTestbedCreates(api, conn),
-      },
-      {
         name: "access reconciler",
         run: () => reconcileAccess(api, conn, revokeSource),
       },
       {
-        name: "testbed teardown",
-        run: () => teardownDeletedTestbeds(api, conn),
+        name: "testbed release",
+        run: () => releaseDeletedTestbeds(api, conn),
       },
       // Spec 0015 AC-2: right before "jobs", so a reminder queued here can
       // send in the same tick.

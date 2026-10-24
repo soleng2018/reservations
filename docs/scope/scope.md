@@ -9,7 +9,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 - Sign in for both admins and learners goes through one self hosted **Authentik** identity provider: the same instance and one OIDC application for both roles, with admins and learners told apart by role. The app talks to the Authentik API to configure itself and to create, update, and deactivate learners.
 - The owner supplies two Authentik API keys, kept out of the app's database and UI:
   - a **master key**, used only to set up the app's OIDC SSO configuration in Authentik (provider, application, and anything else sign in needs).
-  - if Authentik allows it, a separate **provisioning key** limited to learners: create, update, and deactivate learners, create and remove testbed groups, add and remove learners in those groups, and any other learner or testbed group task the app needs, but nothing that touches admins or the app's own sign in configuration. The app uses it for all day to day user calls and never uses the master key for them. If a key that narrow is not possible, `/architect` records the fallback and its risk.
+  - if Authentik allows it, a separate **provisioning key** limited to learners: create, update, and deactivate learners, create and remove testbed groups (amended 2026-10-22: the app no longer creates or removes groups, see the last decision below), add and remove learners in those groups, and any other learner or testbed group task the app needs, but nothing that touches admins or the app's own sign in configuration. The app uses it for all day to day user calls and never uses the master key for them. If a key that narrow is not possible, `/architect` records the fallback and its risk.
 - Admin accounts (username and password) are set up directly in Authentik by the owner. The app does not onboard, create, or manage admin users; it only recognizes an admin at sign in. How the admin role is recognized from Authentik is for `/architect` to settle.
 - The admin console is reached only through an unlisted URL (e.g. `https://hol.mydomain.com/l0gin`). No page in the app links to it, and there is no admin sign up or sign in button anywhere. The unlisted URL only hides the console. It does not secure it: every admin page and API still requires an Authentik admin sign in.
 - That URL opens the admin sign in page from the mock: a single "Sign in with SSO" button that sends the admin to Authentik, with no username or password form in the app. Sign out sits at the bottom of the admin sidebar. The mock's SSO button points at a Microsoft login URL only as a placeholder; the real target is Authentik.
@@ -21,9 +21,16 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 - Emails in this release: set password / welcome, booking confirmation with a calendar invite (book, reschedule, cancel), and a reminder before start.
 - The booking email follows `context/Nile HOL Lab Access Email Standalone.html`, the email-client-ready version of the mock's template (the success screen's "View email"): a hidden preview line ("Your lab is reserved. Access links and session details inside."), Nile logo, a "Your lab access is ready" heading, a note that the links work only from start time until the session ends, a details card with lab type, testbed, start and end in the learner's timezone, a "Lab access" list with the Portal, LMS, and one link per client, a "Set your password" note (a separate email brings the link; existing users sign in with their current credentials), a "Manage my reservation" button, the one active reservation rule, and the Nile footer. Its subject is "Your Nile Hands-On Lab access - <start>". On reschedule the same template is used with the mock's "Your reservation was rescheduled" heading and the subject prefixed "Updated: ". As with cancellation, this template is the body of one message that carries the calendar invite (new or updated), not a separate invite and email.
 - The cancellation email follows `context/Nile HOL Cancellation Email Standalone.html`, the email-client-ready version of the template the mock shows after a learner confirms a cancel: a hidden preview line, Nile logo, a "Your reservation was cancelled" heading, a note that the testbed is released, the calendar event removed, and the access links no longer work, a details card with lab type, testbed, "Was scheduled" and "Until" times in the learner's timezone, a "Reserve a new lab" button, and the Nile footer with a nilesecure.com link. Times read like "Tue, Oct 13, 2026, 9:00 AM ET". Its subject is "Cancelled: Your Nile Hands-On Lab reservation - <start>". This template is the body of the cancellation however it is sent: as the cancelled calendar invite (so the event is removed from the learner's calendar) or as the email. The learner should get one cancellation message, not two. The same email goes out when an admin cancels the booking or deactivating a learner cancels it.
-- Authentik also protects the labs. Each testbed has its own Authentik group, which the app creates through the API when an admin adds the testbed (and removes when the testbed is deleted). The group grants access to the URLs listed on that testbed (Nile Portal, LMS, and client URLs). When a learner books and is assigned a testbed, the app adds the learner to that testbed's group. How each URL is put behind Authentik and bound to the group is for `/architect` to settle.
+- Authentik also protects the labs. Each testbed has its own Authentik group (amended 2026-10-22: the group is now predefined in Authentik, and the app no longer creates or removes it, see the last decision below). The group grants access to the URLs listed on that testbed (Nile Portal, LMS, and client URLs). When a learner books and is assigned a testbed, the app adds the learner to that testbed's group. How each URL is put behind Authentik and bound to the group is for `/architect` to settle.
 - Lab access lasts only for the booking window: the learner is added to the testbed's group when the booking starts, and access is terminated right after the lab time is over (or at once on cancel or deactivation). Terminating means removing the group membership and ending any open sessions to the testbed's URLs, so a learner who is already in the lab is cut off too, not just blocked from signing in again.
 - API keys (IDP and AI credentials) and the testbed's IDP field are built as in the mock, but nothing uses them yet: they are stored and edited only. Testbed access always goes through the testbed's Authentik group, whatever IDP the testbed names. The owner expects these keys may never be needed; hooking them into the labs is a Deferred roadmap item.
+- Amended 2026-10-22 (inputs for `/architect`, features 19 and 20):
+  - Each Nile tenant is tied to one email domain, so every testbed carries a mandatory Domain that the admin types. It must look like a valid domain name, for example `nileworkshop-1.com`, `nile.global`, or `rw.nile.global` (examples, not a fixed list). Among live testbeds, the name is unique and the domain is unique, each on its own, so one testbed per tenant domain.
+  - Testbed groups are predefined in Authentik by a separate script (for example `NileWorkshop1Admin`). The testbed name must equal the group name exactly. The app creates and deletes no group: it refuses a testbed whose group does not exist, shows a hint under the Name field, and only adds and removes members. Cloudflare Access uses the same group name.
+  - A learner's Authentik username is first name, a dot, last name and 4 random digits, at the domain of the assigned testbed (a one word name becomes the name plus 4 digits, and a clash gets a new number). The email stays the real address, because the set password email needs it. The Nile attributes from `soleng2018/nile-idp` (`scripts/nile_idp.py`) are set, with `mail` set to the username. A learner has one user per domain, each with its own set password email.
+  - The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens.
+  - The booking rule does not change: a learner still holds at most one Upcoming or Current booking in total. The testbed, and so the domain, comes from availability, so a later booking can land in another domain. Only one of a learner's users is in a group at any moment.
+  - Owner side work that goes with it: the `hol-labs-access` gate, the Cloudflare per VM rules, and each tenant's SAML NameID (to check, it should use the domain username). The owner deletes the two live testbeds before this ships, so the current worker still removes their `pod-` groups.
 
 ## At a glance
 
@@ -47,6 +54,8 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
+| 19 | Testbed domain & predefined groups | Slice 6 | in-progress |
+| 20 | Nile identity per domain | Slice 6 | planned |
 
 ## Foundations
 
@@ -149,6 +158,7 @@ spec [0006](../specs/0006-admin-api-keys/index.md) · code in `app/admin/api-key
 ### 9. Admin: Testbeds · done
 List, search, add, edit, and delete testbeds: name, type, IDP (chosen from IDP API keys, stored only and not used for access yet), Nile Portal URL, LMS URL, and a list of wired or wireless clients, each with a name and URL.
 Saving a new testbed creates its Authentik group and protects its URLs with it; editing the URLs updates that protection; deleting the testbed removes the group.
+Replaced in part by feature 19 (2026-10-22): the app no longer creates or removes the group, it uses one that already exists.
 **Done when:** the screen and form match the mock, including adding and removing client rows; a new testbed has its own Authentik group and its URLs are reachable only by members of that group; a failed Authentik step leaves no half created testbed; deleting a testbed with Upcoming or Current bookings is blocked and the dialog lists them.
 - [x] Design it (spec): `/architect admin: testbeds`
 - [x] Build it: `/develop admin: testbeds`
@@ -307,6 +317,29 @@ Record who did what: API key secret creation and replacement, catalog changes, t
 - [x] Test it: `/test admin audit log` (2026-10-20; the existing suite, 113 Vitest and 5 Playwright, all pass)
 spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 
+## Slice 6: Nile tenants
+
+### 19. Testbed domain & predefined groups · in-progress · Full
+Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creating and deleting testbed groups: an admin names the testbed exactly like a group that already exists in Authentik (for example `NileWorkshop1Admin`, made by a separate script), and the app refuses the testbed when no such group exists. A small hint under the Name field says the name must be the group name. Cloudflare Access per VM rules use the same group name. This replaces the app made `pod-<slug>` groups of features 6, 9, and 14.
+**Done when:** an admin cannot save a testbed without a Domain, or with one that is not a valid domain name; a second live testbed with the same name, or the same domain (ignoring case), is refused with a clear message and nothing is written; a name that matches no Authentik group is refused with a clear message and nothing is written; the app creates and deletes no group in Authentik; a booked learner is added to the group named like the testbed and removed from it when the booking ends; deleting a testbed leaves its group alone; the HOL Labs gate no longer depends on `pod-` names.
+- [x] Design it (spec): `/architect testbed domain & predefined groups`
+- [ ] Build it: `/develop testbed domain & predefined groups` (owner steps first: mark the groups, delete the live testbeds; see the spec's migration plan)
+  - [x] Foundation and guard: migration `0013`, domain input, constraint mappings, audit actions, the marker guard and group lookup (AC-1, 2, 3, 4, 7, 10, 11)
+  - [x] Create thread: lookup then insert, Domain field and Name hint, list column, the old group machinery removed (AC-1, 2, 3, 5, 7, 8)
+  - [x] Edit thread: name locked, domain edit with the booking lock (AC-5, 6, 7)
+  - [x] Delete and reconcile: the release step, the reconciler per group pk with stale check and relink by name (AC-9, 10)
+  - [ ] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
+- [ ] Verify it: `/check verify testbed domain & predefined groups`
+- [ ] Test it: `/test testbed domain & predefined groups`
+- [x] Review it (fresh model): `/check review testbed domain & predefined groups`
+- [ ] Document it: `/document testbed domain & predefined groups`
+spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
+
+### 20. Nile identity per domain · needs a decision · Full
+When a learner is booked on a testbed, they get an Authentik user in that testbed's domain, so they can sign in to that Nile tenant. The username is first name, a dot, last name and 4 random digits at the domain (a one word name becomes the name plus 4 digits, and a clash gets a new random number). The email stays the learner's real address, because the set password email needs it. The Nile attributes from the `nile-idp` script are set (`mail` set to the username, plus `firstName`, `lastName`, and `mobile`). A learner can have one user per domain, each with its own set password email. The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens. Builds on feature 19.
+**Done when:** a new booking creates or reuses the learner's Authentik user for the testbed's domain, with that username, those attributes, and the real email; a booking in another domain creates a second user, and never a second user in the same domain; each new user gets its own set password email; the reconciler adds the user of the booking's domain to the group and removes it at the end; sign in, deactivation, and ending sessions cover all of a learner's users; the Nile login reaches only the booking's own learner, in emails and on screens.
+- [ ] Design it (spec): `/architect nile identity per domain`
+
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.
 - **Error monitoring**: capture server and browser errors in production · needs a decision
@@ -326,6 +359,9 @@ Out of scope for the current build pass, kept so the plan stays honest.
 - **Reconciler grant target fallback**: drop `booking?.bookingId ?? testbed.id` in `access.granted` so a testbed id can never be stored as a booking target (unreachable today) · from spec 0016
 - **Updated access email**: when an admin changes a testbed's URLs or client logins (`testbed.updated` with `accessChanged`), email the new access details to learners with Upcoming or Current bookings on it · from spec 0007
 - **OS logins in the calendar invite**: whether the `.ics` should also carry the client OS logins; left out on 2026-10-20 because an invite stays in calendars indefinitely · needs a decision · from spec 0007
+- **Provisioning role least privilege**: remove `add_group` and `delete_group` from the provisioning role once the Playwright tests have their own credential for test groups; closes the marker's residual risk. A shared Authentik change the owner approves · from spec 0017
+- **Group missing signal**: make a testbed whose group vanished or lost its marker visible (an audit row once per outage, or a badge on the list); today only the worker log shows it, by owner choice on 2026-10-23 · from spec 0017
+- **Group column cleanup**: rename `authentik_group_deleted_at` to a "released" name, and consider dropping `testbeds.slug`, once no old worker can run · from spec 0017
 
 ## Legend
 

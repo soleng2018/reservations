@@ -291,6 +291,44 @@ npm run test:e2e    # Playwright against the dev server; needs ~/secrets/hol-tes
 | API Keys page says not configured | `APP_ENCRYPTION_KEYS_FILE` is unreadable, or `APP_ENCRYPTION_ACTIVE_KEY_ID` isn't in the keyring |
 | `npm run dev` fails at start on a `DATABASE_*` or auth variable | A required value is missing or a `*_FILE` path is wrong; the error names the variable |
 
+## Testbed groups
+
+Each testbed is tied to an Authentik group that already exists. The app never creates, renames, or deletes a group. It only adds a learner to the group when their booking starts, and removes them when it ends. The same group name is what Cloudflare Access checks for the lab VMs.
+
+### Making a group
+
+You make the group, with your own script or in Authentik. For the app to use it, the group must be:
+
+- **Marked.** It has the attribute `hol_testbed_group` set to the boolean `true`. The string `"true"` does not count. The app and the HOL Labs gate both read this marker.
+- **Flat.** It has no parent group and no role, because either could hand its members admin rights.
+- **Not a superuser group**, and not `hol-admins`.
+
+### Adding a testbed
+
+Go to **Admin → Testbeds → Add testbed**.
+
+- **Name:** exactly the name of the group, with the same capital letters. A hint under the field says so. The name cannot change later. To use another group, delete the testbed and add a new one. Deleting is blocked while the testbed has Upcoming or Current reservations.
+- **Domain:** the email domain of the Nile tenant, for example `nile.global`. Capital letters are turned into small ones.
+- The name and the domain must each be unused among live testbeds. A deleted testbed frees both.
+- The domain cannot change while the testbed has Upcoming or Current reservations.
+
+The app checks the group when you save. Under the Name field you will see one of these: "No Authentik group with this name exists.", "That group isn't set up for testbeds. It needs the hol_testbed_group marker.", or "Another testbed already uses that group." If Authentik cannot be reached, the form says so, and nothing is saved.
+
+When a testbed is deleted, the group is left alone. The worker only records that the app is done with it (an audit entry named "Authentik group released").
+
+### Moving from the old `pod-` groups (one time)
+
+This only applies to the release that introduced testbed domains (spec 0017). The order matters, because dev and production share one database and migration `0013_testbed_domain.sql` refuses to run while a live testbed exists, or while a deleted testbed's old group is still waiting to be removed.
+
+1. Make and mark the groups, as above.
+2. Delete the live testbeds in the console. Wait until the worker has removed their `pod-` groups.
+3. Run `npm run db:migrate` (or deploy, which runs it). The migration checks step 2 itself.
+4. Put the marker based HOL Labs gate in place: run `npm run authentik:setup` as a dry run, read what it will change, then run it again with `--apply`. This changes the shared Authentik, so only do it with the owner's approval.
+5. Deploy with `scripts/deploy.sh`.
+6. Add the testbeds again, each with its domain and group name. Point each lab VM's Cloudflare Access rule at that same group name. Check each tenant's SAML NameID.
+
+Do step 6 only after step 4. Until the gate is changed, it still wants `pod-` names, and learners would fail it.
+
 ## Running in production (Docker)
 
 Production runs on the InsForge host as one Docker Compose project named `reservations`, with three services built from one image:
@@ -413,6 +451,6 @@ PGPASSWORD="$(cat ~/secrets/hol_app_password)" docker exec -i -e PGPASSWORD insf
 | `migrate` exits with an error, and `web` and `worker` don't start | Read `docker logs reservations-migrate-1`. Nothing after the failed migration ran, and the dump from before the deploy is in `~/backups` |
 | The image build fails while "Generating static pages" with a `ZodError` on an env variable | A page reads env before it calls `headers()`, `cookies()`, or `connection()`, so Next tries to prerender it at build time. Call one of those first (see `currentSession` in `server/auth/require.ts`) |
 | `worker: another worker holds the lock, exiting` | A worker is already running somewhere (often `npm run worker` in dev). Stop that one; Compose restarts this one |
-| `reconciler: skipped group … (not_found)` every tick | A testbed's Authentik group is gone. Delete the testbed in the console if it's no longer used |
+| `reconciler: testbed … is stale and no usable group has the testbed's name` every tick | The testbed's Authentik group was deleted, renamed, or unmarked. Make or rename a marked group with exactly the testbed's name and the next tick finds it again. If the testbed is no longer used, delete it in the console (see "Testbed groups") |
 | Sign in fails with a redirect URI error | Add the production URL to the provider with `npm run authentik:setup` (step 5) |
 | Guest bookings and adding learners fail, and Authentik answers `403 Token invalid/expired` | The provisioning account or its token is gone or was edited, or the saved token has intent App password instead of API. See "Replacing the provisioning account or token" under step 5 of Getting the webapp running |

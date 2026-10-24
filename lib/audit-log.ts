@@ -69,6 +69,14 @@ export const AUDIT_ACTION_INFO = {
     label: "Authentik group deleted",
     area: "access_groups",
   },
+  "authentik_group.released": {
+    label: "Authentik group released",
+    area: "access_groups",
+  },
+  "testbed.group_relinked": {
+    label: "Testbed group found again",
+    area: "testbeds",
+  },
   "access.granted": { label: "Access granted", area: "access_groups" },
   "access.revoked": { label: "Access revoked", area: "access_groups" },
   "user.created": { label: "User created", area: "users" },

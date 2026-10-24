@@ -1,10 +1,6 @@
 import { sql, type Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
-import {
-  fakeAuthentik,
-  fakeGroup,
-  fakeLearner,
-} from "@/server/authentik/testing";
+import { fakeAuthentik, fakeLearner } from "@/server/authentik/testing";
 import {
   asConn,
   hasDb,
@@ -19,7 +15,6 @@ import {
   completeEnded,
   purgeRateLimits,
   sweepGuestSagas,
-  sweepTestbedCreates,
   sweepUnlinkedLearners,
 } from "./sweep";
 
@@ -34,43 +29,8 @@ const exists = async (
   (await trx.selectFrom(table).select("id").where("id", "=", id).execute())
     .length === 1;
 
-// A testbed that never stored its group pk, created `minutes` ago.
-async function unfinished(trx: Kysely<DB>, typeId: string, minutes: number) {
-  const row = await makeTestbed(trx, typeId, { authentik_group_pk: null });
-  await trx
-    .updateTable("testbeds")
-    .set({ created_at: ago(minutes) })
-    .where("id", "=", row.id)
-    .execute();
-  return row;
-}
-
 // covers: AC-11
 describe.skipIf(!hasDb)("worker sweepers (AC-11)", () => {
-  it("undoes a testbed create older than 10 minutes, group and row", () =>
-    inRollback(async (trx) => {
-      const type = await makeType(trx);
-      const old = await unfinished(trx, type.id, 11);
-      const fresh = await makeTestbed(trx, type.id, {
-        authentik_group_pk: null,
-      });
-      const foreign = await unfinished(trx, type.id, 11);
-      const ak = fakeAuthentik([], {
-        groups: [
-          fakeGroup("g-old", `pod-${old.slug}`, { hol_testbed_id: old.id }),
-          fakeGroup("g-foreign", `pod-${foreign.slug}`, {
-            hol_testbed_id: crypto.randomUUID(),
-          }),
-        ],
-      });
-      await sweepTestbedCreates(ak.api, asConn(trx));
-      expect(ak.writes).toEqual(["DELETE /core/groups/g-old/"]);
-      expect(await exists(trx, "testbeds", old.id)).toBe(false);
-      expect(await exists(trx, "testbeds", foreign.id)).toBe(false);
-      expect(ak.groups.some((g) => g.pk === "g-foreign")).toBe(true);
-      expect(await exists(trx, "testbeds", fresh.id)).toBe(true);
-    }));
-
   it("compensates a guest saga stuck in provisioning", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx);

@@ -8,10 +8,8 @@ import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
 import { TestbedEditDialog } from "@/components/admin/testbed-edit-dialog";
 import { TestbedFields } from "@/components/admin/testbed-fields";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { targetHistoryHref } from "@/lib/audit-log";
-import { toneFor } from "@/lib/badge-tones";
 import { clientCountLabel, testbedSearchText } from "@/lib/testbeds";
 import { requireAdmin } from "@/server/auth/require";
 import { listIdpKeyOptions } from "@/server/catalog/api-keys";
@@ -27,8 +25,6 @@ import {
 } from "../actions";
 
 export const metadata: Metadata = { title: "Testbeds" };
-
-const NOT_READY = "Not ready";
 
 // Spec 0007: list, search, add, edit, and delete testbeds. The list carries
 // each testbed's client count only; OS logins reach the browser solely
@@ -49,15 +45,9 @@ export default async function TestbedsPage() {
     label: t.name,
     search: testbedSearchText(t),
     cells: {
-      name: (
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-cell font-semibold text-fg1">{t.name}</span>
-          {t.groupReady ? null : (
-            <Badge tone={toneFor(NOT_READY)}>{NOT_READY}</Badge>
-          )}
-        </span>
-      ),
+      name: <span className="text-cell font-semibold text-fg1">{t.name}</span>,
       type: t.typeName,
+      domain: <span className="font-mono">{t.domain}</span>,
       idp: t.idpName ?? (
         <>
           <span aria-hidden="true">—</span>
@@ -72,7 +62,6 @@ export default async function TestbedsPage() {
         <TestbedEditDialog
           id={t.id}
           name={t.name}
-          ready={t.groupReady}
           types={typeOptions}
           idps={idpOptions}
           load={loadTestbedForEdit}
@@ -113,12 +102,13 @@ export default async function TestbedsPage() {
           columns={[
             { key: "name", header: "Name" },
             { key: "type", header: "Testbed type" },
+            { key: "domain", header: "Domain" },
             { key: "idp", header: "IDP" },
             { key: "clients", header: "Clients" },
           ]}
           rows={rows}
           noun={{ one: "testbed", many: "testbeds" }}
-          searchPlaceholder="Search by name, type, or IDP…"
+          searchPlaceholder="Search by name, type, domain, or IDP…"
         />
       </PageBody>
     </>

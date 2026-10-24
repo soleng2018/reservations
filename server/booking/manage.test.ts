@@ -146,7 +146,7 @@ describe.skipIf(!hasDb)("learnerBookings", () => {
       await w.book(10, 12);
       await trx
         .updateTable("testbeds")
-        .set({ authentik_group_pk: null })
+        .set({ deleted_at: new Date() })
         .where("id", "=", w.testbed.id)
         .execute();
       const [row] = await learnerBookings(trx, w.user.id);

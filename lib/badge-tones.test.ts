@@ -15,11 +15,6 @@ describe("toneFor", () => {
     expect(toneFor(word)).toBe(tone);
   });
 
-  // covers: Value sourcing (DataTable rows), a testbed with no group
-  it("gives the testbeds page's Not ready badge the neutral tone", () => {
-    expect(toneFor("Not ready")).toBe("neutral");
-  });
-
   it("ignores case and surrounding spaces", () => {
     expect(toneFor("  UPCOMING ")).toBe("info");
     expect(toneFor("Active")).toBe("success");

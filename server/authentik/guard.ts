@@ -9,12 +9,15 @@ import {
   type User,
 } from "./client";
 
-// Every Authentik user or group write passes this module (spec 0003 AC-4).
-// The provisioning token's RBAC cannot tell an admin from a learner, so the
-// containment lives here: never write an admin, only write tagged learners
-// (except the guest saga's tag step), and only touch `pod-*` groups.
+// Every Authentik user or group write passes this module (spec 0003 AC-4,
+// spec 0017 AC-3). The provisioning token's RBAC cannot tell an admin from a
+// learner, so the containment lives here: never write an admin, only write
+// tagged learners (except the guest saga's tag step), and only change the
+// membership of a group the owner marked for testbeds.
 
-export const POD_GROUP_PREFIX = "pod-";
+// The attribute the owner's script sets, as the boolean `true`, on every group
+// that may back a testbed. The HOL Labs gate reads the same marker.
+export const TESTBED_GROUP_MARKER = "hol_testbed_group";
 
 // "tag": the guest saga adding the learner attributes to a reused user, the
 // one write allowed on an untagged user. "learner": everything else.
@@ -26,8 +29,24 @@ export type UserTarget = {
   readonly attributes: Readonly<Record<string, unknown>>;
 };
 
+// "add": a learner joins the group, so it must be a flat, marked testbed
+// group. "remove": a learner leaves, which is allowed on any group but the
+// admin one, so a group that lost its marker still lets ended learners out.
+export type GroupWritePurpose = "add" | "remove";
+
+export type GroupTarget = {
+  readonly pk: string;
+  readonly name: string;
+  // `undefined` for this and the two lists below means Authentik did not say,
+  // which is refused for an add rather than read as "no".
+  readonly isSuperuser: boolean | undefined;
+  readonly parents: readonly string[] | undefined;
+  readonly roles: readonly string[] | undefined;
+  readonly attributes: Readonly<Record<string, unknown>>;
+};
+
 export type UserRefusal = "is_admin" | "not_learner";
-export type GroupRefusal = "not_pod_group";
+export type GroupRefusal = "not_testbed_group";
 
 export const isTaggedLearner = (attributes: UserTarget["attributes"]) =>
   attributes.hol_learner === true;
@@ -45,24 +64,45 @@ export function checkUserWrite(
   return ok(undefined);
 }
 
+const isAdminGroup = (group: GroupTarget, adminGroupUuid: string) =>
+  group.pk === adminGroupUuid ||
+  group.name.toLowerCase() === ADMIN_GROUP.toLowerCase();
+
+// A group learners may be added to: marked with the boolean `true` (the
+// string "true" is not enough), not a superuser group, and flat, since a
+// parent or a role could hand its members admin rights.
+const isUsableTestbedGroup = (group: GroupTarget) =>
+  group.attributes[TESTBED_GROUP_MARKER] === true &&
+  group.isSuperuser === false &&
+  group.parents?.length === 0 &&
+  group.roles?.length === 0;
+
 // Pure: may this write touch this group?
-export function checkGroupWrite(name: string): Result<void, GroupRefusal> {
-  return name.startsWith(POD_GROUP_PREFIX) &&
-    name.length > POD_GROUP_PREFIX.length
-    ? ok(undefined)
-    : err("not_pod_group");
+export function checkGroupWrite(
+  group: GroupTarget,
+  purpose: GroupWritePurpose,
+  adminGroupUuid: string,
+): Result<void, GroupRefusal> {
+  if (isAdminGroup(group, adminGroupUuid)) return err("not_testbed_group");
+  if (purpose === "add" && !isUsableTestbedGroup(group))
+    return err("not_testbed_group");
+  return ok(undefined);
 }
 
 // The admin group's uuid, looked up once per process. A missing group means
 // setup never ran: every user write is refused as unavailable.
 const cache = globalThis as typeof globalThis & { holAdminGroup?: string };
 
-async function adminGroupUuid(
+export async function adminGroupUuid(
   api: CoreApi,
 ): Promise<Result<string, AuthentikFailure>> {
   if (cache.holAdminGroup) return ok(cache.holAdminGroup);
   const found = await call("groups.list admin", () =>
-    api.coreGroupsList({ name: ADMIN_GROUP, pageSize: 2 }),
+    api.coreGroupsList({
+      name: ADMIN_GROUP,
+      pageSize: 2,
+      includeUsers: false,
+    }),
   );
   if (!found.ok) return found;
   const matches = found.value.results.filter((g) => g.name === ADMIN_GROUP);
@@ -104,19 +144,37 @@ export async function guardUserWrite(
   return user;
 }
 
-// Re-reads the group and checks its name before a membership or delete.
-// Returns the fresh group so the caller can check its attributes.
+export const toGroupTarget = (g: Group): GroupTarget => ({
+  pk: g.pk,
+  name: g.name,
+  isSuperuser: g.isSuperuser,
+  parents: g.parents,
+  roles: g.roles,
+  attributes: g.attributes ?? {},
+});
+
+// Re-reads the group (never its members) and checks it before a membership
+// write. Returns the fresh group so the caller can use its name.
 export async function guardGroupWrite(
   api: CoreApi,
   groupUuid: string,
+  purpose: GroupWritePurpose,
 ): Promise<Result<Group, GroupRefusal | AuthentikFailure>> {
+  const admins = await adminGroupUuid(api);
+  if (!admins.ok) return admins;
   const group = await call("groups.retrieve", () =>
-    api.coreGroupsRetrieve({ groupUuid }),
+    api.coreGroupsRetrieve({ groupUuid, includeUsers: false }),
   );
   if (!group.ok) return group;
-  const allowed = checkGroupWrite(group.value.name);
+  const allowed = checkGroupWrite(
+    toGroupTarget(group.value),
+    purpose,
+    admins.value,
+  );
   if (!allowed.ok) {
-    console.warn(`authentik guard: refused write on group ${groupUuid}`);
+    console.warn(
+      `authentik guard: refused ${purpose} write on group ${groupUuid}`,
+    );
     return allowed;
   }
   return group;

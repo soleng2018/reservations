@@ -6,6 +6,8 @@ export type ConstraintError =
   | "overlap"
   | "user_has_live_booking"
   | "duplicate_name"
+  | "duplicate_domain"
+  | "group_in_use"
   | "duplicate_email"
   | "duplicate_slug"
   | "cloudflare_exists"
@@ -21,6 +23,8 @@ const byConstraint: Readonly<Record<string, ConstraintError>> = {
   testbeds_slug_uq: "duplicate_slug",
   testbed_types_name_lower_uq: "duplicate_name",
   testbeds_name_lower_uq: "duplicate_name",
+  testbeds_domain_uq: "duplicate_domain",
+  testbeds_group_pk_uq: "group_in_use",
   api_keys_name_lower_uq: "duplicate_name",
   api_keys_one_cloudflare_uq: "cloudflare_exists",
   api_keys_one_google_uq: "google_exists",

@@ -359,18 +359,15 @@ describe.skipIf(!hasDb)("booking data rules", () => {
       expect(version).toBe(1);
     }));
 
-  it("books only a live testbed with a group (AC-14)", () =>
+  it("books only a live testbed (AC-14)", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx);
       const good = await makeTestbed(trx, type.id);
-      const noGroup = await makeTestbed(trx, type.id, {
-        authentik_group_pk: null,
-      });
       const deleted = await makeTestbed(trx, type.id, {
         deleted_at: new Date(),
       });
       expect((await lockBookableTestbed(trx, good.id)).ok).toBe(true);
-      for (const id of [noGroup.id, deleted.id, crypto.randomUUID()]) {
+      for (const id of [deleted.id, crypto.randomUUID()]) {
         expect(await lockBookableTestbed(trx, id)).toEqual({
           ok: false,
           error: "not_bookable",
@@ -387,7 +384,6 @@ describe.skipIf(!hasDb)("booking data rules", () => {
       const b = await makeTestbed(trx, type.id, { name: `b ${tag}` });
       const a = await makeTestbed(trx, type.id, { name: `A ${tag}` });
       const c = await makeTestbed(trx, type.id, { name: `C ${tag}` });
-      await makeTestbed(trx, type.id, { authentik_group_pk: null });
       await makeTestbed(trx, type.id, { deleted_at: new Date() });
       await makeTestbed(trx, other.id);
       expect(await bookableTestbedsOfType(trx, type.id)).toEqual([

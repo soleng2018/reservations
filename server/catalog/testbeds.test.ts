@@ -2,7 +2,12 @@ import { sql, type Kysely, type Transaction } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import type { TestbedInput } from "@/lib/catalog-input";
 import type { CoreApi } from "@/server/authentik/client";
-import { fakeAuthentik, fakeGroup } from "@/server/authentik/testing";
+import {
+  fakeAuthentik,
+  fakeGroup,
+  groupWrites,
+  markedGroup,
+} from "@/server/authentik/testing";
 import { db } from "@/server/db";
 import { lockBookableTestbed } from "@/server/db/bookings";
 import {
@@ -21,7 +26,6 @@ import {
   deleteTestbed,
   getTestbedForEdit,
   listTestbedsForAdmin,
-  undoTestbedCreate,
   updateTestbed,
 } from "./testbeds";
 import { createTestbedType, listTestbedTypes } from "./testbed-types";
@@ -34,9 +38,12 @@ const PASSWORD = `pw ${unique()} `;
 async function setup(trx: Kysely<DB>) {
   const admin = await makeUser(trx, { role: "admin", company: null });
   const type = await makeType(trx);
-  const name = `Lab ${unique()}`;
+  const tag = unique();
+  // The name is the name of a group the owner already made and marked.
+  const name = `NileLab${tag}Admin`;
   const input: TestbedInput = {
     name,
+    domain: `lab-${tag}.example.test`,
     testbedTypeId: type.id,
     idpApiKeyId: null,
     portalUrl: "https://portal.example.test",
@@ -58,10 +65,19 @@ async function setup(trx: Kysely<DB>) {
       },
     ],
   };
+  const group = markedGroup(crypto.randomUUID(), name);
+  // The fake Authentik holds the owner's group; `extra` adds or changes more.
+  const authentik = (
+    extra: Parameters<typeof fakeAuthentik>[1] & object = {},
+  ) =>
+    fakeAuthentik([], {
+      ...extra,
+      groups: [group, ...(extra.groups ?? [])],
+    });
   const rowsNamed = (n: string) =>
     trx
       .selectFrom("testbeds")
-      .select(["id", "slug", "authentik_group_pk"])
+      .select(["id", "slug", "domain", "authentik_group_pk"])
       .where(sql<string>`lower(name)`, "=", n.toLowerCase())
       .execute();
   const audits = (targetId: string) =>
@@ -71,7 +87,7 @@ async function setup(trx: Kysely<DB>) {
       .where("target_id", "=", targetId)
       .orderBy("action")
       .execute();
-  return { admin, type, input, rowsNamed, audits };
+  return { admin, type, input, group, authentik, rowsNamed, audits };
 }
 
 const makeKey = (
@@ -180,9 +196,9 @@ describe.skipIf(!hasDb)("listTestbedTypes (AC-1)", () => {
     }));
 });
 
-// covers: spec 0007 AC-1, Value sourcing (list)
-describe.skipIf(!hasDb)("listTestbedsForAdmin (AC-1)", () => {
-  it("lists live testbeds by name ignoring case, with type, IDP, and client count", () =>
+// covers: spec 0007 AC-1, spec 0017 AC-8, Value sourcing (list)
+describe.skipIf(!hasDb)("listTestbedsForAdmin (AC-1, spec 0017 AC-8)", () => {
+  it("lists live testbeds by name ignoring case, with type, domain, IDP, and client count", () =>
     inRollback(async (trx) => {
       const tag = unique();
       const type = await makeType(trx, { name: `Type ${tag}` });
@@ -218,47 +234,65 @@ describe.skipIf(!hasDb)("listTestbedsForAdmin (AC-1)", () => {
           id: a.id,
           name: a.name,
           typeName: type.name,
+          domain: a.domain,
           idpName: null,
           clientCount: 0,
-          groupReady: true,
         },
         {
           id: b.id,
           name: b.name,
           typeName: type.name,
+          domain: b.domain,
           idpName: key.name,
           clientCount: 3,
-          groupReady: true,
         },
       ]);
       // No client details, so no OS login, in the list payload.
       expect(JSON.stringify(mine)).not.toContain(PASSWORD);
     }));
-
-  it("marks a testbed whose group pk is missing as not ready", () =>
-    inRollback(async (trx) => {
-      const type = await makeType(trx);
-      const tb = await makeTestbed(trx, type.id, { authentik_group_pk: null });
-      const listed = (await listTestbedsForAdmin(trx)).find(
-        (t) => t.id === tb.id,
-      );
-      expect(listed?.groupReady).toBe(false);
-    }));
 });
 
-// covers: spec 0004 AC-2, AC-11 (the undo the sweeper shares); spec 0007 AC-2
-describe.skipIf(!hasDb)("createTestbed (AC-2)", () => {
-  it("inserts the row, creates pod-<slug> stamped with its id, then stores the pk", () =>
+// Runs `after` once the group lookup has answered, standing in for a second
+// admin saving between this create's precheck and its insert.
+const racing = (api: CoreApi, after: () => Promise<unknown>): CoreApi => {
+  // The first group list may be the admin group lookup, so only the list by
+  // name (the one with a `name` argument) triggers it, and only once.
+  let fired = false;
+  return new Proxy(api, {
+    get(target, prop, receiver) {
+      const value: unknown = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function") return value;
+      if (prop !== "coreGroupsList") return value.bind(target);
+      return async (...args: unknown[]) => {
+        const listed: unknown = await value.apply(target, args);
+        const byName = (args[0] as { name?: string } | undefined)?.name;
+        if (!fired && byName !== undefined && byName !== "hol-admins") {
+          fired = true;
+          await after();
+        }
+        return listed;
+      };
+    },
+  });
+};
+
+// covers: spec 0017 AC-2, AC-3, AC-4, AC-7; spec 0004 AC-2; spec 0007 AC-2
+describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
+  it("inserts one row with the domain and the group's pk, and audits it", () =>
     inRollback(async (trx) => {
-      const { admin, input, rowsNamed, audits } = await setup(trx);
-      const ak = fakeAuthentik([]);
+      const { admin, input, group, authentik, rowsNamed, audits } =
+        await setup(trx);
+      const ak = authentik();
       const r = await createTestbed(ak.api, asConn(trx), input, admin.id);
       if (!r.ok) throw new Error(r.error);
 
-      const group = ak.groups.find((g) => g.name === `pod-${r.value.slug}`);
-      expect(group?.attributes).toEqual({ hol_testbed_id: r.value.id });
       expect(await rowsNamed(input.name)).toEqual([
-        { id: r.value.id, slug: r.value.slug, authentik_group_pk: group?.pk },
+        {
+          id: r.value.id,
+          slug: r.value.slug,
+          domain: input.domain,
+          authentik_group_pk: group.pk,
+        },
       ]);
       expect(await clientRows(trx, r.value.id)).toMatchObject([
         {
@@ -276,21 +310,54 @@ describe.skipIf(!hasDb)("createTestbed (AC-2)", () => {
           position: 1,
         },
       ]);
+      // One audit row, with the domain and the stored pk, and no group row.
       expect(await audits(r.value.id)).toEqual([{ action: "testbed.created" }]);
-      expect(await audits(group?.pk ?? "")).toEqual([
-        { action: "authentik_group.created" },
-      ]);
+      expect(await audits(group.pk)).toEqual([]);
+      const row = await trx
+        .selectFrom("audit_events")
+        .select("metadata")
+        .where("target_id", "=", r.value.id)
+        .executeTakeFirstOrThrow();
+      expect(row.metadata).toEqual({
+        slug: r.value.slug,
+        domain: input.domain,
+        groupPk: group.pk,
+        clients: 2,
+      });
+      // The app writes no group: it only read it, without its members.
+      expect(ak.writes).toEqual([]);
+      expect(groupWrites(ak.writes)).toEqual([]);
+      expect(ak.groupReads.every((g) => g.includeUsers === "false")).toBe(true);
       const listed = await listTestbedsForAdmin(trx);
-      expect(listed.find((t) => t.id === r.value.id)?.groupReady).toBe(true);
+      expect(listed.find((t) => t.id === r.value.id)?.domain).toBe(
+        input.domain,
+      );
+    }));
+
+  it("stores the trimmed name exactly as the group is named", () =>
+    inRollback(async (trx) => {
+      const { admin, input, group, authentik } = await setup(trx);
+      const r = await createTestbed(
+        authentik().api,
+        asConn(trx),
+        input,
+        admin.id,
+      );
+      if (!r.ok) throw new Error(r.error);
+      const row = await trx
+        .selectFrom("testbeds")
+        .select("name")
+        .where("id", "=", r.value.id)
+        .executeTakeFirstOrThrow();
+      expect(row.name).toBe(group.name);
     }));
 
   it("stores a live IDP key", () =>
     inRollback(async (trx) => {
-      const { admin, input } = await setup(trx);
+      const { admin, input, authentik } = await setup(trx);
       const key = await makeKey(trx);
-      const ak = fakeAuthentik([]);
       const r = await createTestbed(
-        ak.api,
+        authentik().api,
         asConn(trx),
         { ...input, idpApiKeyId: key.id },
         admin.id,
@@ -310,9 +377,9 @@ describe.skipIf(!hasDb)("createTestbed (AC-2)", () => {
     ["an AI key", { type: "AI" as const }],
   ])("refuses an IDP that is %s and writes nothing", (_, over) =>
     inRollback(async (trx) => {
-      const { admin, input, rowsNamed } = await setup(trx);
+      const { admin, input, authentik, rowsNamed, audits } = await setup(trx);
       const key = await makeKey(trx, over);
-      const ak = fakeAuthentik([]);
+      const ak = authentik();
       expect(
         await createTestbed(
           ak.api,
@@ -322,213 +389,321 @@ describe.skipIf(!hasDb)("createTestbed (AC-2)", () => {
         ),
       ).toEqual({ ok: false, error: "idp_not_found" });
       expect(await rowsNamed(input.name)).toEqual([]);
+      expect(await audits(admin.id)).toEqual([]);
       expect(ak.writes).toEqual([]);
     }),
   );
 
-  it("suffixes a slug already taken, and refuses a duplicate name", () =>
+  it("refuses a missing or deleted type and writes nothing", () =>
     inRollback(async (trx) => {
-      const { admin, input } = await setup(trx);
-      const ak = fakeAuthentik([]);
-      const first = await createTestbed(ak.api, asConn(trx), input, admin.id);
-      if (!first.ok) throw new Error(first.error);
-      const second = await createTestbed(
-        ak.api,
-        asConn(trx),
-        { ...input, name: input.name.replace(" ", "-") },
-        admin.id,
-      );
-      expect(second).toMatchObject({
-        ok: true,
-        value: { slug: `${first.value.slug}-2` },
-      });
-      const writes = ak.writes.length;
-      expect(
-        await createTestbed(
-          ak.api,
-          asConn(trx),
-          { ...input, name: input.name.toUpperCase() },
-          admin.id,
-        ),
-      ).toEqual({ ok: false, error: "duplicate_name" });
-      expect(ak.writes).toHaveLength(writes);
-    }));
-
-  it("refuses a missing or deleted type", () =>
-    inRollback(async (trx) => {
-      const { admin, input, type } = await setup(trx);
+      const { admin, input, type, authentik, rowsNamed } = await setup(trx);
       await trx
         .updateTable("testbed_types")
         .set({ deleted_at: new Date() })
         .where("id", "=", type.id)
         .execute();
-      const ak = fakeAuthentik([]);
-      expect(await createTestbed(ak.api, asConn(trx), input, admin.id)).toEqual(
-        { ok: false, error: "type_not_found" },
-      );
-      expect(ak.writes).toEqual([]);
-    }));
-
-  it("leaves no row when the group create fails", () =>
-    inRollback(async (trx) => {
-      const { admin, input, rowsNamed } = await setup(trx);
-      const ak = fakeAuthentik([], {
-        fail: (m, p) => m === "POST" && p === "/core/groups/",
-      });
-      expect(await createTestbed(ak.api, asConn(trx), input, admin.id)).toEqual(
-        { ok: false, error: "group_failed" },
-      );
+      expect(
+        await createTestbed(authentik().api, asConn(trx), input, admin.id),
+      ).toEqual({ ok: false, error: "type_not_found" });
       expect(await rowsNamed(input.name)).toEqual([]);
     }));
 
-  it("leaves the row for the sweeper when Authentik is down", () =>
+  it("suffixes a slug already taken", () =>
     inRollback(async (trx) => {
-      const { admin, input, rowsNamed } = await setup(trx);
-      const ak = fakeAuthentik([], { down: true });
-      expect(await createTestbed(ak.api, asConn(trx), input, admin.id)).toEqual(
-        { ok: false, error: "group_failed" },
-      );
-      expect(await rowsNamed(input.name)).toMatchObject([
-        { authentik_group_pk: null },
-      ]);
-    }));
-
-  it("never adopts an existing pod-<slug> group, and leaves it alone", () =>
-    inRollback(async (trx) => {
-      const { admin, input, rowsNamed } = await setup(trx);
-      const slug = input.name.toLowerCase().replace(" ", "-");
-      const foreign = fakeGroup("foreign", `pod-${slug}`, {
-        hol_testbed_id: crypto.randomUUID(),
+      const { admin, input, authentik, group } = await setup(trx);
+      // "Lab x" and "Lab-x" are two names with one slug.
+      const tag = unique();
+      const spaced = { ...input, name: `Lab ${tag}`, domain: `a-${tag}.test` };
+      const dashed = { ...input, name: `Lab-${tag}`, domain: `b-${tag}.test` };
+      const ak = authentik({
+        groups: [
+          markedGroup(crypto.randomUUID(), spaced.name),
+          markedGroup(crypto.randomUUID(), dashed.name),
+        ],
       });
-      const ak = fakeAuthentik([], { groups: [foreign] });
-      expect(await createTestbed(ak.api, asConn(trx), input, admin.id)).toEqual(
-        { ok: false, error: "group_failed" },
-      );
-      expect(await rowsNamed(input.name)).toEqual([]);
-      expect(ak.groups.some((g) => g.pk === "foreign")).toBe(true);
-      expect(ak.writes).toEqual([]);
+      expect(group.name).not.toBe(spaced.name);
+      const first = await createTestbed(ak.api, asConn(trx), spaced, admin.id);
+      if (!first.ok) throw new Error(first.error);
+      expect(
+        await createTestbed(ak.api, asConn(trx), dashed, admin.id),
+      ).toMatchObject({
+        ok: true,
+        value: { slug: `${first.value.slug}-2` },
+      });
     }));
 
-  // covers: the create vs delete race (spec 0007 AC-2)
-  it("fails a create whose row was soft deleted before the pk store, and undoes it", () =>
+  // covers: AC-2, the name and the domain are unique among live testbeds
+  it("refuses a taken name ignoring case, before it calls Authentik", () =>
     inRollback(async (trx) => {
-      const { admin, input, rowsNamed } = await setup(trx);
-      const ak = fakeAuthentik([]);
-      // An admin deletes the not ready row right after its group is made.
-      const api = new Proxy(ak.api, {
-        get(target, prop, receiver) {
-          const value: unknown = Reflect.get(target, prop, receiver);
-          if (prop !== "coreGroupsCreate" || typeof value !== "function")
-            return typeof value === "function" ? value.bind(target) : value;
-          return async (...args: unknown[]) => {
-            const created: unknown = await value.apply(target, args);
-            await trx
-              .updateTable("testbeds")
-              .set({ deleted_at: new Date() })
-              .where("name", "=", input.name)
-              .execute();
-            return created;
-          };
-        },
-      }) as CoreApi;
+      const { admin, input, authentik, rowsNamed } = await setup(trx);
+      const first = await createTestbed(
+        authentik().api,
+        asConn(trx),
+        input,
+        admin.id,
+      );
+      if (!first.ok) throw new Error(first.error);
+
+      // Authentik is down, yet the duplicate message still shows.
+      const down = authentik({ down: true });
+      expect(
+        await createTestbed(
+          down.api,
+          asConn(trx),
+          { ...input, name: input.name.toUpperCase(), domain: "other.test" },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "duplicate_name" });
+      const quiet = authentik();
+      await createTestbed(
+        quiet.api,
+        asConn(trx),
+        { ...input, domain: "another.test" },
+        admin.id,
+      );
+      expect(quiet.groupReads).toEqual([]);
+      expect(await rowsNamed(input.name)).toHaveLength(1);
+    }));
+
+  it("refuses a taken domain, and shows only the name error when both are taken", () =>
+    inRollback(async (trx) => {
+      const { admin, input, authentik } = await setup(trx);
+      const other = markedGroup(`other-${unique()}`, `Other${unique()}Admin`);
+      const ak = authentik({ groups: [other] });
+      const first = await createTestbed(ak.api, asConn(trx), input, admin.id);
+      if (!first.ok) throw new Error(first.error);
+
+      expect(
+        await createTestbed(
+          ak.api,
+          asConn(trx),
+          { ...input, name: other.name },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "duplicate_domain" });
+      expect(await createTestbed(ak.api, asConn(trx), input, admin.id)).toEqual(
+        { ok: false, error: "duplicate_name" },
+      );
+    }));
+
+  it("lets a soft delete free the name, the domain, and the group for reuse", () =>
+    inRollback(async (trx) => {
+      const { admin, input, authentik, rowsNamed } = await setup(trx);
+      const ak = authentik();
+      const first = await createTestbed(ak.api, asConn(trx), input, admin.id);
+      if (!first.ok) throw new Error(first.error);
+      await deleteTestbed(asConn(trx), first.value.id, admin.id);
+
+      const again = await createTestbed(ak.api, asConn(trx), input, admin.id);
+      expect(again).toMatchObject({
+        ok: true,
+        value: { slug: `${first.value.slug}-2` },
+      });
+      expect(await rowsNamed(input.name)).toHaveLength(2);
+    }));
+
+  // covers: two admins saving at once get the message, never an exception
+  it("tells a name taken between the precheck and the insert from a slug clash", () =>
+    inRollback(async (trx) => {
+      const { admin, input, type, authentik } = await setup(trx);
+      const api = racing(authentik().api, () =>
+        makeTestbed(trx, type.id, { name: input.name.toUpperCase() }),
+      );
       expect(await createTestbed(api, asConn(trx), input, admin.id)).toEqual({
         ok: false,
-        error: "group_failed",
+        error: "duplicate_name",
       });
-      expect(await rowsNamed(input.name)).toEqual([]);
-      const slug = input.name.toLowerCase().replace(" ", "-");
-      expect(ak.groups.filter((g) => g.name === `pod-${slug}`)).toEqual([]);
-      expect(ak.writes.filter((w) => w.startsWith("DELETE"))).toHaveLength(1);
-    }));
-});
-
-describe.skipIf(!hasDb)("undoTestbedCreate (AC-11)", () => {
-  async function unfinished(trx: Kysely<DB>) {
-    const type = await makeType(trx);
-    return makeTestbed(trx, type.id, { authentik_group_pk: null });
-  }
-
-  it("deletes the group carrying the row's id, then the row", () =>
-    inRollback(async (trx) => {
-      const row = await unfinished(trx);
-      const ak = fakeAuthentik([], {
-        groups: [
-          fakeGroup("g1", `pod-${row.slug}`, { hol_testbed_id: row.id }),
-        ],
-      });
-      expect(await undoTestbedCreate(ak.api, asConn(trx), row.id)).toEqual({
-        ok: true,
-        value: true,
-      });
-      expect(ak.writes).toEqual(["DELETE /core/groups/g1/"]);
-      const left = await trx
-        .selectFrom("testbeds")
-        .select("id")
-        .where("id", "=", row.id)
-        .execute();
-      expect(left).toEqual([]);
     }));
 
-  it("leaves a group whose hol_testbed_id differs", () =>
+  it("tells a domain taken between the precheck and the insert", () =>
     inRollback(async (trx) => {
-      const row = await unfinished(trx);
-      const ak = fakeAuthentik([], {
-        groups: [
-          fakeGroup("g1", `pod-${row.slug}`, {
-            hol_testbed_id: crypto.randomUUID(),
-          }),
-        ],
-      });
-      expect(await undoTestbedCreate(ak.api, asConn(trx), row.id)).toEqual({
-        ok: true,
-        value: true,
-      });
-      expect(ak.writes).toEqual([]);
-    }));
-
-  it("never touches a row whose pk is stored", () =>
-    inRollback(async (trx) => {
-      const type = await makeType(trx);
-      const row = await makeTestbed(trx, type.id);
-      const ak = fakeAuthentik([], {
-        groups: [
-          fakeGroup("g1", `pod-${row.slug}`, { hol_testbed_id: row.id }),
-        ],
-      });
-      expect(await undoTestbedCreate(ak.api, asConn(trx), row.id)).toEqual({
-        ok: true,
-        value: false,
-      });
-      expect(ak.writes).toEqual([]);
-    }));
-
-  it("keeps the row when Authentik cannot be reached", () =>
-    inRollback(async (trx) => {
-      const row = await unfinished(trx);
-      const ak = fakeAuthentik([], { down: true });
-      expect(await undoTestbedCreate(ak.api, asConn(trx), row.id)).toEqual({
+      const { admin, input, type, authentik } = await setup(trx);
+      const api = racing(authentik().api, () =>
+        makeTestbed(trx, type.id, { domain: input.domain }),
+      );
+      expect(await createTestbed(api, asConn(trx), input, admin.id)).toEqual({
         ok: false,
-        error: "unavailable",
+        error: "duplicate_domain",
       });
-      const left = await trx
-        .selectFrom("testbeds")
-        .select("id")
-        .where("id", "=", row.id)
-        .execute();
-      expect(left).toHaveLength(1);
     }));
+
+  // covers: AC-3, one live testbed per Authentik group
+  it("refuses a group another live testbed already uses", () =>
+    inRollback(async (trx) => {
+      const { admin, input, type, group, authentik, rowsNamed } =
+        await setup(trx);
+      await makeTestbed(trx, type.id, { authentik_group_pk: group.pk });
+      expect(
+        await createTestbed(authentik().api, asConn(trx), input, admin.id),
+      ).toEqual({ ok: false, error: "group_in_use" });
+      expect(await rowsNamed(input.name)).toEqual([]);
+    }));
+
+  it("takes a group a deleted testbed used", () =>
+    inRollback(async (trx) => {
+      const { admin, input, type, group, authentik } = await setup(trx);
+      await makeTestbed(trx, type.id, {
+        authentik_group_pk: group.pk,
+        deleted_at: new Date(),
+      });
+      const r = await createTestbed(
+        authentik().api,
+        asConn(trx),
+        input,
+        admin.id,
+      );
+      expect(r.ok).toBe(true);
+    }));
+
+  // covers: AC-3, the group refusals leave no row and no audit row
+  it.each([
+    [
+      "no group has that name",
+      (name: string) => ({ groups: [], rename: `${name}Missing` }),
+      "group_not_found",
+    ],
+    [
+      "the group has no marker",
+      (name: string) => ({ groups: [fakeGroup("plain-pk", name)], drop: true }),
+      "group_not_testbed_group",
+    ],
+    [
+      "the marker is the string true",
+      (name: string) => ({
+        groups: [fakeGroup("str-pk", name, { hol_testbed_group: "true" })],
+        drop: true,
+      }),
+      "group_not_testbed_group",
+    ],
+    [
+      "the group is a superuser group",
+      (name: string) => ({
+        groups: [markedGroup("su-pk", name, { is_superuser: true })],
+        drop: true,
+      }),
+      "group_not_testbed_group",
+    ],
+    [
+      "the group has a parent",
+      (name: string) => ({
+        groups: [markedGroup("par-pk", name, { parents: ["admins-uuid"] })],
+        drop: true,
+      }),
+      "group_not_testbed_group",
+    ],
+    [
+      "the group has a role",
+      (name: string) => ({
+        groups: [markedGroup("role-pk", name, { roles: ["r1"] })],
+        drop: true,
+      }),
+      "group_not_testbed_group",
+    ],
+    [
+      "two groups share the exact name",
+      (name: string) => ({
+        groups: [markedGroup("dup-pk", name)],
+      }),
+      "group_not_testbed_group",
+    ],
+  ] as const)("refuses when %s", (_, build, error) =>
+    inRollback(async (trx) => {
+      const { admin, input, group, rowsNamed } = await setup(trx);
+      const { groups, drop, rename } = build(input.name) as {
+        groups: ReturnType<typeof fakeGroup>[];
+        drop?: boolean;
+        rename?: string;
+      };
+      // `drop` replaces the setup's usable group; `rename` asks for a
+      // name no group has.
+      const ak = fakeAuthentik([], {
+        groups: [...(drop ? [] : [group]), ...groups],
+      });
+      const asked = { ...input, name: rename ?? input.name };
+      expect(await createTestbed(ak.api, asConn(trx), asked, admin.id)).toEqual(
+        { ok: false, error },
+      );
+      expect(await rowsNamed(asked.name)).toEqual([]);
+      expect(ak.writes).toEqual([]);
+      const made = await trx
+        .selectFrom("audit_events")
+        .select("id")
+        .where("actor_user_id", "=", admin.id)
+        .execute();
+      expect(made).toEqual([]);
+    }),
+  );
+
+  it("refuses hol-admins even when it is marked", () =>
+    inRollback(async (trx) => {
+      const { admin, input, rowsNamed } = await setup(trx);
+      const ak = fakeAuthentik([]);
+      const admins = ak.groups.find((g) => g.name === "hol-admins");
+      if (admins) admins.attributes = { hol_testbed_group: true };
+      const asked = { ...input, name: "hol-admins" };
+      expect(await createTestbed(ak.api, asConn(trx), asked, admin.id)).toEqual(
+        { ok: false, error: "group_not_testbed_group" },
+      );
+      expect(await rowsNamed("hol-admins")).toEqual([]);
+    }));
+
+  it("accepts only the exact name among near names", () =>
+    inRollback(async (trx) => {
+      const { admin, input, group, authentik } = await setup(trx);
+      const ak = authentik({
+        groups: [
+          markedGroup("near-1", `${input.name}X`),
+          markedGroup("near-2", input.name.toLowerCase()),
+        ],
+      });
+      const r = await createTestbed(ak.api, asConn(trx), input, admin.id);
+      if (!r.ok) throw new Error(r.error);
+      const row = await trx
+        .selectFrom("testbeds")
+        .select("authentik_group_pk")
+        .where("id", "=", r.value.id)
+        .executeTakeFirstOrThrow();
+      expect(row.authentik_group_pk).toBe(group.pk);
+    }));
+
+  // covers: AC-3, an unreachable or unreadable Authentik is not a refusal
+  it.each([
+    ["is down", { down: true }],
+    [
+      "answers 403",
+      {
+        reply: (_m: string, p: string) =>
+          p === "/core/groups/"
+            ? new Response("{}", { status: 403 })
+            : undefined,
+      },
+    ],
+    ["answers 500", { fail: (_m: string, p: string) => p === "/core/groups/" }],
+  ])("says Authentik is unavailable when it %s, writing nothing", (_, over) =>
+    inRollback(async (trx) => {
+      const { admin, input, authentik, rowsNamed } = await setup(trx);
+      expect(
+        await createTestbed(authentik(over).api, asConn(trx), input, admin.id),
+      ).toEqual({ ok: false, error: "authentik_unavailable" });
+      expect(await rowsNamed(input.name)).toEqual([]);
+    }),
+  );
 });
 
-// A ready testbed made through the real create, so it has clients.
+// A testbed made through the real create, so it has clients.
 async function created(trx: Transaction<DB>) {
   const ctx = await setup(trx);
-  const ak = fakeAuthentik([]);
-  const r = await createTestbed(ak.api, asConn(trx), ctx.input, ctx.admin.id);
+  const r = await createTestbed(
+    ctx.authentik().api,
+    asConn(trx),
+    ctx.input,
+    ctx.admin.id,
+  );
   if (!r.ok) throw new Error(r.error);
   return { ...ctx, id: r.value.id, slug: r.value.slug };
 }
 
-// covers: spec 0007 AC-3 (the edit load)
+// covers: spec 0007 AC-3 (the edit load), spec 0017 AC-5 (domain, no group)
 describe.skipIf(!hasDb)("getTestbedForEdit (AC-3)", () => {
   it("returns every field and the clients in order, OS logins included", () =>
     inRollback(async (trx) => {
@@ -538,7 +713,7 @@ describe.skipIf(!hasDb)("getTestbedForEdit (AC-3)", () => {
         value: {
           name: input.name,
           slug,
-          groupName: `pod-${slug}`,
+          domain: input.domain,
           testbedTypeId: input.testbedTypeId,
           idpApiKeyId: null,
           portalUrl: input.portalUrl,
@@ -560,9 +735,41 @@ describe.skipIf(!hasDb)("getTestbedForEdit (AC-3)", () => {
     }));
 });
 
-// covers: spec 0007 AC-3, AC-4, AC-5
+// A booking on the testbed, from `from` to `to` hours from now.
+const book = (
+  trx: Kysely<DB>,
+  testbedId: string,
+  typeId: string,
+  userId: string,
+  from: number,
+  to: number,
+  status: "confirmed" | "provisioning" = "confirmed",
+) =>
+  trx
+    .insertInto("bookings")
+    .values({
+      user_id: userId,
+      testbed_id: testbedId,
+      testbed_type_id: typeId,
+      starts_at: slot(from),
+      ends_at: slot(to),
+      status,
+    })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+
+const domainOf = async (trx: Kysely<DB>, id: string) =>
+  (
+    await trx
+      .selectFrom("testbeds")
+      .select("domain")
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+  ).domain;
+
+// covers: spec 0007 AC-3, AC-4, AC-5; spec 0017 AC-5, AC-6, AC-7
 describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
-  it("renames, keeping the slug and group, and audits only the name", () =>
+  it("changes the domain, keeping the name, slug, and group, and audits only the domain", () =>
     inRollback(async (trx) => {
       const { id, slug, input, admin } = await created(trx);
       const before = await trx
@@ -570,18 +777,20 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
         .select("authentik_group_pk")
         .where("id", "=", id)
         .executeTakeFirstOrThrow();
-      const name = `Renamed ${unique()}`;
+      const { name, ...fields } = input;
+      const domain = `moved-${unique()}.example.test`;
       expect(
-        await updateTestbed(asConn(trx), id, { ...input, name }, admin.id),
-      ).toEqual({ ok: true, value: undefined });
+        await updateTestbed(asConn(trx), id, { ...fields, domain }, admin.id),
+      ).toEqual({ ok: true, value: { name } });
       const after = await trx
         .selectFrom("testbeds")
-        .select(["name", "slug", "authentik_group_pk"])
+        .select(["name", "slug", "domain", "authentik_group_pk"])
         .where("id", "=", id)
         .executeTakeFirstOrThrow();
       expect(after).toEqual({
         name,
         slug,
+        domain,
         authentik_group_pk: before.authentik_group_pk,
       });
       expect(await updates(trx, id)).toEqual([
@@ -589,7 +798,7 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
           actor_user_id: admin.id,
           target_type: "testbed",
           summary: "Testbed updated",
-          metadata: { name: { from: input.name, to: name } },
+          metadata: { domain: { from: input.domain, to: domain } },
         },
       ]);
     }));
@@ -605,7 +814,7 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
       };
       expect(await updateTestbed(asConn(trx), id, changed, admin.id)).toEqual({
         ok: true,
-        value: undefined,
+        value: { name: input.name },
       });
       expect(
         (await clientRows(trx, id)).map((c) => [c.position, c.os_password]),
@@ -634,7 +843,7 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
       const clients = await clientRows(trx, id);
       expect(await updateTestbed(asConn(trx), id, input, admin.id)).toEqual({
         ok: true,
-        value: undefined,
+        value: { name: input.name },
       });
       expect(await updates(trx, id)).toEqual([]);
       expect(await clientRows(trx, id)).toEqual(clients);
@@ -664,7 +873,7 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
           { ...input, testbedTypeId: other.id },
           admin.id,
         ),
-      ).toEqual({ ok: true, value: undefined });
+      ).toEqual({ ok: true, value: { name: input.name } });
       const after = await trx
         .selectFrom("bookings")
         .select(["testbed_type_id", "starts_at", "ends_at"])
@@ -673,7 +882,8 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
       expect(after).toEqual(booking);
     }));
 
-  it("maps a duplicate name, a gone type, and a gone IDP", () =>
+  // covers: AC-2, a taken domain; AC-6, the error order
+  it("maps a gone type, a gone IDP, and a taken domain", () =>
     inRollback(async (trx) => {
       const { id, input, admin } = await created(trx);
       const type = await makeType(trx);
@@ -683,9 +893,9 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
       const update = (patch: Partial<TestbedInput>) =>
         updateTestbed(asConn(trx), id, { ...input, ...patch }, admin.id);
 
-      expect(await update({ name: taken.name.toUpperCase() })).toEqual({
+      expect(await update({ domain: taken.domain ?? "" })).toEqual({
         ok: false,
-        error: "duplicate_name",
+        error: "duplicate_domain",
       });
       expect(await update({ testbedTypeId: goneType.id })).toEqual({
         ok: false,
@@ -696,49 +906,122 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
         error: "idp_not_found",
       });
       expect(await updates(trx, id)).toEqual([]);
+      expect(await domainOf(trx, id)).toBe(input.domain);
     }));
 
-  it("refuses a deleted testbed, and one still being set up", () =>
+  it("refuses a deleted or unknown testbed", () =>
     inRollback(async (trx) => {
       const { input, admin, type } = await setup(trx);
       const deleted = await makeTestbed(trx, type.id, {
         deleted_at: new Date(),
       });
-      const notReady = await makeTestbed(trx, type.id, {
-        authentik_group_pk: null,
-      });
       expect(
         await updateTestbed(asConn(trx), deleted.id, input, admin.id),
       ).toEqual({ ok: false, error: "not_found" });
       expect(
-        await updateTestbed(asConn(trx), notReady.id, input, admin.id),
-      ).toEqual({ ok: false, error: "not_ready" });
+        await updateTestbed(asConn(trx), crypto.randomUUID(), input, admin.id),
+      ).toEqual({ ok: false, error: "not_found" });
+    }));
+});
+
+// covers: spec 0017 AC-6 (the domain lock)
+describe.skipIf(!hasDb)("updateTestbed domain lock (spec 0017 AC-6)", () => {
+  const moved = () => `moved-${unique()}.example.test`;
+
+  it.each([
+    ["Current", -1, 1, "confirmed"],
+    ["Upcoming", 24, 26, "confirmed"],
+    ["Pending", 24, 26, "provisioning"],
+  ] as const)(
+    "refuses a domain change under a %s booking and writes nothing",
+    (_, from, to, status) =>
+      inRollback(async (trx) => {
+        const { id, input, admin, type } = await created(trx);
+        const learner = await makeUser(trx);
+        await book(trx, id, type.id, learner.id, from, to, status);
+        expect(
+          await updateTestbed(
+            asConn(trx),
+            id,
+            { ...input, domain: moved(), lmsUrl: "https://lms3.example.test" },
+            admin.id,
+          ),
+        ).toEqual({ ok: false, error: "domain_locked" });
+        expect(await domainOf(trx, id)).toBe(input.domain);
+        expect(await updates(trx, id)).toEqual([]);
+        const row = await trx
+          .selectFrom("testbeds")
+          .select("lms_url")
+          .where("id", "=", id)
+          .executeTakeFirstOrThrow();
+        expect(row.lms_url).toBe(input.lmsUrl);
+      }),
+  );
+
+  it("still saves other fields under a Current booking while the domain stays", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin, type } = await created(trx);
+      const learner = await makeUser(trx);
+      await book(trx, id, type.id, learner.id, -1, 1);
+      const lmsUrl = "https://lms4.example.test";
+      expect(
+        await updateTestbed(asConn(trx), id, { ...input, lmsUrl }, admin.id),
+      ).toEqual({ ok: true, value: { name: input.name } });
+    }));
+
+  it("saves a domain change with only a Past or cancelled booking", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin, type } = await created(trx);
+      const learner = await makeUser(trx);
+      await book(trx, id, type.id, learner.id, -6, -4);
+      const domain = moved();
+      expect(
+        await updateTestbed(asConn(trx), id, { ...input, domain }, admin.id),
+      ).toEqual({ ok: true, value: { name: input.name } });
+      expect(await domainOf(trx, id)).toBe(domain);
+    }));
+
+  it("does not let a booking on another testbed block the change", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin, type } = await created(trx);
+      const other = await makeTestbed(trx, type.id);
+      const learner = await makeUser(trx);
+      await book(trx, other.id, type.id, learner.id, -1, 1);
+      const domain = moved();
+      expect(
+        await updateTestbed(asConn(trx), id, { ...input, domain }, admin.id),
+      ).toMatchObject({ ok: true });
+      expect(await domainOf(trx, id)).toBe(domain);
+    }));
+
+  it("reports the lock before a taken domain, and a gone type before the lock", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin, type } = await created(trx);
+      const other = await makeTestbed(trx, type.id);
+      const learner = await makeUser(trx);
+      await book(trx, id, type.id, learner.id, -1, 1);
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          id,
+          { ...input, domain: other.domain ?? "" },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "domain_locked" });
+      const goneType = await makeType(trx, { deleted_at: new Date() });
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          id,
+          { ...input, domain: moved(), testbedTypeId: goneType.id },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "type_not_found" });
     }));
 });
 
 // covers: spec 0007 AC-6
 describe.skipIf(!hasDb)("deleteTestbed (AC-6)", () => {
-  const book = (
-    trx: Kysely<DB>,
-    testbedId: string,
-    typeId: string,
-    userId: string,
-    from: number,
-    to: number,
-  ) =>
-    trx
-      .insertInto("bookings")
-      .values({
-        user_id: userId,
-        testbed_id: testbedId,
-        testbed_type_id: typeId,
-        starts_at: slot(from),
-        ends_at: slot(to),
-        status: "confirmed",
-      })
-      .returning("id")
-      .executeTakeFirstOrThrow();
-
   it("is blocked by Current and Upcoming bookings, labelled by phase", () =>
     inRollback(async (trx) => {
       const { admin, type } = await setup(trx);
@@ -768,7 +1051,7 @@ describe.skipIf(!hasDb)("deleteTestbed (AC-6)", () => {
       expect(row.deleted_at).toBeNull();
     }));
 
-  it("soft deletes past a Past booking, audits it, and frees the name", () =>
+  it("soft deletes past a Past booking, audits it, and frees the name, domain, and group", () =>
     inRollback(async (trx) => {
       const { admin, type } = await setup(trx);
       const tb = await makeTestbed(trx, type.id);
@@ -798,7 +1081,11 @@ describe.skipIf(!hasDb)("deleteTestbed (AC-6)", () => {
       ]);
       expect(
         await attempt(trx, () =>
-          makeTestbed(trx, type.id, { name: tb.name.toUpperCase() }),
+          makeTestbed(trx, type.id, {
+            name: tb.name.toUpperCase(),
+            domain: tb.domain,
+            authentik_group_pk: tb.authentik_group_pk,
+          }),
         ),
       ).toBeUndefined();
       expect(
@@ -808,20 +1095,6 @@ describe.skipIf(!hasDb)("deleteTestbed (AC-6)", () => {
         ok: false,
         error: { kind: "not_found" },
       });
-    }));
-
-  it("records a null group pk for a not ready testbed", () =>
-    inRollback(async (trx) => {
-      const { admin, type } = await setup(trx);
-      const tb = await makeTestbed(trx, type.id, { authentik_group_pk: null });
-      await deleteTestbed(asConn(trx), tb.id, admin.id);
-      const audit = await trx
-        .selectFrom("audit_events")
-        .select("metadata")
-        .where("target_id", "=", tb.id)
-        .where("action", "=", "testbed.deleted")
-        .executeTakeFirstOrThrow();
-      expect(audit.metadata).toEqual({ slug: tb.slug, groupPk: null });
     }));
 });
 
@@ -843,7 +1116,7 @@ describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
 
       expect(
         await updateTestbed(asConn(trx), id, { ...input, clients }, admin.id),
-      ).toEqual({ ok: true, value: undefined });
+      ).toEqual({ ok: true, value: { name: input.name } });
       expect(
         (await clientRows(trx, id)).map((c) => [
           c.position,
@@ -874,18 +1147,6 @@ describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
       expect(listed?.clientCount).toBe(0);
     }));
 
-  it("lets a testbed take its own name in another case", () =>
-    inRollback(async (trx) => {
-      const { id, input, admin } = await created(trx);
-      const name = input.name.toUpperCase();
-      expect(
-        await updateTestbed(asConn(trx), id, { ...input, name }, admin.id),
-      ).toEqual({ ok: true, value: undefined });
-      expect((await updates(trx, id)).map((a) => a.metadata)).toEqual([
-        { name: { from: input.name, to: name } },
-      ]);
-    }));
-
   it("refuses a soft deleted IDP key and leaves the row as it was", () =>
     inRollback(async (trx) => {
       const { id, input, admin } = await created(trx);
@@ -894,7 +1155,7 @@ describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
         await updateTestbed(
           asConn(trx),
           id,
-          { ...input, name: `Other ${unique()}`, idpApiKeyId: gone.id },
+          { ...input, idpApiKeyId: gone.id },
           admin.id,
         ),
       ).toEqual({ ok: false, error: "idp_not_found" });
@@ -910,11 +1171,10 @@ describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
   // The dialog shows a stale IDP as None, so saving sends none.
   it("clears an IDP key deleted since it was chosen, auditing the id change", () =>
     inRollback(async (trx) => {
-      const { admin, input } = await setup(trx);
+      const { admin, input, authentik } = await setup(trx);
       const key = await makeKey(trx);
-      const ak = fakeAuthentik([]);
       const r = await createTestbed(
-        ak.api,
+        authentik().api,
         asConn(trx),
         { ...input, idpApiKeyId: key.id },
         admin.id,
@@ -937,7 +1197,7 @@ describe.skipIf(!hasDb)("updateTestbed edges (AC-3)", () => {
           { ...input, idpApiKeyId: null },
           admin.id,
         ),
-      ).toEqual({ ok: true, value: undefined });
+      ).toEqual({ ok: true, value: { name: input.name } });
       expect((await updates(trx, r.value.id)).map((a) => a.metadata)).toEqual([
         { idpApiKeyId: { from: key.id, to: null } },
       ]);

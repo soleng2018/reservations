@@ -1,5 +1,6 @@
-// Pod group membership diff (spec 0004 AC-12), and the worker's Cloudflare
-// revoke state line (spec 0012 AC-11). Pure.
+// Testbed group membership diff (spec 0004 AC-12), the per group work list of
+// the access reconciler (spec 0017 AC-10), and the worker's Cloudflare revoke
+// state line (spec 0012 AC-11). Pure.
 
 export type Member = { readonly pk: number; readonly holLearner: boolean };
 
@@ -17,6 +18,32 @@ export function membershipDiff(
       .map((m) => m.pk),
   };
 }
+
+// A testbed row as the reconciler reads it.
+export type GroupRow = {
+  readonly id: string;
+  readonly name: string;
+  readonly groupPk: string;
+  readonly deleted: boolean;
+};
+
+// Spec 0017 AC-10 (a): one entry per distinct group pk, in first seen order,
+// holding every unreleased testbed that points at it. The learners wanted in
+// a group are the union over its live rows, so a deleted row adds none and
+// the order of the rows never matters.
+export function groupByPk(
+  rows: readonly GroupRow[],
+): readonly { readonly pk: string; readonly rows: readonly GroupRow[] }[] {
+  const pks = [...new Set(rows.map((r) => r.groupPk))];
+  return pks.map((pk) => ({ pk, rows: rows.filter((r) => r.groupPk === pk) }));
+}
+
+// Spec 0017 AC-10 (c): a live testbed's stored pk is stale when the group is
+// gone (`undefined`) or its name is no longer the testbed's name.
+export const isStalePk = (
+  live: Pick<GroupRow, "name">,
+  group: { readonly name: string } | undefined,
+): boolean => group === undefined || group.name !== live.name;
 
 export type RevokeKind = "off" | "broken" | "on";
 

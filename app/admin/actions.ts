@@ -20,6 +20,7 @@ import {
   ApiKeyUpdateInput,
   TestbedInput,
   TestbedTypeInput,
+  TestbedUpdateInput,
 } from "@/lib/catalog-input";
 import type { Blocker, DeleteRemoveError } from "@/lib/delete-flow";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
@@ -758,15 +759,16 @@ export async function deleteApiKeyAction(
 
 // Feature 9 (spec 0007). Clients arrive as parallel lists in form order; an
 // OS login is never echoed back (errors carry fixed messages, and the dialog
-// keeps what was typed on the client).
-const parseTestbed = (form: FormData) => {
+// keeps what was typed on the client). The name is not here: only create reads
+// it (spec 0017 AC-5).
+const testbedFields = (form: FormData) => {
   const kinds = texts(form, "clientKind");
   const names = texts(form, "clientName");
   const urls = texts(form, "clientUrl");
   const osUsernames = texts(form, "clientOsUsername");
   const osPasswords = texts(form, "clientOsPassword");
-  return TestbedInput.safeParse({
-    name: text(form, "name"),
+  return {
+    domain: text(form, "domain"),
     testbedTypeId: text(form, "testbedTypeId"),
     idpApiKeyId: text(form, "idpApiKeyId"),
     portalUrl: text(form, "portalUrl"),
@@ -778,13 +780,21 @@ const parseTestbed = (form: FormData) => {
       osUsername: osUsernames[i],
       osPassword: osPasswords[i],
     })),
-  });
+  };
 };
 
 const testbedError = {
   duplicateName: {
     kind: "error",
     fields: { name: TESTBED_MESSAGES.duplicateName },
+  },
+  duplicateDomain: {
+    kind: "error",
+    fields: { domain: TESTBED_MESSAGES.duplicateDomain },
+  },
+  domainLocked: {
+    kind: "error",
+    fields: { domain: TESTBED_MESSAGES.domainLocked },
   },
   typeGone: {
     kind: "error",
@@ -794,16 +804,36 @@ const testbedError = {
     kind: "error",
     fields: { idpApiKeyId: TESTBED_MESSAGES.idpGone },
   },
+  groupNotFound: {
+    kind: "error",
+    fields: { name: TESTBED_MESSAGES.groupNotFound },
+  },
+  groupNotTestbed: {
+    kind: "error",
+    fields: { name: TESTBED_MESSAGES.groupNotTestbed },
+  },
+  groupInUse: {
+    kind: "error",
+    fields: { name: TESTBED_MESSAGES.groupInUse },
+  },
+  authentikUnavailable: {
+    kind: "error",
+    message: TESTBED_MESSAGES.authentikUnavailable,
+    fields: {},
+  },
   gone: { kind: "error", message: TESTBED_MESSAGES.gone, fields: {} },
 } as const satisfies Record<string, AdminFormState>;
 
-// Spec 0004 AC-2, spec 0007 AC-2.
+// Spec 0004 AC-2, spec 0007 AC-2, spec 0017 AC-1 to AC-3.
 export async function createTestbedAction(
   _prev: AdminFormState,
   form: FormData,
 ): Promise<AdminFormState> {
   const { user } = await requireAdmin();
-  const parsed = parseTestbed(form);
+  const parsed = TestbedInput.safeParse({
+    name: text(form, "name"),
+    ...testbedFields(form),
+  });
   if (!parsed.success)
     return { kind: "error", fields: fieldErrors(parsed.error) };
 
@@ -812,16 +842,20 @@ export async function createTestbedAction(
     switch (created.error) {
       case "duplicate_name":
         return testbedError.duplicateName;
+      case "duplicate_domain":
+        return testbedError.duplicateDomain;
       case "type_not_found":
         return testbedError.typeGone;
       case "idp_not_found":
         return testbedError.idpGone;
-      case "group_failed":
-        return {
-          kind: "error",
-          message: TESTBED_MESSAGES.groupFailed,
-          fields: {},
-        };
+      case "group_not_found":
+        return testbedError.groupNotFound;
+      case "group_not_testbed_group":
+        return testbedError.groupNotTestbed;
+      case "group_in_use":
+        return testbedError.groupInUse;
+      case "authentik_unavailable":
+        return testbedError.authentikUnavailable;
       default: {
         const never: never = created.error;
         return never;
@@ -841,14 +875,15 @@ export async function loadTestbedForEdit(
   return getTestbedForEdit(db(), id);
 }
 
-// AC-3, AC-4, AC-5. The page binds the row's id.
+// Spec 0007 AC-3 to AC-5, spec 0017 AC-5, AC-6. The page binds the row's id.
+// A posted `name` is never read: the name is the Authentik group.
 export async function updateTestbedAction(
   id: string,
   _prev: AdminFormState,
   form: FormData,
 ): Promise<AdminFormState> {
   const { user } = await requireAdmin();
-  const parsed = parseTestbed(form);
+  const parsed = TestbedUpdateInput.safeParse(testbedFields(form));
   if (!parsed.success)
     return { kind: "error", fields: fieldErrors(parsed.error) };
   if (!isId(id)) return testbedError.gone;
@@ -856,21 +891,17 @@ export async function updateTestbedAction(
   const updated = await updateTestbed(db(), id, parsed.data, user.id);
   if (!updated.ok) {
     switch (updated.error) {
-      case "duplicate_name":
-        return testbedError.duplicateName;
+      case "not_found":
+        revalidatePath("/admin", "layout");
+        return testbedError.gone;
       case "type_not_found":
         return testbedError.typeGone;
       case "idp_not_found":
         return testbedError.idpGone;
-      case "not_ready":
-        return {
-          kind: "error",
-          message: TESTBED_MESSAGES.notReady,
-          fields: {},
-        };
-      case "not_found":
-        revalidatePath("/admin", "layout");
-        return testbedError.gone;
+      case "domain_locked":
+        return testbedError.domainLocked;
+      case "duplicate_domain":
+        return testbedError.duplicateDomain;
       default: {
         const never: never = updated.error;
         return never;
@@ -878,7 +909,7 @@ export async function updateTestbedAction(
     }
   }
   revalidatePath("/admin", "layout");
-  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+  return { kind: "saved", message: `Updated ${updated.value.name}.` };
 }
 
 // AC-6, the delete flow's check: the testbed's Upcoming, Current, and
