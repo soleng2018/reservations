@@ -2,20 +2,20 @@
 # server.js, `worker` runs dist/worker.mjs, `migrate` runs dist/migrate.mjs.
 # The build reads no env; every value arrives at start (server/env.ts).
 
-FROM node:24.22.1-slim AS deps
+FROM node:26.12.0-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 # No install scripts: husky needs .git, and nothing else here needs one.
 RUN npm ci --ignore-scripts
 
-FROM node:24.22.1-slim AS build
+FROM node:26.12.0-slim AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build && npm run build:bundle
 
-FROM node:24.22.1-slim AS runner
+FROM node:26.12.0-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
