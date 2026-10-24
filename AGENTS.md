@@ -14,7 +14,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - **Language / Runtime**: TypeScript (strict), Node 24 LTS
 - **Framework**: Next.js 16 App Router, React 19.2 (`proxy.ts`, not `middleware.ts`)
-- **Key dependencies**: Kysely over `pg` (InsForge Postgres, schemas `hol_app` / `hol_auth`), Zod, Tailwind v4 + shadcn/ui, Better Auth against Authentik
+- **Key dependencies**: Kysely over `pg` (its own pinned Postgres container, schemas `hol_app` / `hol_auth`), Zod, Tailwind v4 + shadcn/ui, Better Auth against Authentik
 - **Package manager**: npm
 - Full decision and build invariants: [docs/specs/0001-stack-architecture/index.md](docs/specs/0001-stack-architecture/index.md)
 
@@ -33,16 +33,16 @@ npm test             # Vitest (passes with no tests)
 npm run format       # Prettier write; format:check is what CI runs
 npm run db:migrate   # Kysely Migrator over db/migrations/*.sql
 npm run db:codegen   # regenerate server/db/types.ts from the live schema (-- --verify to check)
-npm run worker       # background worker; exits unless WORKER_ENABLED=true; shared DB, so it IS the prod worker (one at a time)
+npm run worker       # background worker; exits unless WORKER_ENABLED=true; reconciles the real Authentik groups, so run one at a time
 npm run calendar:backfill # queues a calendar job for every confirmed booking not yet ended; dry run, -- --apply writes
 npm run test:e2e     # Playwright against the running dev server on the LAN IP; skips without ~/secrets/hol-test-*.pw
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
 npm run build:bundle      # esbuild bundles of the worker and migrate into dist/ (the image runs these)
-scripts/deploy.sh         # production: build the image, pg_dump, then compose up migrate, web, worker (docker/compose.yaml)
+scripts/deploy.sh         # build the image, pg_dump, then compose up migrate, web, worker (docker/compose.yaml)
 ```
 
-- Production runs as the Compose project `reservations` from `docker/compose.yaml` (settings in the gitignored `docker/.env`, secrets mounted from `SECRETS_DIR`); its `worker` container is the one production worker. The README's "Running in production (Docker)" section has prerequisites and operations.
+- The app runs as the Compose project `reservations` from `docker/compose.yaml` (settings in the gitignored `docker/.env`, secrets mounted from `SECRETS_DIR`); its `worker` container is the one worker. The README's "Running with Docker" section has prerequisites and operations.
 
 - Local env: copy `.env.example` to `.env.local` (read by `npm run dev`, `db:migrate`, `db:codegen`, and Vitest; never commit real values).
 - Dev runs on the LAN IP (`http://10.1.255.18:3000`), because the Authentik proxy refuses requests that mention localhost. `APP_URL` must match the URL the browser uses, or sign in fails with `state_mismatch`.
@@ -66,7 +66,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Forms: Server Actions parse input with the Zod schemas in `lib/` (`booking-input.ts`, `catalog-input.ts`) and return field errors keyed by dotted path through `fieldErrors` in `lib/form-errors.ts`.
 - Admin row edit and delete (Testbed Types is the reference): the page binds the row id (`action.bind(null, id)`) and the action checks it with `z.uuid()`; edit fields read their defaults once on open (`useState`), because `revalidatePath` refreshes props while the dialog is still closing; delete is a check action plus a remove action typed by `lib/delete-flow.ts`, and the remove runs `lockForDelete`, the blocker query, then the soft delete in one transaction.
 - Audit: every audit action name is in the `AuditAction` enum in `lib/audit-actions.ts` (no DB CHECK, so a new action needs no migration); write rows with `audit()` from `server/audit.ts` inside the same transaction. Edit metadata comes from `changedFields` in `lib/changed-fields.ts`, which compares only the keys you list (never list a secret).
-- Secrets at rest: encrypt with `encryptSecret` from `server/crypto/secrets.ts` (AES-256-GCM, bound to table, column, and row id through `secretAad`), using the keyring from `encryptionEnv()` in `server/env.ts` (`APP_ENCRYPTION_KEYS_FILE`, `APP_ENCRYPTION_ACTIVE_KEY_ID`; dev and prod share one keyring). A stored secret never goes back to the client, a log, an error, or audit metadata: in app code `secret_ciphertext` may appear only in `server/catalog/api-keys.ts` (generated types aside), enforced by `tests/secret-column-scan.test.ts`.
+- Secrets at rest: encrypt with `encryptSecret` from `server/crypto/secrets.ts` (AES-256-GCM, bound to table, column, and row id through `secretAad`), using the keyring from `encryptionEnv()` in `server/env.ts` (`APP_ENCRYPTION_KEYS_FILE`, `APP_ENCRYPTION_ACTIVE_KEY_ID`). A stored secret never goes back to the client, a log, an error, or audit metadata: in app code `secret_ciphertext` may appear only in `server/catalog/api-keys.ts` (generated types aside), enforced by `tests/secret-column-scan.test.ts`.
 - Client OS logins (`testbed_clients.os_username`, `os_password`) are plain text by design: in app code `os_password` may appear only in `server/catalog/testbeds.ts` (generated types aside), enforced by `tests/os-password-scan.test.ts`. They reach the browser only through `loadTestbedForEdit`, when the edit dialog opens (`FormDialog` `onOpen`, `canSave`, `onClosed`; `components/admin/testbed-edit-dialog.tsx` is the reference), never in a list, log, error, or audit metadata (edits audit client counts only). The learner gets them in the booked, rescheduled, and reminder emails: the worker reads them at send time through `clientLoginsForBooking`, so they are never copied into `email_messages.details` or a job row.
 - Authentik groups are the owner's (spec 0017): app code never creates, updates, or deletes one, only reads it and changes membership, enforced by `tests/group-writes-scan.test.ts`. A testbed's `group_name` must equal a group that carries the `hol_testbed_group` marker, checked by `findTestbedGroup` in `server/authentik/groups.ts`; `name` is the learner facing text, and `tests/group-name-scan.test.ts` keeps `group_name` out of learner code.
 - Client IP for rate limits comes only from `clientIp()` in `server/request-ip.ts` (it trusts `CF-Connecting-IP` only when `TRUST_PROXY_HEADERS=true`).
@@ -74,7 +74,7 @@ Stored in `docs/specs/`. Format: `docs/specs/NNNN-title/index.md`.
 - Named exports only, except where Next.js requires a default (`page`, `layout`, `route`, `error`, etc.).
 - Layout follows the scaffold: `app/` routes, `components/` (shadcn in `components/ui/`), `server/` (every module imports `server-only`), `lib/` (safe on both sides), `db/`, `scripts/`, `worker/` (the worker process entry). Import via `@/`.
 - Design system: build all UI to `design.md` (art direction and the maximalist product bar); token values live in CSS.
-- Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. Dev and prod share one database, so DB tests run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
+- Tests: Vitest for units and DB integration, Playwright for key flows. Pure logic gets plain input/output tests, no mocks. DB tests share the local database with the dev server, so they run inside `inRollback` from `server/db/testing.ts` (always rolled back, never commit) and skip when no database is configured (CI).
 - Test helpers: `asConn(trx)` in `server/db/testing.ts` lets code that opens its own `conn.transaction()` run inside `inRollback`; `server/authentik/testing.ts` is the in memory fake Authentik behind the real SDK.
 - Auth: every protected page and Server Action calls `requireAdmin()` or `requireLearner()` from `server/auth/require.ts` (public actions go on the allow list in `tests/server-actions-require.test.ts`).
 - Signed in learner on a public path (`/book`): read the session with `currentSession()` (never `requireLearner()`, which redirects) and take identity from the session's `users` row, never from the post; `sessionAccount` in `server/booking/account.ts` is the reference.
@@ -120,7 +120,7 @@ Installed:
 - [gws-calendar](.claude/skills/gws-calendar/): `googleworkspace/cli`, Google Calendar events
 - Declined: `morksen123/base-ui-mcp-server` (third party Base UI MCP server), 2026-10-11
 
-MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setup help (connected; `npx auth@latest mcp --claude-code`), next-devtools-mcp (recommended), github-mcp-server (recommended), pg-mcp-server in read only mode (recommended; dev and prod share one database)
+MCP servers: better-auth `https://mcp.better-auth.com/mcp`, docs search and setup help (connected; `npx auth@latest mcp --claude-code`), next-devtools-mcp (recommended), github-mcp-server (recommended), pg-mcp-server in read only mode (recommended)
 
 ## Context files
 

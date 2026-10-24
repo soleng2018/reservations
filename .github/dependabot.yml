@@ -9,6 +9,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Proposes the Postgres digest bump in docker/compose.yaml (the `docker`
+  # ecosystem reads only Dockerfiles).
+  - package-ecosystem: docker-compose
+    directory: /docker
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

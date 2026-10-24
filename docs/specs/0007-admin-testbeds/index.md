@@ -176,7 +176,7 @@ None. Existing settings only (`DATABASE_*`, `AUTHENTIK_*` provisioning token, `W
 - Source scan: `os_password` appears only in `server/catalog/testbeds.ts` among app files. Verifies **AC-10**.
 - Email logins (amended 2026-10-20): the render shows "Username:" and "Password:" under the matching client, no password line for a client without one, no login for a client whose name or URL differs, and none on a cancellation (`server/email/compose.test.ts`, snapshots updated); the jobs step sends a booked email whose text part holds a seeded login while the `email_messages` row, the job rows, and the invite hold none (`server/jobs/jobs.test.ts`, DB, rolled back). Verifies **AC-11**.
 
-The real release runs in the production worker (one host), so `/check verify` confirms it by deleting a `dev-` testbed and watching the row get stamped within a tick or two while its Authentik group stays.
+The real release runs in the worker container (one host), so `/check verify` confirms it by deleting a `dev-` testbed and watching the row get stamped within a tick or two while its Authentik group stays.
 
 ## Build plan
 

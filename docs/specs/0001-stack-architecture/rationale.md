@@ -121,3 +121,14 @@ The 2026-10-04 landscape check could not confirm the following. Each is a Follow
 6. **Authentik (superseded, see correction below):** the Authentik in use is the shared lab instance 2025.6.4 on this host (`authentik.nile.global`), not a dedicated AWS one.
 
 *Correction (owner, 2026-10-05): the lab Authentik only guards the InsForge dashboard. The app uses the dedicated AWS Authentik (`authentik.dev.app.nile-global.cloud`) for dev and production, as the spec says. Node 24 is now installed via nvm.*
+
+
+## Amendment 2026-10-24: InsForge removed, Postgres in the repo
+
+**Why.** The app used InsForge only as a host for Postgres: no SDK, functions, storage, or auth (AC and the rows above already say so). The coupling to InsForge was a handful of operational pieces: the `insforge.internal_schemas` setting that had to be rechecked on every InsForge upgrade, a bootstrap that ran by hand inside someone else's container, a deploy dump through `docker exec insforge-postgres`, an external Docker network created by another project, and a custom Node image for a CVE. A clone of this repo could not run without that other stack.
+
+**Options.** (1) Keep InsForge. (2) Pinned Postgres container in this repo's Compose file (chosen). (3) A managed Postgres service. Option 3 adds a paid dependency and a network hop for no benefit while everything is dev. Option 1 keeps the clone problem.
+
+**Choices inside option 2.** PostgreSQL 18.6 on Debian, pinned by digest. The first start bootstrap uses the image's own `docker-entrypoint-initdb.d`, so no manual step. RLS stays on (already in the migrations, harmless). The old data is dropped (owner: it is all dev data). A side effect the owner should know: the Postgres advisory lock stops a second worker only on the same database, so with several clones sharing one Authentik, only one worker may be enabled across all of them.
+
+**Environment split dropped.** The owner decided that until rollout everything is dev. The earlier "one host, one data set, dev never runs the worker" rule existed to protect production data in a shared database; with a disposable database per clone the only shared system left is Authentik, so the care rules attach to Authentik.

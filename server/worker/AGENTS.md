@@ -15,7 +15,7 @@ The background worker: one long running process that completes ended bookings, s
 
 ## Rules
 
-- Dev and prod share one database, so a worker started anywhere is the production worker. Leave `WORKER_ENABLED=false` in `.env.local` unless you mean to run it; the advisory lock makes a second worker log "another worker holds the lock" and exit.
+- Authentik is shared, so a worker started anywhere reconciles the real groups. Leave `WORKER_ENABLED=false` in `.env.local` unless you mean to run it; the advisory lock makes a second worker log "another worker holds the lock" and exit.
 - The lock lives on its own client for the life of the process. Losing that connection means losing the lock, so the process exits 1.
 - One failing or timed out step is logged and never stops the rest of the tick. A step cannot be cancelled once sent, so keep each step safe to run again.
 - A shutdown signal lets the current step finish and skips the rest; never exit in the middle of a step.

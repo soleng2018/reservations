@@ -26,7 +26,7 @@ This spec fixes the database tables every later feature builds on: people, the l
 - **AC-7**: Any `UPDATE` or `DELETE` on `audit_events` raises an error, whoever runs it.
 - **AC-8**: API key secrets and integration secrets are stored only as `v1:` ciphertext (spec 0001), and no list or detail query that feeds a page selects `secret_ciphertext`.
 - **AC-9**: The database rejects invalid values: `duration_value < 1`, an unknown status, role, kind, or type, `ends_at <= starts_at`, a booking start not on a :00 or :30 boundary, and partial cancel data (cancel fields are all set or all null, and only on `cancelled` rows).
-- **AC-10**: From an empty `hol_app` schema, `npm run db:migrate` applies every migration as `hol_app`; every table has RLS enabled with no policies and no grants to InsForge roles; `server/db/types.ts` regenerates from the live schema with no hand edits.
+- **AC-10**: From an empty `hol_app` schema, `npm run db:migrate` applies every migration as `hol_app`; every table has RLS enabled with no policies; `server/db/types.ts` regenerates from the live schema with no hand edits.
 - **AC-11**: A pure function derives a booking's displayed phase (`Upcoming`, `Current`, `Past`, `Cancelled`, and `Pending` for `provisioning`, which learners never see) from its stored status, times, and a given `now`, and is the only place that mapping lives.
 - **AC-12**: Reschedule and cancel succeed only on a `confirmed` booking whose `ends_at > now()` and whose `version` matches what the user saw; every reschedule or cancel raises `version` by exactly one, enforced by a trigger.
 - **AC-13**: A guest saga that crashes at any step leaves, after compensation or the sweeper, no `provisioning` booking, no Authentik user this saga created, and no orphan `users` row; a retry by the same email is not blocked by its own stale attempt.
@@ -104,7 +104,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 |---|---|---|---|
 | id | uuid | no | PK |
 | name | text | no | Unique on `lower(name)` where `deleted_at is null` |
-| slug | text | no | `testbeds_slug_uq` across all rows. `CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) <= 50)`. Set once at create; the Authentik group is `pod-<slug>`. A trigger rejects any change to it. On a collision (including a soft deleted testbed's slug) the create appends `-2`, `-3`, … until free; `slugify` falls back to `testbed` when the name has no usable characters, and cuts to 50 characters before the suffix. |
+| slug | text | no | `testbeds_slug_uq` across all rows. `CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$' and length(slug) <= 50)`. Set once at create. It does not name an Authentik group (the group is `group_name`, typed by an admin, spec 0017 and 0018). A trigger rejects any change to it. On a collision (including a soft deleted testbed's slug) the create appends `-2`, `-3`, … until free; `slugify` falls back to `testbed` when the name has no usable characters, and cuts to 50 characters before the suffix. |
 | testbed_type_id | uuid | no | FK `testbed_types` |
 | idp_api_key_id | uuid | yes | FK `api_keys`. Added by feature 8's migration (`api_keys` does not exist before it). Must reference an `IDP` key (checked in the Server Action). |
 | portal_url | text | no | Nile Portal |
@@ -295,7 +295,7 @@ This feature adds no routes or Server Actions. Its surface is the schema plus th
 | Admin view | Times in admin zone | `users.timezone` of the admin row. Set at first sign in to `UTC`, then overwritten on the first console load from the browser's `Intl.DateTimeFormat().resolvedOptions().timeZone`. Feature 4 builds it. |
 | Lab links shown | Verified flag | `users.email_verified_at` (set per feature 4) |
 | Delete blocked dialog | Blocking names | `delete-blockers.ts` queries |
-| Pod group name | `pod-<slug>` | `testbeds.slug` |
+| Authentik group name | The group the admin typed | `testbeds.group_name` (spec 0018) |
 | API key list | Masked secret, last changed | Fixed mask in the UI, `secret_updated_at` |
 | Cancel email | Who cancelled, wording | `cancel_source` |
 | Audit entry | Actor, target, time | Session user (`require.ts`), action input, `created_at` |
@@ -314,7 +314,7 @@ This feature adds no routes or Server Actions. Its surface is the schema plus th
 
 ### Security model
 
-- Only the `hol_app` role (owner) touches these tables; RLS is enabled with no policies and InsForge's `anon`, `authenticated`, and `project_admin` have no grants; both schemas are in `insforge.internal_schemas` (spec 0001).
+- Only the `hol_app` role (owner) touches these tables; RLS is enabled with no policies, and the database port is published on `127.0.0.1` only (spec 0001, *Database container*).
 - Authorization (who may read or write which row) lives in Server Actions through `server/auth/require.ts` (feature 4), not in the DB: learners read only their own `users` row and bookings; admins read and write the catalog, learners, and bookings, and read `audit_events` and `email_messages`.
 - PII: learner name, company, email, timezone. Kept for the life of the product (owner choice); no compliance regime has been named. `audit_events.metadata` and `email_messages.last_error` must never hold secrets or tokens.
 
@@ -338,7 +338,7 @@ None new. Uses the existing `DATABASE_*` settings and `btree_gist` from `db/boot
 - Delete race: one connection holds `FOR UPDATE` on a testbed while another tries `lockBookableTestbed`; the booking waits, then sees it deleted. A testbed with no group is not bookable. Verifies **AC-14**.
 - Grants: for every table in `hol_app`, `information_schema.role_table_grants` lists only `hol_app`, and `relrowsecurity` is true (this test runs again as each later migration lands). Verifies **AC-10**.
 
-DB integration tests run against the shared database (spec 0001: one data set), so every test runs inside a transaction that is always rolled back, and never commits. The concurrency test uses two connections and rolls back both.
+DB integration tests run against the local database (spec 0001), so every test runs inside a transaction that is always rolled back, and never commits. The concurrency test uses two connections and rolls back both.
 
 ## Build plan
 
@@ -369,7 +369,7 @@ Feature 3 is done when tasks 1 to 6 ship; tasks 7 to 11 are owned and checked by
 - Soft delete means every catalog query must filter `deleted_at is null`; a missed filter shows ghost rows. Mitigation: query helpers in `server/db/` apply it, and lists are tested.
 - A booking can stay `confirmed` after it ends until the next worker tick (about 30 seconds). Nothing breaks: phase is derived from time, and the booking transaction completes stale rows itself.
 - The `CHECK` lists and the Zod enums are two copies of the same truth, kept in sync by the parity test.
-- Tests run against the shared production database (spec 0001); a test that commits by mistake writes real data. Rolled back transactions are mandatory.
+- Tests run against the same local database the dev server uses (spec 0001); a test that commits by mistake leaves rows behind. Rolled back transactions are mandatory.
 - The append only trigger also blocks the owner from fixing a bad audit row from the app; corrections are new entries.
 
 **Neutral**:

@@ -1,6 +1,6 @@
 // Applies db/migrations/NNNN_name.sql forward only, as the hol_app role.
 // Run by the `migrate` compose service (or `npm run db:migrate`), never by dev.
-// Take a pg_dump first: dev and production share one database.
+// Take a pg_dump first (scripts/deploy.sh does).
 // Runs under `tsx --conditions=react-server` so `server-only` resolves to its
 // empty stub. The image runs the bundled dist/migrate.mjs (scripts/bundle.ts).
 import { readdir, readFile } from "node:fs/promises";

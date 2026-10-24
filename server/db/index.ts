@@ -15,7 +15,7 @@ export function createDb<T = DB>(env: DbEnv, max: number): Kysely<T> {
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
   });
-  // An idle client dropping (e.g. InsForge restart) emits `error` on the pool;
+  // An idle client dropping (e.g. a database restart) emits `error` on the pool;
   // unhandled, it would crash the process. The pool discards that client.
   pool.on("error", (err) => console.error("pg pool: idle client error", err));
   return new Kysely<T>({ dialect: new PostgresDialect({ pool }) });
