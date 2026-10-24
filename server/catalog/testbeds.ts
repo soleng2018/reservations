@@ -465,7 +465,8 @@ export async function updateTestbed(
         (await testbedBlockers(trx, id)).length > 0
       )
         return err("domain_locked");
-      if (await liveByName(trx, input.name, id)) return err("duplicate_name");
+      if (input.name !== before.name && (await liveByName(trx, input.name, id)))
+        return err("duplicate_name");
       if (input.domain !== before.domain) {
         const taken = await liveByDomain(trx, input.domain);
         if (taken && taken.id !== id) return err("duplicate_domain");

@@ -351,7 +351,7 @@ Builds on feature 19. Today a testbed's Name is the Authentik group name, so lea
   - [x] Group facing code and admin views: reconciler, audit log, list columns and search (AC-7, 8)
   - [x] Learner surface scan, rename behavior, auth and tests (AC-5, 6, 9)
 - [ ] Verify it: `/check verify testbed friendly name`
-- [ ] Test it: `/test testbed friendly name`
+- [x] Test it: `/test testbed friendly name`
 spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
 
 ## Deferred

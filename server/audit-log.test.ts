@@ -546,6 +546,33 @@ describe.skipIf(!hasDb)("listAuditEvents filters", () => {
       expect(none.rows).toEqual([]);
     }));
 
+  // covers: spec 0018 AC-8, the group name alone is searchable
+  it("matches q against the group name only for testbed and group targets", () =>
+    inRollback(async (trx) => {
+      const tag = crypto.randomUUID().slice(0, 8);
+      const type = await makeType(trx, { name: `Type ${tag}` });
+      const testbed = await makeTestbed(trx, type.id, {
+        name: `Pod ${tag}`,
+        group_name: `Group ${tag}`,
+      });
+      const byTestbed = await entry(trx, {
+        action: "testbed.updated",
+        targetType: "testbed",
+        targetId: testbed.id,
+      });
+      const byGroup = await entry(trx, {
+        action: "authentik_group.created",
+        targetType: "authentik_group",
+        targetId: testbed.authentik_group_pk ?? "",
+      });
+      // "Group <tag>" is held by group_name alone.
+      expect(await ids(trx, { q: `Group ${tag}` })).toEqual(
+        [byTestbed.id, byGroup.id].sort(),
+      );
+      // "Pod <tag>" is the Name: the testbed row matches, the group row does not.
+      expect(await ids(trx, { q: `Pod ${tag}` })).toEqual([byTestbed.id]);
+    }));
+
   it("matches q against an action's name and its label", () =>
     inRollback(async (trx) => {
       const row = await entry(trx, {

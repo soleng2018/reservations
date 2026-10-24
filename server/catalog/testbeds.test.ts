@@ -1324,6 +1324,25 @@ describe.skipIf(!hasDb)("testbed Name and Group Name (spec 0018)", () => {
       ).toEqual({ ok: true, value: { name: input.name.toLowerCase() } });
     }));
 
+  // covers: spec 0018 AC-4, the update error order puts duplicate_name before duplicate_domain
+  it("reports a taken name before a taken domain, and a taken domain when the name is unchanged", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const type = await makeType(trx);
+      const other = await makeTestbed(trx, type.id);
+      const update = (patch: Partial<TestbedInput>) =>
+        updateTestbed(asConn(trx), id, { ...input, ...patch }, admin.id);
+
+      expect(
+        await update({ name: other.name, domain: other.domain ?? "" }),
+      ).toEqual({ ok: false, error: "duplicate_name" });
+      expect(await update({ domain: other.domain ?? "" })).toEqual({
+        ok: false,
+        error: "duplicate_domain",
+      });
+      expect(await updates(trx, id)).toEqual([]);
+    }));
+
   it("lets a soft delete free the group name, and refuses a live duplicate in the database", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx);
