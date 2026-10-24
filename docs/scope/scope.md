@@ -54,7 +54,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
-| 19 | Testbed domain & predefined groups | Slice 6 | in-progress |
+| 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | planned |
 
 ## Foundations
@@ -319,18 +319,18 @@ spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts
 
 ## Slice 6: Nile tenants
 
-### 19. Testbed domain & predefined groups · in-progress · Full
+### 19. Testbed domain & predefined groups · done · Full
 Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creating and deleting testbed groups: an admin names the testbed exactly like a group that already exists in Authentik (for example `NileWorkshop1Admin`, made by a separate script), and the app refuses the testbed when no such group exists. A small hint under the Name field says the name must be the group name. Cloudflare Access per VM rules use the same group name. This replaces the app made `pod-<slug>` groups of features 6, 9, and 14.
 **Done when:** an admin cannot save a testbed without a Domain, or with one that is not a valid domain name; a second live testbed with the same name, or the same domain (ignoring case), is refused with a clear message and nothing is written; a name that matches no Authentik group is refused with a clear message and nothing is written; the app creates and deletes no group in Authentik; a booked learner is added to the group named like the testbed and removed from it when the booking ends; deleting a testbed leaves its group alone; the HOL Labs gate no longer depends on `pod-` names.
 - [x] Design it (spec): `/architect testbed domain & predefined groups`
-- [ ] Build it: `/develop testbed domain & predefined groups` (owner steps first: mark the groups, delete the live testbeds; see the spec's migration plan)
+- [x] Build it: `/develop testbed domain & predefined groups` (owner steps first: mark the groups, delete the live testbeds; see the spec's migration plan)
   - [x] Foundation and guard: migration `0013`, domain input, constraint mappings, audit actions, the marker guard and group lookup (AC-1, 2, 3, 4, 7, 10, 11)
   - [x] Create thread: lookup then insert, Domain field and Name hint, list column, the old group machinery removed (AC-1, 2, 3, 5, 7, 8)
   - [x] Edit thread: name locked, domain edit with the booking lock (AC-5, 6, 7)
   - [x] Delete and reconcile: the release step, the reconciler per group pk with stale check and relink by name (AC-9, 10)
-  - [ ] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
-- [ ] Verify it: `/check verify testbed domain & predefined groups`
-- [ ] Test it: `/test testbed domain & predefined groups`
+  - [x] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
+- [x] Verify it: `/check verify testbed domain & predefined groups`
+- [x] Test it: `/test testbed domain & predefined groups`
 - [x] Review it (fresh model): `/check review testbed domain & predefined groups`
 - [ ] Document it: `/document testbed domain & predefined groups`
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
