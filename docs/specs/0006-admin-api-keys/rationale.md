@@ -46,7 +46,7 @@ Call `pgp_sym_encrypt` in SQL, passing the key with each query.
 - No crypto code in the app; one SQL function does the work.
 
 **Cons**:
-- The key travels in every query, so it can appear in `pg_stat_statements`, slow query logs, and error output on a shared InsForge instance.
+- The key travels in every query, so it can appear in `pg_stat_statements`, slow query logs, and error output on a shared database server.
 - It contradicts spec 0001 and has no keyring rotation story.
 
 ### Option 4: Do not store secrets until a consumer exists

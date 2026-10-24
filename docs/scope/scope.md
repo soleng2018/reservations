@@ -30,7 +30,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
   - A learner's Authentik username is first name, a dot, last name and 4 random digits, at the domain of the assigned testbed (a one word name becomes the name plus 4 digits, and a clash gets a new number). The email stays the real address, because the set password email needs it. The Nile attributes from `soleng2018/nile-idp` (`scripts/nile_idp.py`) are set, with `mail` set to the username. A learner has one user per domain, each with its own set password email.
   - The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens.
   - The booking rule does not change: a learner still holds at most one Upcoming or Current booking in total. The testbed, and so the domain, comes from availability, so a later booking can land in another domain. Only one of a learner's users is in a group at any moment.
-  - Owner side work that goes with it: the `hol-labs-access` gate, the Cloudflare per VM rules, and each tenant's SAML NameID (to check, it should use the domain username). The owner deletes the two live testbeds before this ships, so the current worker still removes their `pod-` groups.
+  - Owner side work that goes with it: the `hol-labs-access` gate, the Cloudflare per VM rules, and each tenant's SAML NameID (to check, it should use the domain username).
 
 ## At a glance
 
@@ -314,7 +314,7 @@ Record who did what: API key secret creation and replacement, catalog changes, t
   - [x] Row detail: `describeMetadata` and the expand disclosure (AC-8)
   - [x] History strand: `target` and `learner` filters with chips, History links on the four lists, the user detail History section (AC-5, 9, 10)
   - [x] Guards and proof: coverage test, append only source scan, Playwright, axe, screenshots, `verify.md` (AC-11, 12, 16)
-- [x] Verify it: `/check verify admin audit log` (2026-10-20; the timezone change, rename, and screenshot steps left to `/test`, since they write to the shared database or the committed shots)
+- [x] Verify it: `/check verify admin audit log` (2026-10-20; the timezone change, rename, and screenshot steps left to `/test`, since they write to the database or the committed shots)
 - [x] Test it: `/test admin audit log` (2026-10-20; the existing suite, 113 Vitest and 5 Playwright, all pass)
 spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts`, `server/audit-log.ts`, `app/admin/audit-log/`
 

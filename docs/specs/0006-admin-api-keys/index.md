@@ -106,14 +106,14 @@ Audit rows use `targetType: "api_key"` and the summaries "API key created", "API
 - Secrets never appear in audit metadata, logs, thrown error messages, or action results. Zod issues for the `secret` field are mapped to fixed messages and never logged with their input; crypto errors carry no plaintext. `createApiKey` and `updateApiKey` catch any database error that `mapConstraintError` does not map and rethrow a fixed message `Error` ("api key write failed"), because a Postgres error `detail` can contain the failing row, ciphertext included.
 - The identifier `secret_ciphertext` appears in app code only in `server/catalog/api-keys.ts` (the writes); a source scan test enforces it.
 - Target invariant, fully enforced only once feature 9 lands: a testbed's `idp_api_key_id`, when set, names a live `IDP` key. This feature enforces the key side (AC-5, AC-6); feature 9's assign path must lock the key `FOR SHARE` and recheck `type = 'IDP' and deleted_at is null` (Follow-up).
-- Dev and production share one database, so they must share one keyring (spec 0001); a key removed from the keyring makes every value encrypted under it unreadable.
+- Every process on a database must use the same keyring (spec 0001); a key removed from the keyring makes every value encrypted under it unreadable.
 
 **Security model**: admins only (`requireAdmin()` on the page and every action, AC-10); learners and anonymous callers see nothing. The secret is write only for everyone, admins included: it is accepted once over the Server Action POST, encrypted in memory, and stored as ciphertext. The keyring file lives outside the repo (`~/secrets/`, mode 600). The web process reads it to encrypt; the worker reads it to decrypt the `CLOUDFLARE` key, and only when one exists (spec 0012 AC-11). Every mutation is audited in the same transaction (`api_key.created`, `api_key.updated`, `api_key.secret_replaced`, `api_key.deleted`). No compliance scope applies; these are internal service credentials.
 
 **Configuration required**:
 - `APP_ENCRYPTION_KEYS_FILE`: path to the JSON keyring, `{ "<keyId>": "<base64 32 bytes>" }` (spec 0001 named it; read by `encryptionEnv()` through `secret()`)
 - `APP_ENCRYPTION_ACTIVE_KEY_ID`: the keyring entry that encrypts new values
-- Owner setup: run `npm run secrets:keygen`, save the output to `~/secrets/hol_encryption_keys.json` with mode 600, set both vars in `.env.local` and the production env, and back the file up somewhere safe. Losing it means every stored secret must be entered again. Until this is done the app runs, and only the API Keys page shows "Encryption isn't configured" (AC-9).
+- Owner setup: run `npm run secrets:keygen`, save the output to `~/secrets/hol_encryption_keys.json` with mode 600, set both vars in `.env.local` and `docker/.env`, and back the file up somewhere safe. Losing it means every stored secret must be entered again. Until this is done the app runs, and only the API Keys page shows "Encryption isn't configured" (AC-9).
 
 **Critical test scenarios**:
 - Happy path: add a key, see it masked with today's changed date, edit its base URL with the key blank (ciphertext and date unchanged), replace the key (date changes), delete it. Verifies **AC-1**, **AC-2**, **AC-4**, **AC-6**
@@ -142,7 +142,7 @@ Audit rows use `targetType: "api_key"` and the summaries "API key created", "API
 
 **Negative / tradeoffs**:
 - The app stores credentials that nothing uses yet; each one is a liability with no current benefit (see the premise note in rationale.md).
-- The keyring file becomes a critical backup: lose it and every secret must be entered again. Dev and prod share it, so a dev mistake with the file affects prod.
+- The keyring file becomes a critical backup: lose it and every secret must be entered again. The web, worker, and dev server all read it, so a mistake with the file affects all of them.
 - Rotation is half built: a new key encrypts new values and old values still decrypt, but nothing encrypts old rows again under the new key yet.
 - The table loads every live key at once with no pagination, which is fine for a handful of keys and would need paging past a few hundred.
 - The blocked delete and type change paths cannot be clicked through in the UI until feature 9 adds the IDP picker; DB tests cover them meanwhile.
@@ -154,7 +154,7 @@ Audit rows use `targetType: "api_key"` and the summaries "API key created", "API
 
 ## Follow-up
 
-- [ ] Owner: generate the keyring with `npm run secrets:keygen`, store it at `~/secrets/hol_encryption_keys.json` (mode 600), set both env vars for dev and prod, and back the file up. Never remove a key id from the shared file while any row still uses it.
+- [ ] Owner: generate the keyring with `npm run secrets:keygen`, store it at `~/secrets/hol_encryption_keys.json` (mode 600), set both env vars, and back the file up. Never remove a key id from the shared file while any row still uses it.
 - [ ] Feature 9 (Admin: Testbeds): the IDP select lists live `IDP` keys only; the save locks the chosen key `FOR SHARE` and rechecks `type = 'IDP' and deleted_at is null` so it cannot race AC-5 or AC-6.
 - [ ] A `secrets:rotate` script that encrypts every stored secret again under the active key in one transaction, once something decrypts these values.
 - [ ] Ask the owner not to enter real production `IDP` or `AI` credentials until a feature actually uses them (see the premise note). The `CLOUDFLARE` key is in use (spec 0012).

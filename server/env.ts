@@ -15,7 +15,7 @@ function secret(name: string): string | undefined {
 const dbSchema = z.object({
   DATABASE_HOST: z.string().min(1),
   DATABASE_PORT: z.coerce.number().int().positive().default(5432),
-  DATABASE_NAME: z.string().min(1).default("insforge"),
+  DATABASE_NAME: z.string().min(1).default("reservations"),
   DATABASE_USER: z.string().min(1).default("hol_app"),
   DATABASE_PASSWORD: z.string().min(1),
 });

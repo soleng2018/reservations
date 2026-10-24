@@ -178,7 +178,7 @@ At `/check verify`, two Authentik facts are confirmed on the real instance: the 
 
 Tracer Bullet (the project default): the first thread is one testbed created with a domain and a predefined group through every layer (migration, lookup, insert, form, list), then each strand thickens it.
 
-Before task 1 (owner, see the migration plan): the predefined groups are marked and the live testbeds are deleted and released. DB tests, `db:codegen`, and the dev server all run on the shared database, so task 1 applies migration `0013` there, and the migration refuses until those two owner steps are done.
+Before task 1 (owner, see the migration plan): the predefined groups are marked and the live testbeds are deleted and released. DB tests, `db:codegen`, and the dev server all run on the one database, so task 1 applies migration `0013` there, and the migration refuses until those two owner steps are done.
 
 1. Foundation: migration `0013` (the lock, the two guards, the column, the checks, and both unique indexes), `db:codegen`, `DOMAIN_PATTERN` and `DomainInput` with the parity test, the `duplicate_domain` and `group_in_use` constraint mappings, the two audit actions and labels, and the seed helper change in `server/db/testing.ts`. Satisfies **AC-1**, **AC-2**, **AC-7**, **AC-11**
 2. Guard and lookup: `checkGroupWrite(group, purpose, adminGroupUuid)`, the marker constant, `findTestbedGroup`, the membership renames, `includeUsers: false` on group reads, and the fake Authentik changes, with a unit test per refusal (marker type, parent, role, superuser, `hol-admins`, two matches, 403, 5xx). Satisfies **AC-3**, **AC-4**, **AC-10**
@@ -190,18 +190,18 @@ Before task 1 (owner, see the migration plan): the predefined groups are marked 
 
 ## Migration plan
 
-**Strategy**: no side by side period. The change is staged by owner steps because the migration refuses to run while live testbeds exist or a release is pending. Dev and prod share one database, so `/develop` applying `0013` is applying it to production; the order below makes that safe.
+**Strategy**: no side by side period. The change is staged by owner steps because the migration refuses to run while live testbeds exist or a release is pending. There is one database, so `/develop` applying `0013` is applying it to the data the running app uses; the order below makes that safe.
 **Phases**:
 1. Owner: make the predefined groups with the separate script, flat (no parent, no role), and have it stamp `hol_testbed_group = true` (the boolean) on each.
 2. Owner: delete the two live testbeds in the console. Wait until the current worker has removed their `pod-` groups and stamped them. The migration checks this itself (no row with `deleted_at` set, a group pk, and `authentik_group_deleted_at` null).
-3. `/develop` starts. Task 1 applies `0013` to the shared database. No live testbed exists, so the only effect is that the old production web cannot create a testbed until it is redeployed; the owner adds none in this window.
+3. `/develop` starts. Task 1 applies `0013` to the database. No live testbed exists, so the only effect is that the deployed web cannot create a testbed until it is redeployed; the owner adds none in this window.
 4. Owner, with approval, after build task 6 and before the deploy: run `npm run authentik:setup` as a dry run, then with `--apply`, to put the marker based `hol-labs-access` gate in place. This is safe now because no live testbed or learner needs the `pod-` rule. It also lets the real gate test (AC-12) pass before the deploy.
 5. Deploy with `scripts/deploy.sh` (it dumps the database first, then runs `migrate`, `web`, `worker`). `migrate` finds `0013` already applied.
 6. Owner: add the testbeds again with their Domain and group name; make each lab VM's Cloudflare Access rule use that same group name; check each tenant's SAML NameID (feature 20 uses it).
 
 **Rollback**: before step 6, revert the deploy and run `alter table hol_app.testbeds drop constraint testbeds_live_group_check, drop constraint testbeds_domain_live_check;` (the old create inserts a row with no group pk first, which the new checks refuse), then re-apply the old gate with the previous `authentik:setup` if step 4 ran. The column and the other constraints can stay. After step 6 the only way is forward: the old code's guard refuses every group that is not named `pod-*`, so testbeds on predefined groups would stop working.
 **Risks**:
-- Between step 3 and the deploy, the old production web cannot create a testbed (the checks refuse its insert).
+- Between step 3 and the deploy, the deployed web cannot create a testbed (the checks refuse its insert).
 - If a deleted testbed's release were pending at migration time, it would later be stamped without its `pod-` group being deleted (the new worker deletes no group). The migration's own guard prevents it.
 - Doing step 6 before step 4 would leave learners failing the gate (it would still want `pod-`). The order above rules it out.
 
@@ -217,7 +217,7 @@ Before task 1 (owner, see the migration plan): the predefined groups are marked 
 - The name is coupled to a group in Authentik. A typo is caught at save, but a group that is renamed, deleted, or unmarked later is not: the worker only logs an error and a learner with a booking gets no access. The owner chose log only (2026-10-23); a visible signal is a follow up.
 - A testbed cannot be pointed at another group. That means delete and add again, which is blocked while it has Upcoming or Current reservations.
 - A domain cannot change while Upcoming or Current reservations exist.
-- The owner must keep the order of the migration plan. Because dev and prod share one database, any `db:migrate` run anywhere applies the migration to production, which is why `/develop` cannot start before owner steps 1 and 2.
+- The owner must keep the order of the migration plan. Because there is one database, any `db:migrate` run anywhere applies the migration to the running app's data, which is why `/develop` cannot start before owner steps 1 and 2.
 - The guard refuses groups with a parent or a role, so the owner's script must make flat groups. A tenant group that is nested or carries roles for another reason cannot back a testbed until that changes.
 - Unmarking a group cuts a Current learner off at the HOL Labs gate at once, while the reconciler leaves them in the group until their booking ends. The owner should know the marker is live, not just a setup flag.
 - The refusal text tells an admin whether a group exists. Accepted.

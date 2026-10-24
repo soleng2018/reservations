@@ -47,7 +47,7 @@ A scheduled job in Postgres (or a host cron) inserts reminder jobs on a timer.
 - Timing lives outside the app process.
 
 **Cons**:
-- A new piece of infrastructure on the shared InsForge Postgres (an extension the app doesn't run today) or the host, with its own failure modes and no tests in the repo.
+- A new piece of infrastructure on the app's Postgres (an extension the app doesn't run today) or the host, with its own failure modes and no tests in the repo.
 - Splits timed work between the worker and something else, against spec 0001's one worker design.
 
 ### Sub decisions

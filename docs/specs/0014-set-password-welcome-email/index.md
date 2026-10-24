@@ -140,7 +140,7 @@ Learner identity (spec 0003, unchanged): created with no password → **link cli
 | handler | token, hash | `crypto.randomBytes(32)` base64url; `sha256` |
 | handler | expiry | `dbNow(trx) + 72 hours`, stored in `expires_at` and `details.expiresAt` |
 | handler | expiry text | `formatDateTime(expiresAt, users.timezone)` |
-| handler | link base | `payload.appUrl` (the queuing process's `appUrl()`, since one worker serves dev and prod, as booking emails' `details.appUrl`) |
+| handler | link base | `payload.appUrl` (the queuing process's `appUrl()`, since one worker serves every app URL in use, as booking emails' `details.appUrl`) |
 | handler | subject, copy | constants in `lib/welcome-email.ts` and the template |
 | handler | to, `[dev] ` prefix | `routeEmail(users.email, ctx.cfg)`; bcc forced to none |
 | handler | sender, token for Gmail | `ctx.cfg.senderEmail`, `ctx.google` (spec 0013) |
@@ -220,7 +220,7 @@ Tracer Bullet: prove the risky Authentik round trip first, then one real email t
 - The welcome send no longer depends on Authentik, only on Gmail, as the booking emails already do.
 - No new Authentik permissions; spec 0008's known typo email gap is closed.
 - Mail scanners that prefetch links can't use one up, because a GET changes nothing.
-- The learner lands signed in and verified on the app URL they clicked, whether dev or prod.
+- The learner lands signed in and verified on the app URL they clicked.
 
 **Negative / tradeoffs**:
 - Authentik must be reachable at click time. An outage shows "try again" instead of the password page.

@@ -395,7 +395,7 @@ Google sign in (amended 2026-10-16), Tracer Bullet again: task 9 proves one real
 ## Consequences
 
 **Positive**:
-- One send path for dev and prod (they share a worker), with no Google env vars and no restart to change settings.
+- One send path (one worker), with no Google env vars and no restart to change settings.
 - With the service account: no human sign in, nothing stops working when a password changes, and the HOL address only has to be a real user, not someone's login.
 - Bookings never wait on Google; the outbox gives retries and a visible history for free.
 - The runner, templates, routing, and Gmail client are what features 16 (welcome) and 17 (reminder) need; each adds a handler and a template.

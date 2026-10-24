@@ -13,7 +13,7 @@ A testbed's `name` does two jobs at once (spec 0017). It is the exact name of th
 
 The code reads `testbeds.name` in two groups of places. Learner facing reads (`t.name` in `booking-notice.ts`, `calendar-sync.ts`, `lab-access.ts`, `availability.ts`, `guest-saga.ts`) only need a label. Group facing reads (`createTestbed`, the reconciler's stale check and `relinkByName`, the audit log's "access group" labels) need the real group name. Today both use the same column, so a rename cannot be done without splitting the jobs.
 
-Dev and production share one database and the worker is one container, so a migration lands on live data the moment it runs. This is not a greenfield change: the column has live rows, live bookings point at those testbeds, and queued reminder emails will read the name when they send.
+There is one database and one worker container, so a migration lands on live data the moment it runs. This is not a greenfield change: the column has live rows, live bookings point at those testbeds, and queued reminder emails will read the name when they send.
 
 ## Requirements
 
@@ -48,7 +48,7 @@ The old column keeps its meaning to every learner facing query and its unique in
 
 **Pros**:
 - A learner facing read that is missed or written later shows the friendly name, never the group name. The risky mistake fails safe.
-- No column rename on a table shared by dev and production, and the existing queries in emails, the calendar, and screens stay as they are.
+- No column rename on a table the running web and worker still read, and the existing queries in emails, the calendar, and screens stay as they are.
 - `testbeds_name_lower_uq` and its `duplicate_name` mapping keep their meaning, so the form's duplicate message stays correct.
 
 **Cons**:
@@ -64,7 +64,7 @@ Matches the form labels one to one and keeps `name` meaning "the label" in a fre
 
 **Cons**:
 - Every existing learner facing query that selects `t.name` would silently keep returning the group name until each is edited, so a missed place leaks the group name to a learner.
-- Renaming a live column on a shared database breaks the old production code at once, and the old worker would read the new column's values.
+- Renaming a live column breaks the already deployed code at once, and the old worker would read the new column's values.
 
 ### Option 3: Store the friendly name in a separate table or JSON attribute
 
@@ -78,7 +78,7 @@ A `testbed_labels` table or a JSON column keyed by testbed.
 
 ## Rationale
 
-Option 1 fits the forces in Context. The learner facing reads are the many and spread out places (emails, the calendar, six screens), and the group facing reads are the few and concentrated ones (create, the reconciler, the audit labels). Moving the few is safer than moving the many, and a missed spot fails toward the harmless label. On a database that dev and production share, adding a column is also the migration shape that old code survives best. Option 2 reads nicer but a single missed query would show `NileWorkshop1Admin` to a learner, which is the exact problem this feature exists to fix.
+Option 1 fits the forces in Context. The learner facing reads are the many and spread out places (emails, the calendar, six screens), and the group facing reads are the few and concentrated ones (create, the reconciler, the audit labels). Moving the few is safer than moving the many, and a missed spot fails toward the harmless label. On a database the deployed code also reads, adding a column is also the migration shape that old code survives best. Option 2 reads nicer but a single missed query would show `NileWorkshop1Admin` to a learner, which is the exact problem this feature exists to fix.
 
 The engineer chose: Name unique among live testbeds, like Group Name (so two benches never look the same to a learner); a rename leaves sent invites alone; the admin list shows Name and Group Name as two columns. The slug is derived from the Group Name (the stable, never changing field) and not the Name, because the slug never changes and the Name can. The Name keeps the existing 200 character rule so one rule serves both fields.
 
@@ -161,9 +161,9 @@ Approach: Tracer Bullet (project default). The first slice proves one real threa
 **Strategy**: add a column, backfill, then constrain, in one migration run inside one transaction (the table is small and the lock is brief). The old column stays and keeps its index.
 **Phases**:
 1. Run `npm run db:migrate`, which adds `group_name` as nullable, sets `group_name = name` for every row, then sets it not null and adds the trim check and the unique index.
-2. Deploy the new web and worker with `scripts/deploy.sh` right after, so the running code and the schema agree. Production has not been redeployed since before spec 0017, so this one deploy carries both 0013 and 0014, and the owner steps of spec 0017 come first. Check the worker log once after the deploy, before any rename.
+2. Deploy the new web and worker with `scripts/deploy.sh` right after, so the running code and the schema agree. The deployed image predates spec 0017, so this one deploy carries both 0013 and 0014, and the owner steps of spec 0017 come first. Check the worker log once after the deploy, before any rename.
 **Rollback**: the migration alone is additive. Drop the new index, the check, and the column to revert it, and redeploy the previous image.
-**Risks**: dev and production share the database and production is not redeployed automatically (see the testbed domain rollout). Between the migration and the deploy, the old code cannot create a testbed (its insert has no `group_name`, so it fails not null; admin only, and a thrown error, not a data change). Do not edit a live testbed's Name (from dev or production) until the new worker is running: an old worker treats `name` as the group name, finds a stale group, and skips that testbed every tick, so learners with a current booking are never added to the group and lose lab access. The owner runs the migration and the deploy together, and approves the shared change.
+**Risks**: the deployed web and worker are not redeployed automatically (see the testbed domain rollout). Between the migration and the deploy, the old code cannot create a testbed (its insert has no `group_name`, so it fails not null; admin only, and a thrown error, not a data change). Do not edit a live testbed's Name (from anywhere) until the new worker is running: an old worker treats `name` as the group name, finds a stale group, and skips that testbed every tick, so learners with a current booking are never added to the group and lose lab access. The owner runs the migration and the deploy together, and approves the change.
 
 ## Consequences
 
@@ -176,7 +176,7 @@ Approach: Tracer Bullet (project default). The first slice proves one real threa
 - Two similar fields mean an admin can mix them up on the form. The hints and the read only Group Name on edit reduce that.
 - The column `name` now means something different from what specs 0007 and 0017 describe, so those specs are partly stale until synced.
 - Invites already sent keep the old name after a rename (the engineer's choice). A learner can see a stale name in a calendar until the booking is rescheduled.
-- The new migration needs a coordinated deploy because of the shared database.
+- The new migration needs a coordinated deploy, because the deployed code reads the same database.
 - Renaming a testbed can change which one is assigned first (assignment orders by `lower(name)`), and an email queued but not yet sent keeps the old name.
 - A group renamed in Authentik leaves its testbed stale for good, because Group Name cannot be edited. The remedy is to rename the group back in Authentik (same as under spec 0017).
 
@@ -187,6 +187,6 @@ Approach: Tracer Bullet (project default). The first slice proves one real threa
 ## Follow-up
 
 - [ ] Run `/sync` after the build to update spec 0017 (AC-3, AC-5, AC-8, AC-10 say the Name is the Authentik group) and spec 0007's testbed text, and the AGENTS.md rule that names `testbeds.name`
-- [ ] The owner runs `npm run db:migrate` and `scripts/deploy.sh` together (shared database)
+- [ ] The owner runs `npm run db:migrate` and `scripts/deploy.sh` together
 - [ ] Revisit syncing calendar events on a rename if learners report stale invites
 - [ ] Rename the `name` column in the AGENTS.md "Authentik groups" rule so it points at `group_name` once built

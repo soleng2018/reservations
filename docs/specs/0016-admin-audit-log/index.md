@@ -185,7 +185,7 @@ Tracer Bullet: the first task puts one real entry on screen through every layer 
 - Keeping entries forever means the table only grows. Rows are small, but nothing ever trims it.
 
 **Neutral**:
-- One index migration on the shared database, a short lock on a small table.
+- One index migration, a short lock on a small table.
 - Spec 0005's deferred paging is settled only for this list. The other admin lists keep client search.
 - `AUDIT_ACTION_INFO` becomes the place a new audit action must be labelled, enforced by the type checker.
 
