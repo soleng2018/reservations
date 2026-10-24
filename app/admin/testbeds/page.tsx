@@ -46,6 +46,7 @@ export default async function TestbedsPage() {
     search: testbedSearchText(t),
     cells: {
       name: <span className="text-cell font-semibold text-fg1">{t.name}</span>,
+      groupName: <span className="font-mono">{t.groupName}</span>,
       type: t.typeName,
       domain: <span className="font-mono">{t.domain}</span>,
       idp: t.idpName ?? (
@@ -101,6 +102,7 @@ export default async function TestbedsPage() {
         <DataTable
           columns={[
             { key: "name", header: "Name" },
+            { key: "groupName", header: "Group Name" },
             { key: "type", header: "Testbed type" },
             { key: "domain", header: "Domain" },
             { key: "idp", header: "IDP" },
@@ -108,7 +110,7 @@ export default async function TestbedsPage() {
           ]}
           rows={rows}
           noun={{ one: "testbed", many: "testbeds" }}
-          searchPlaceholder="Search by name, type, domain, or IDP…"
+          searchPlaceholder="Search by name, group name, type, domain, or IDP…"
         />
       </PageBody>
     </>

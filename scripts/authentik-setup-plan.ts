@@ -282,7 +282,7 @@ export const uncoveredProviders = (
 // ---- HOL Labs (AC-19, spec 0012) ------------------------------------------
 // The login Cloudflare Access uses for the lab VMs. Learners pass only while
 // they are in a group the owner marked `hol_testbed_group` (spec 0017); each
-// VM's Cloudflare policy then checks the exact group name, the testbed's name,
+// VM's Cloudflare policy then checks the exact group name, the testbed's group name,
 // in the groups claim.
 
 export const LABS_APP_SLUG = "hol-labs";

@@ -22,7 +22,7 @@ export function membershipDiff(
 // A testbed row as the reconciler reads it.
 export type GroupRow = {
   readonly id: string;
-  readonly name: string;
+  readonly groupName: string;
   readonly groupPk: string;
   readonly deleted: boolean;
 };
@@ -39,11 +39,12 @@ export function groupByPk(
 }
 
 // Spec 0017 AC-10 (c): a live testbed's stored pk is stale when the group is
-// gone (`undefined`) or its name is no longer the testbed's name.
+// gone (`undefined`) or its name is no longer the testbed's group name
+// (spec 0018 AC-7; the friendly name never matters here).
 export const isStalePk = (
-  live: Pick<GroupRow, "name">,
+  live: Pick<GroupRow, "groupName">,
   group: { readonly name: string } | undefined,
-): boolean => group === undefined || group.name !== live.name;
+): boolean => group === undefined || group.name !== live.groupName;
 
 export type RevokeKind = "off" | "broken" | "on";
 

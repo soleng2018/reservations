@@ -42,7 +42,8 @@ async function setup(trx: Kysely<DB>) {
   // The name is the name of a group the owner already made and marked.
   const name = `NileLab${tag}Admin`;
   const input: TestbedInput = {
-    name,
+    name: `Friendly ${tag}`,
+    groupName: name,
     domain: `lab-${tag}.example.test`,
     testbedTypeId: type.id,
     idpApiKeyId: null,
@@ -78,7 +79,7 @@ async function setup(trx: Kysely<DB>) {
     trx
       .selectFrom("testbeds")
       .select(["id", "slug", "domain", "authentik_group_pk"])
-      .where(sql<string>`lower(name)`, "=", n.toLowerCase())
+      .where(sql<string>`lower(group_name)`, "=", n.toLowerCase())
       .execute();
   const audits = (targetId: string) =>
     trx
@@ -233,6 +234,7 @@ describe.skipIf(!hasDb)("listTestbedsForAdmin (AC-1, spec 0017 AC-8)", () => {
         {
           id: a.id,
           name: a.name,
+          groupName: a.group_name,
           typeName: type.name,
           domain: a.domain,
           idpName: null,
@@ -241,6 +243,7 @@ describe.skipIf(!hasDb)("listTestbedsForAdmin (AC-1, spec 0017 AC-8)", () => {
         {
           id: b.id,
           name: b.name,
+          groupName: b.group_name,
           typeName: type.name,
           domain: b.domain,
           idpName: key.name,
@@ -286,7 +289,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       const r = await createTestbed(ak.api, asConn(trx), input, admin.id);
       if (!r.ok) throw new Error(r.error);
 
-      expect(await rowsNamed(input.name)).toEqual([
+      expect(await rowsNamed(input.groupName)).toEqual([
         {
           id: r.value.id,
           slug: r.value.slug,
@@ -320,6 +323,8 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
         .executeTakeFirstOrThrow();
       expect(row.metadata).toEqual({
         slug: r.value.slug,
+        name: input.name,
+        groupName: input.groupName,
         domain: input.domain,
         groupPk: group.pk,
         clients: 2,
@@ -334,7 +339,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       );
     }));
 
-  it("stores the trimmed name exactly as the group is named", () =>
+  it("stores the name as typed and the group name exactly as the group is named", () =>
     inRollback(async (trx) => {
       const { admin, input, group, authentik } = await setup(trx);
       const r = await createTestbed(
@@ -346,10 +351,10 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       if (!r.ok) throw new Error(r.error);
       const row = await trx
         .selectFrom("testbeds")
-        .select("name")
+        .select(["name", "group_name"])
         .where("id", "=", r.value.id)
         .executeTakeFirstOrThrow();
-      expect(row.name).toBe(group.name);
+      expect(row).toEqual({ name: input.name, group_name: group.name });
     }));
 
   it("stores a live IDP key", () =>
@@ -388,7 +393,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
           admin.id,
         ),
       ).toEqual({ ok: false, error: "idp_not_found" });
-      expect(await rowsNamed(input.name)).toEqual([]);
+      expect(await rowsNamed(input.groupName)).toEqual([]);
       expect(await audits(admin.id)).toEqual([]);
       expect(ak.writes).toEqual([]);
     }),
@@ -405,7 +410,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       expect(
         await createTestbed(authentik().api, asConn(trx), input, admin.id),
       ).toEqual({ ok: false, error: "type_not_found" });
-      expect(await rowsNamed(input.name)).toEqual([]);
+      expect(await rowsNamed(input.groupName)).toEqual([]);
     }));
 
   it("suffixes a slug already taken", () =>
@@ -413,15 +418,25 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       const { admin, input, authentik, group } = await setup(trx);
       // "Lab x" and "Lab-x" are two names with one slug.
       const tag = unique();
-      const spaced = { ...input, name: `Lab ${tag}`, domain: `a-${tag}.test` };
-      const dashed = { ...input, name: `Lab-${tag}`, domain: `b-${tag}.test` };
+      const spaced = {
+        ...input,
+        name: `Spaced ${tag}`,
+        groupName: `Lab ${tag}`,
+        domain: `a-${tag}.test`,
+      };
+      const dashed = {
+        ...input,
+        name: `Dashed ${tag}`,
+        groupName: `Lab-${tag}`,
+        domain: `b-${tag}.test`,
+      };
       const ak = authentik({
         groups: [
-          markedGroup(crypto.randomUUID(), spaced.name),
-          markedGroup(crypto.randomUUID(), dashed.name),
+          markedGroup(crypto.randomUUID(), spaced.groupName),
+          markedGroup(crypto.randomUUID(), dashed.groupName),
         ],
       });
-      expect(group.name).not.toBe(spaced.name);
+      expect(group.name).not.toBe(spaced.groupName);
       const first = await createTestbed(ak.api, asConn(trx), spaced, admin.id);
       if (!first.ok) throw new Error(first.error);
       expect(
@@ -462,7 +477,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
         admin.id,
       );
       expect(quiet.groupReads).toEqual([]);
-      expect(await rowsNamed(input.name)).toHaveLength(1);
+      expect(await rowsNamed(input.groupName)).toHaveLength(1);
     }));
 
   it("refuses a taken domain, and shows only the name error when both are taken", () =>
@@ -477,7 +492,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
         await createTestbed(
           ak.api,
           asConn(trx),
-          { ...input, name: other.name },
+          { ...input, name: `Other ${unique()}`, groupName: other.name },
           admin.id,
         ),
       ).toEqual({ ok: false, error: "duplicate_domain" });
@@ -499,7 +514,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
         ok: true,
         value: { slug: `${first.value.slug}-2` },
       });
-      expect(await rowsNamed(input.name)).toHaveLength(2);
+      expect(await rowsNamed(input.groupName)).toHaveLength(2);
     }));
 
   // covers: two admins saving at once get the message, never an exception
@@ -536,7 +551,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       expect(
         await createTestbed(authentik().api, asConn(trx), input, admin.id),
       ).toEqual({ ok: false, error: "group_in_use" });
-      expect(await rowsNamed(input.name)).toEqual([]);
+      expect(await rowsNamed(input.groupName)).toEqual([]);
     }));
 
   it("takes a group a deleted testbed used", () =>
@@ -609,7 +624,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
   ] as const)("refuses when %s", (_, build, error) =>
     inRollback(async (trx) => {
       const { admin, input, group, rowsNamed } = await setup(trx);
-      const { groups, drop, rename } = build(input.name) as {
+      const { groups, drop, rename } = build(input.groupName) as {
         groups: ReturnType<typeof fakeGroup>[];
         drop?: boolean;
         rename?: string;
@@ -619,11 +634,11 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       const ak = fakeAuthentik([], {
         groups: [...(drop ? [] : [group]), ...groups],
       });
-      const asked = { ...input, name: rename ?? input.name };
+      const asked = { ...input, groupName: rename ?? input.groupName };
       expect(await createTestbed(ak.api, asConn(trx), asked, admin.id)).toEqual(
         { ok: false, error },
       );
-      expect(await rowsNamed(asked.name)).toEqual([]);
+      expect(await rowsNamed(asked.groupName)).toEqual([]);
       expect(ak.writes).toEqual([]);
       const made = await trx
         .selectFrom("audit_events")
@@ -640,7 +655,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       const ak = fakeAuthentik([]);
       const admins = ak.groups.find((g) => g.name === "hol-admins");
       if (admins) admins.attributes = { hol_testbed_group: true };
-      const asked = { ...input, name: "hol-admins" };
+      const asked = { ...input, groupName: "hol-admins" };
       expect(await createTestbed(ak.api, asConn(trx), asked, admin.id)).toEqual(
         { ok: false, error: "group_not_testbed_group" },
       );
@@ -652,8 +667,8 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       const { admin, input, group, authentik } = await setup(trx);
       const ak = authentik({
         groups: [
-          markedGroup("near-1", `${input.name}X`),
-          markedGroup("near-2", input.name.toLowerCase()),
+          markedGroup("near-1", `${input.groupName}X`),
+          markedGroup("near-2", input.groupName.toLowerCase()),
         ],
       });
       const r = await createTestbed(ak.api, asConn(trx), input, admin.id);
@@ -685,7 +700,7 @@ describe.skipIf(!hasDb)("createTestbed (spec 0017 AC-2, AC-3)", () => {
       expect(
         await createTestbed(authentik(over).api, asConn(trx), input, admin.id),
       ).toEqual({ ok: false, error: "authentik_unavailable" });
-      expect(await rowsNamed(input.name)).toEqual([]);
+      expect(await rowsNamed(input.groupName)).toEqual([]);
     }),
   );
 });
@@ -712,6 +727,7 @@ describe.skipIf(!hasDb)("getTestbedForEdit (AC-3)", () => {
         ok: true,
         value: {
           name: input.name,
+          groupName: input.groupName,
           slug,
           domain: input.domain,
           testbedTypeId: input.testbedTypeId,
@@ -777,7 +793,9 @@ describe.skipIf(!hasDb)("updateTestbed (AC-3, AC-4, AC-5)", () => {
         .select("authentik_group_pk")
         .where("id", "=", id)
         .executeTakeFirstOrThrow();
-      const { name, ...fields } = input;
+      const { name } = input;
+      const { groupName, ...fields } = input;
+      expect(groupName).toBeTruthy();
       const domain = `moved-${unique()}.example.test`;
       expect(
         await updateTestbed(asConn(trx), id, { ...fields, domain }, admin.id),
@@ -1229,5 +1247,145 @@ describe.skipIf(!hasDb)("deleteTestbed edges (AC-6)", () => {
           .where("target_id", "=", id)
           .execute(),
       ).toEqual([]);
+    }));
+});
+
+// covers: spec 0018 AC-3, AC-4, AC-6
+describe.skipIf(!hasDb)("testbed Name and Group Name (spec 0018)", () => {
+  it("renames with an Upcoming and a Current booking, calling no Authentik and queuing no job", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const [current, upcoming] = [await makeUser(trx), await makeUser(trx)];
+      await trx
+        .insertInto("bookings")
+        .values(
+          [
+            [current.id, -1, 1],
+            [upcoming.id, 24, 26],
+          ].map(([user, from, to]) => ({
+            user_id: String(user),
+            testbed_id: id,
+            testbed_type_id: input.testbedTypeId,
+            starts_at: slot(Number(from)),
+            ends_at: slot(Number(to)),
+            status: "confirmed" as const,
+          })),
+        )
+        .execute();
+      const jobsBefore = await trx
+        .selectFrom("jobs")
+        .select(sql<number>`count(*)::int`.as("n"))
+        .executeTakeFirstOrThrow();
+
+      const renamed = { ...input, name: "Wireless Lab 1" };
+      expect(await updateTestbed(asConn(trx), id, renamed, admin.id)).toEqual({
+        ok: true,
+        value: { name: "Wireless Lab 1" },
+      });
+      const row = await trx
+        .selectFrom("testbeds")
+        .select(["name", "group_name"])
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({
+        name: "Wireless Lab 1",
+        group_name: input.groupName,
+      });
+      expect(await updates(trx, id)).toMatchObject([
+        { metadata: { name: { from: input.name, to: "Wireless Lab 1" } } },
+      ]);
+      const jobsAfter = await trx
+        .selectFrom("jobs")
+        .select(sql<number>`count(*)::int`.as("n"))
+        .executeTakeFirstOrThrow();
+      expect(jobsAfter.n).toBe(jobsBefore.n);
+    }));
+
+  it("refuses a name another live testbed has, but allows a case only rename", () =>
+    inRollback(async (trx) => {
+      const { id, input, admin } = await created(trx);
+      const type = await makeType(trx);
+      const other = await makeTestbed(trx, type.id);
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          id,
+          { ...input, name: other.name.toUpperCase() },
+          admin.id,
+        ),
+      ).toEqual({ ok: false, error: "duplicate_name" });
+      expect(
+        await updateTestbed(
+          asConn(trx),
+          id,
+          { ...input, name: input.name.toLowerCase() },
+          admin.id,
+        ),
+      ).toEqual({ ok: true, value: { name: input.name.toLowerCase() } });
+    }));
+
+  it("lets a soft delete free the group name, and refuses a live duplicate in the database", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const live = await makeTestbed(trx, type.id);
+      await makeTestbed(trx, type.id, {
+        group_name: live.group_name,
+        deleted_at: new Date(),
+      });
+      await expect(
+        makeTestbed(trx, type.id, {
+          group_name: live.group_name.toUpperCase(),
+        }),
+      ).rejects.toMatchObject({ constraint: "testbeds_group_name_lower_uq" });
+    }));
+
+  it("refuses an empty or untrimmed group name in the database", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      await expect(
+        makeTestbed(trx, type.id, { group_name: " padded " }),
+      ).rejects.toMatchObject({ constraint: "testbeds_group_name_trimmed" });
+    }));
+
+  it("tells a group name taken between the precheck and the insert", () =>
+    inRollback(async (trx) => {
+      const { admin, input, type, authentik } = await setup(trx);
+      const api = racing(authentik().api, () =>
+        makeTestbed(trx, type.id, {
+          group_name: input.groupName.toUpperCase(),
+        }),
+      );
+      expect(await createTestbed(api, asConn(trx), input, admin.id)).toEqual({
+        ok: false,
+        error: "duplicate_group_name",
+      });
+    }));
+
+  it("checks the name before the group name before the domain, with Authentik down", () =>
+    inRollback(async (trx) => {
+      const { admin, input, authentik } = await setup(trx);
+      const first = await createTestbed(
+        authentik().api,
+        asConn(trx),
+        input,
+        admin.id,
+      );
+      if (!first.ok) throw new Error(first.error);
+      const down = authentik({ down: true }).api;
+      const create = (over: object) =>
+        createTestbed(down, asConn(trx), { ...input, ...over }, admin.id);
+      const fresh = `Other ${unique()}`;
+      expect(await create({})).toEqual({
+        ok: false,
+        error: "duplicate_name",
+      });
+      expect(await create({ name: fresh })).toEqual({
+        ok: false,
+        error: "duplicate_group_name",
+      });
+      expect(await create({ name: fresh, groupName: `G${unique()}` })).toEqual({
+        ok: false,
+        error: "duplicate_domain",
+      });
     }));
 });

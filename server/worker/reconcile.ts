@@ -41,7 +41,7 @@ import type { DB } from "@/server/db/types";
 //
 // The groups are the owner's: the reconciler never creates or deletes one. A
 // live testbed whose stored pk went stale (the group is gone, or renamed) is
-// found again by the testbed's name, and only the database row changes.
+// found again by the testbed's group name, and only the database row changes.
 
 type GroupRead = Result<TestbedGroup, AuthentikFailure>;
 
@@ -130,7 +130,7 @@ async function unreleasedTestbeds(
 ): Promise<readonly GroupRow[]> {
   const rows = await conn
     .selectFrom("testbeds")
-    .select(["id", "name", "authentik_group_pk", "deleted_at"])
+    .select(["id", "group_name", "authentik_group_pk", "deleted_at"])
     .where("authentik_group_pk", "is not", null)
     .where("authentik_group_deleted_at", "is", null)
     .orderBy("created_at")
@@ -141,7 +141,7 @@ async function unreleasedTestbeds(
       : [
           {
             id: t.id,
-            name: t.name,
+            groupName: t.group_name,
             groupPk: t.authentik_group_pk,
             deleted: t.deleted_at !== null,
           },
@@ -171,8 +171,8 @@ async function currentLearners(conn: Kysely<DB>): Promise<readonly Current[]> {
 }
 
 // Spec 0017 AC-10 (c). A live testbed's stored pk is stale when the group is
-// gone or its name is no longer the testbed's. The group named like the
-// testbed is then looked up; when it is usable and no other live testbed
+// gone or its name is no longer the testbed's group name. The group with that
+// group name is then looked up; when it is usable and no other live testbed
 // holds it, its pk is stored and the run carries on with it. Otherwise one
 // error is logged for the testbed and its pk is left alone this tick, so
 // nothing is written to a stale group. A deleted testbed's stale pk is never
@@ -222,10 +222,10 @@ async function relinkByName(
   row: GroupRow,
   rows: readonly GroupRow[],
 ): Promise<TestbedGroup | undefined> {
-  const found = await findTestbedGroup(api, row.name);
+  const found = await findTestbedGroup(api, row.groupName);
   if (!found.ok) {
     console.error(
-      `reconciler: testbed ${row.id} group ${row.groupPk} is stale and no usable group has the testbed's name (${found.error}), skipped`,
+      `reconciler: testbed ${row.id} group ${row.groupPk} is stale and no usable group has the testbed's group name (${found.error}), skipped`,
     );
     return undefined;
   }
@@ -234,7 +234,7 @@ async function relinkByName(
   );
   if (taken || found.value.pk === row.groupPk) {
     console.error(
-      `reconciler: testbed ${row.id} group ${row.groupPk} is stale and the group named like it is not free, skipped`,
+      `reconciler: testbed ${row.id} group ${row.groupPk} is stale and the group with its group name is not free, skipped`,
     );
     return undefined;
   }
@@ -254,7 +254,7 @@ async function relinkByName(
         action: "testbed.group_relinked",
         targetType: "testbed",
         targetId: row.id,
-        summary: "Testbed group found again by name",
+        summary: "Testbed group found again by group name",
         metadata: { testbedId: row.id, from: row.groupPk, to: found.value.pk },
       });
       return true;

@@ -176,7 +176,8 @@ const textMatch = (q: string) => {
     or (e.target_type, e.target_id) in (
       select 'testbed_type', id::text from testbed_types where ${like("name")}
       union all
-      select 'testbed', id::text from testbeds where ${like("name")}
+      select 'testbed', id::text from testbeds
+        where ${like("name")} or ${like("group_name")}
       union all
       select 'api_key', id::text from api_keys where ${like("name")}
       union all
@@ -187,7 +188,7 @@ const textMatch = (q: string) => {
         where ${like("u.name")} or ${like("u.email")}
       union all
       select 'authentik_group', authentik_group_pk::text from testbeds
-        where authentik_group_pk is not null and ${like("name")}
+        where authentik_group_pk is not null and ${like("group_name")}
     )
   )`;
 };
@@ -423,7 +424,13 @@ export async function resolveTargets(
   ];
   const [types, testbeds, keys, users, bookings, groups] = await Promise.all([
     namedRows(conn, "testbed_types", idsOf("testbed_type")),
-    namedRows(conn, "testbeds", idsOf("testbed")),
+    inList(idsOf("testbed"), (ids) =>
+      conn
+        .selectFrom("testbeds")
+        .select(["id", "name", "group_name", "deleted_at"])
+        .where("id", "in", ids)
+        .execute(),
+    ),
     namedRows(conn, "api_keys", idsOf("api_key")),
     inList(idsOf("user"), (ids) =>
       conn
@@ -450,7 +457,7 @@ export async function resolveTargets(
     inList(groupPks, (pks) =>
       conn
         .selectFrom("testbeds")
-        .select(["authentik_group_pk", "name"])
+        .select(["authentik_group_pk", "group_name"])
         // A uuid column, but a target_id may be any text: compare as text.
         .where(sql<string>`authentik_group_pk::text`, "in", pks)
         .execute(),
@@ -465,7 +472,14 @@ export async function resolveTargets(
     put("testbed_type", r.id, named(r.name, r.deleted_at !== null)),
   );
   testbeds.forEach((r) =>
-    put("testbed", r.id, named(r.name, r.deleted_at !== null)),
+    put(
+      "testbed",
+      r.id,
+      named(
+        r.name === r.group_name ? r.name : `${r.name} (group ${r.group_name})`,
+        r.deleted_at !== null,
+      ),
+    ),
   );
   keys.forEach((r) =>
     put("api_key", r.id, named(r.name, r.deleted_at !== null)),
@@ -495,7 +509,7 @@ export async function resolveTargets(
       put(
         "authentik_group",
         r.authentik_group_pk,
-        named(`${r.name} access group`),
+        named(`${r.group_name} access group`),
       );
   });
 
@@ -527,7 +541,7 @@ const inList = async <T>(
 
 const namedRows = (
   conn: Kysely<DB>,
-  table: "testbed_types" | "testbeds" | "api_keys",
+  table: "testbed_types" | "api_keys",
   ids: readonly string[],
 ) =>
   inList(ids, (list) =>

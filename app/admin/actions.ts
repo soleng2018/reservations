@@ -759,8 +759,8 @@ export async function deleteApiKeyAction(
 
 // Feature 9 (spec 0007). Clients arrive as parallel lists in form order; an
 // OS login is never echoed back (errors carry fixed messages, and the dialog
-// keeps what was typed on the client). The name is not here: only create reads
-// it (spec 0017 AC-5).
+// keeps what was typed on the client). The group name is not here: only create
+// reads it (spec 0018 AC-4).
 const testbedFields = (form: FormData) => {
   const kinds = texts(form, "clientKind");
   const names = texts(form, "clientName");
@@ -788,6 +788,10 @@ const testbedError = {
     kind: "error",
     fields: { name: TESTBED_MESSAGES.duplicateName },
   },
+  duplicateGroupName: {
+    kind: "error",
+    fields: { groupName: TESTBED_MESSAGES.duplicateGroupName },
+  },
   duplicateDomain: {
     kind: "error",
     fields: { domain: TESTBED_MESSAGES.duplicateDomain },
@@ -806,15 +810,15 @@ const testbedError = {
   },
   groupNotFound: {
     kind: "error",
-    fields: { name: TESTBED_MESSAGES.groupNotFound },
+    fields: { groupName: TESTBED_MESSAGES.groupNotFound },
   },
   groupNotTestbed: {
     kind: "error",
-    fields: { name: TESTBED_MESSAGES.groupNotTestbed },
+    fields: { groupName: TESTBED_MESSAGES.groupNotTestbed },
   },
   groupInUse: {
     kind: "error",
-    fields: { name: TESTBED_MESSAGES.groupInUse },
+    fields: { groupName: TESTBED_MESSAGES.groupInUse },
   },
   authentikUnavailable: {
     kind: "error",
@@ -832,6 +836,7 @@ export async function createTestbedAction(
   const { user } = await requireAdmin();
   const parsed = TestbedInput.safeParse({
     name: text(form, "name"),
+    groupName: text(form, "groupName"),
     ...testbedFields(form),
   });
   if (!parsed.success)
@@ -842,6 +847,8 @@ export async function createTestbedAction(
     switch (created.error) {
       case "duplicate_name":
         return testbedError.duplicateName;
+      case "duplicate_group_name":
+        return testbedError.duplicateGroupName;
       case "duplicate_domain":
         return testbedError.duplicateDomain;
       case "type_not_found":
@@ -876,14 +883,17 @@ export async function loadTestbedForEdit(
 }
 
 // Spec 0007 AC-3 to AC-5, spec 0017 AC-5, AC-6. The page binds the row's id.
-// A posted `name` is never read: the name is the Authentik group.
+// A posted `groupName` is never read: the group name cannot change.
 export async function updateTestbedAction(
   id: string,
   _prev: AdminFormState,
   form: FormData,
 ): Promise<AdminFormState> {
   const { user } = await requireAdmin();
-  const parsed = TestbedUpdateInput.safeParse(testbedFields(form));
+  const parsed = TestbedUpdateInput.safeParse({
+    name: text(form, "name"),
+    ...testbedFields(form),
+  });
   if (!parsed.success)
     return { kind: "error", fields: fieldErrors(parsed.error) };
   if (!isId(id)) return testbedError.gone;
@@ -900,6 +910,8 @@ export async function updateTestbedAction(
         return testbedError.idpGone;
       case "domain_locked":
         return testbedError.domainLocked;
+      case "duplicate_name":
+        return testbedError.duplicateName;
       case "duplicate_domain":
         return testbedError.duplicateDomain;
       default: {

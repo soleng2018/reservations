@@ -185,6 +185,7 @@ export interface Testbeds {
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   domain: string | null;
+  group_name: string;
   id: Generated<string>;
   idp_api_key_id: string | null;
   lms_url: string;

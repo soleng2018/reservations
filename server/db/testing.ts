@@ -119,6 +119,8 @@ export async function makeTestbed(
     .insertInto("testbeds")
     .values({
       name: `Testbed ${id}`,
+      // The Authentik group name (spec 0018), unique among live rows.
+      group_name: `Group ${id}`,
       slug: `testbed-${id}`,
       // A live row needs a domain and a group pk (spec 0017 AC-11), each
       // unique among live rows.

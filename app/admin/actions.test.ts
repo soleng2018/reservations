@@ -181,13 +181,16 @@ const typeForm = (name: string) => {
 const uniqueDomain = () =>
   `lab-${crypto.randomUUID().slice(0, 8)}.example.test`;
 
+// `groupName` is the Authentik group; `name` is what learners see.
 const testbedForm = (
-  name: string,
+  groupName: string,
   typeId: string,
   domain: string = uniqueDomain(),
+  name: string = `Friendly ${crypto.randomUUID().slice(0, 8)}`,
 ) => {
   const f = new FormData();
   f.set("name", name);
+  f.set("groupName", groupName);
   f.set("domain", domain);
   f.set("testbedTypeId", typeId);
   f.set("portalUrl", "https://portal.example.test");
@@ -1710,10 +1713,10 @@ describe.skipIf(!hasDb)("testbed actions", () => {
     return { type, testbed, domain: testbed.domain ?? "" };
   };
 
-  // The edit form posts no name: the name is the Authentik group.
-  const editForm = (typeId: string, domain: string) => {
-    const f = testbedForm("", typeId, domain);
-    f.delete("name");
+  // The edit form posts a Name but no group name: the group name is fixed.
+  const editForm = (typeId: string, domain: string, name = "Edited lab") => {
+    const f = testbedForm("", typeId, domain, name);
+    f.delete("groupName");
     f.set("idpApiKeyId", "");
     f.append("clientKind", "wireless");
     f.append("clientName", "Air 1");
@@ -1779,53 +1782,63 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         const form = testbedForm(name, type.id);
         expect(await createTestbedAction(IDLE, form)).toEqual({
           kind: "saved",
-          message: `Created ${name}.`,
+          message: `Created ${String(form.get("name"))}.`,
         });
         const made = await trx
           .selectFrom("testbeds")
-          .select(["domain", "authentik_group_pk"])
-          .where("name", "=", name)
+          .select(["name", "group_name", "domain", "authentik_group_pk"])
+          .where("group_name", "=", name)
           .executeTakeFirstOrThrow();
         expect(made).toEqual({
+          name: form.get("name"),
+          group_name: name,
           domain: form.get("domain"),
           authentik_group_pk: group.pk,
         });
         expect(ak.writes).toEqual([]);
       }));
 
-    it("shows a taken name or domain as a field error", () =>
+    it("shows a taken name, group name, or domain as a field error, in that order", () =>
       as("admin", async (trx) => {
         const { type, testbed, domain } = await makeLab(trx);
         const { name, group } = labGroup();
         ctx.authentik = fakeAuthentik([], { groups: [group] }).api;
-        expect(
-          await createTestbedAction(
-            IDLE,
-            testbedForm(testbed.name.toUpperCase(), type.id),
-          ),
-        ).toEqual({
+        const create = (f: FormData) => createTestbedAction(IDLE, f);
+        const takenName = {
           kind: "error",
           fields: { name: "A testbed with this name already exists." },
-        });
+        };
+        const takenGroup = {
+          kind: "error",
+          fields: {
+            groupName: "A testbed with this group name already exists.",
+          },
+        };
         expect(
-          await createTestbedAction(IDLE, testbedForm(name, type.id, domain)),
-        ).toEqual({
+          await create(
+            testbedForm(name, type.id, undefined, testbed.name.toUpperCase()),
+          ),
+        ).toEqual(takenName);
+        expect(
+          await create(testbedForm(testbed.group_name.toUpperCase(), type.id)),
+        ).toEqual(takenGroup);
+        expect(await create(testbedForm(name, type.id, domain))).toEqual({
           kind: "error",
           fields: { domain: "A testbed with this domain already exists." },
         });
-        // Both taken: the name only.
+        // All three taken: the name only. Name and group: the name.
         expect(
-          await createTestbedAction(
-            IDLE,
-            testbedForm(testbed.name, type.id, domain),
+          await create(
+            testbedForm(testbed.group_name, type.id, domain, testbed.name),
           ),
-        ).toEqual({
-          kind: "error",
-          fields: { name: "A testbed with this name already exists." },
-        });
+        ).toEqual(takenName);
+        // Group name and domain taken: the group name.
+        expect(
+          await create(testbedForm(testbed.group_name, type.id, domain)),
+        ).toEqual(takenGroup);
       }));
 
-    it("shows a missing, unmarked, or used group under the Name field", () =>
+    it("shows a missing, unmarked, or used group under the Group Name field", () =>
       as("admin", async (trx) => {
         const { type, testbed } = await makeLab(trx);
         const plain = labGroup();
@@ -1839,17 +1852,20 @@ describe.skipIf(!hasDb)("testbed actions", () => {
 
         expect(await refuse(`${labGroup().name}Missing`)).toEqual({
           kind: "error",
-          fields: { name: "No Authentik group with this name exists." },
+          fields: {
+            groupName: "No Authentik group with this group name exists.",
+          },
         });
         expect(await refuse(plain.name)).toEqual({
           kind: "error",
           fields: {
-            name: "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
+            groupName:
+              "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
           },
         });
         expect(await refuse(used.name)).toEqual({
           kind: "error",
-          fields: { name: "Another testbed already uses that group." },
+          fields: { groupName: "Another testbed already uses that group." },
         });
         expect(testbed.id).toBeDefined();
       }));
@@ -1871,7 +1887,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         const written = await trx
           .selectFrom("testbeds")
           .select("id")
-          .where("name", "=", name)
+          .where("group_name", "=", name)
           .execute();
         expect(written).toEqual([]);
       }));
@@ -1886,12 +1902,12 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         ok: true,
         value: {
           name: testbed.name,
+          groupName: testbed.group_name,
           domain,
           testbedTypeId: type.id,
           clients: [{ name: "Air 1", osUsername: "lab", osPassword: "pw" }],
         },
       });
-      expect(loaded.ok && loaded.value).not.toHaveProperty("groupName");
       const gone = { ok: false, error: "not_found" };
       expect(await loadTestbedForEdit("not-a-uuid")).toEqual(gone);
       await trx
@@ -1909,8 +1925,20 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       const moved = `moved-${crypto.randomUUID().slice(0, 8)}.example.test`;
       expect(
         await updateTestbedAction(testbed.id, IDLE, editForm(type.id, moved)),
-      ).toEqual({ kind: "saved", message: `Updated ${testbed.name}.` });
+      ).toEqual({ kind: "saved", message: "Updated Edited lab." });
       expect((await row(trx, testbed.id)).domain).toBe(moved);
+
+      const other = await makeTestbed(trx, type.id);
+      expect(
+        await updateTestbedAction(
+          testbed.id,
+          IDLE,
+          editForm(type.id, moved, other.name.toUpperCase()),
+        ),
+      ).toEqual({
+        kind: "error",
+        fields: { name: "A testbed with this name already exists." },
+      });
 
       const taken = await makeTestbed(trx, type.id);
       expect(
@@ -1950,29 +1978,36 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       ).toEqual(gone);
     }));
 
-  // covers: spec 0017 AC-5, a forged name is never read
-  it("ignores a posted name: the name and group never change", () =>
+  // covers: spec 0018 AC-4, a forged group name is never read
+  it("renames a testbed but ignores a posted group name", () =>
     as("admin", async (trx) => {
       const { type, testbed, domain } = await makeLab(trx);
       const before = await trx
         .selectFrom("testbeds")
-        .select(["name", "slug", "authentik_group_pk"])
+        .select(["slug", "group_name", "authentik_group_pk"])
         .where("id", "=", testbed.id)
         .executeTakeFirstOrThrow();
-      const forged = editForm(type.id, domain);
-      forged.set("name", "Forged name");
+      const forged = editForm(type.id, domain, "Renamed lab");
+      forged.set("groupName", "Forged group");
       forged.set("portalUrl", "https://portal2.example.test");
       expect(await updateTestbedAction(testbed.id, IDLE, forged)).toEqual({
         kind: "saved",
-        message: `Updated ${testbed.name}.`,
+        message: "Updated Renamed lab.",
       });
       const after = await trx
         .selectFrom("testbeds")
-        .select(["name", "slug", "authentik_group_pk", "portal_url"])
+        .select([
+          "name",
+          "slug",
+          "group_name",
+          "authentik_group_pk",
+          "portal_url",
+        ])
         .where("id", "=", testbed.id)
         .executeTakeFirstOrThrow();
       expect(after).toEqual({
         ...before,
+        name: "Renamed lab",
         portal_url: "https://portal2.example.test",
       });
     }));
@@ -2149,7 +2184,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
 
       expect(await updateTestbedAction(testbed.id, IDLE, form())).toEqual({
         kind: "saved",
-        message: `Updated ${testbed.name}.`,
+        message: "Updated Edited lab.",
       });
       expect(await updatedAudits(trx, testbed.id)).toHaveLength(1);
     }));

@@ -56,6 +56,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 18 | Admin audit log | Slice 5 | done |
 | 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | planned |
+| 21 | Testbed friendly name | Slice 6 | in-progress |
 
 ## Foundations
 
@@ -339,6 +340,19 @@ spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 When a learner is booked on a testbed, they get an Authentik user in that testbed's domain, so they can sign in to that Nile tenant. The username is first name, a dot, last name and 4 random digits at the domain (a one word name becomes the name plus 4 digits, and a clash gets a new random number). The email stays the learner's real address, because the set password email needs it. The Nile attributes from the `nile-idp` script are set (`mail` set to the username, plus `firstName`, `lastName`, and `mobile`). A learner can have one user per domain, each with its own set password email. The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens. Builds on feature 19.
 **Done when:** a new booking creates or reuses the learner's Authentik user for the testbed's domain, with that username, those attributes, and the real email; a booking in another domain creates a second user, and never a second user in the same domain; each new user gets its own set password email; the reconciler adds the user of the booking's domain to the group and removes it at the end; sign in, deactivation, and ending sessions cover all of a learner's users; the Nile login reaches only the booking's own learner, in emails and on screens.
 - [ ] Design it (spec): `/architect nile identity per domain`
+
+### 21. Testbed friendly name · in-progress
+Builds on feature 19. Today a testbed's Name is the Authentik group name, so learners see something like `NileWorkshop1Admin` in invites and emails. Rename that field to Group Name (still must match a marked Authentik group, still unique among live testbeds). Add a new Name field, free text the admin chooses, which is what learners see in the booked, rescheduled, cancelled, and reminder emails, the calendar invite, and the booking and reservation screens. The group name stays on the admin side only.
+**Done when:** the testbed form shows Group Name (with the group hint) and a new Name; a testbed cannot be saved without a Name; existing testbeds start with their current name copied into both fields so nothing changes until an admin edits it; every learner facing place shows Name and never the group name; admin lists and the audit log show both; Cloudflare and Authentik behavior is unchanged.
+- [x] Design it (spec): `/architect testbed friendly name`
+- [x] Build it: `/develop testbed friendly name` (owner steps first: the one deploy carries migrations 0013 and 0014; see the spec's migration plan)
+  - [x] Migration and thin thread: `0014`, codegen, constraint mapping, the add form with both fields, the booked email showing only the Name (AC-1, 2, 3, 5, 7)
+  - [x] Create and edit rules: duplicate order, Group Name errors, editable Name with the read only Group Name (AC-2, 3, 4)
+  - [x] Group facing code and admin views: reconciler, audit log, list columns and search (AC-7, 8)
+  - [x] Learner surface scan, rename behavior, auth and tests (AC-5, 6, 9)
+- [ ] Verify it: `/check verify testbed friendly name`
+- [ ] Test it: `/test testbed friendly name`
+spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.

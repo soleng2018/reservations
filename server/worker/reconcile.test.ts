@@ -90,7 +90,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
           fakeUser({ pk: PK + 3, groups: [pk] }),
         ],
         {
-          groups: [markedGroup(pk, testbed.name)],
+          groups: [markedGroup(pk, testbed.group_name)],
           sessions: [
             {
               uuid: "s1",
@@ -132,7 +132,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         .where("id", "=", testbed.id)
         .execute();
       const ak = fakeAuthentik([fakeLearner(PK + 1, { groups: [pk] })], {
-        groups: [markedGroup(pk, testbed.name)],
+        groups: [markedGroup(pk, testbed.group_name)],
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.users[0]?.groups).toEqual([]);
@@ -151,7 +151,10 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
       const ak = fakeAuthentik(
         [fakeLearner(PK + 1), fakeLearner(PK + 2), fakeLearner(PK + 3)],
         {
-          groups: [markedGroup(broken, b.name), markedGroup(good, c.name)],
+          groups: [
+            markedGroup(broken, b.group_name),
+            markedGroup(good, c.group_name),
+          ],
           fail: (m, p) => p.startsWith(`/core/groups/${broken}/`),
         },
       );
@@ -176,7 +179,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         2,
       );
       const ak = fakeAuthentik([fakeLearner(PK + 1)], {
-        groups: [markedGroup(pk, testbed.name)],
+        groups: [markedGroup(pk, testbed.group_name)],
         fail: (m, p) => p.endsWith("/add_user/"),
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -195,7 +198,7 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
         fakeLearner(PK + 10 + i, { groups: [pk] }),
       );
       const ak = fakeAuthentik(stale, {
-        groups: [markedGroup(pk, testbed.name)],
+        groups: [markedGroup(pk, testbed.group_name)],
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.users.filter((u) => u.groups.includes(pk))).toEqual([]);
@@ -219,7 +222,7 @@ describe.skipIf(!hasDb)("reconcileAccess skips deactivated learners", () => {
         .where("id", "=", user.id)
         .execute();
       const ak = fakeAuthentik([fakeLearner(PK + 7, { groups: [pk] })], {
-        groups: [markedGroup(pk, testbed.name)],
+        groups: [markedGroup(pk, testbed.group_name)],
       });
 
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -268,7 +271,10 @@ describe.skipIf(!hasDb)(
           .executeTakeFirstOrThrow()
       ).version;
       const ak = fakeAuthentik([fakeLearner(PK + 20, { groups: [pkA] })], {
-        groups: [markedGroup(pkA, a.name), markedGroup(pkB, b.name)],
+        groups: [
+          markedGroup(pkA, a.group_name),
+          markedGroup(pkB, b.group_name),
+        ],
         sessions: [
           { uuid: "s20", user: PK + 20, username: `learner-${PK + 20}@x.test` },
         ],
@@ -410,7 +416,7 @@ describe.skipIf(!hasDb)(
         fakeAuthentik(
           pks.map((p) => fakeLearner(p, { groups: [pk] })),
           {
-            groups: [markedGroup(pk, testbed.name)],
+            groups: [markedGroup(pk, testbed.group_name)],
             sessions: pks.map((p) => ({
               uuid: `s${p}`,
               user: p,
@@ -517,7 +523,7 @@ describe.skipIf(!hasDb)(
           authentik_group_pk: pk,
         });
         const fake = fakeAuthentik([fakeLearner(PK + 43, { groups: [pk] })], {
-          groups: [markedGroup(pk, testbed.name)],
+          groups: [markedGroup(pk, testbed.group_name)],
         });
         const revoker = fakeRevoker();
         vi.spyOn(console, "error").mockImplementation(() => {});
@@ -613,7 +619,7 @@ describe.skipIf(!hasDb)(
             groups: [
               ...(await trx
                 .selectFrom("testbeds")
-                .select(["authentik_group_pk", "name"])
+                .select(["authentik_group_pk", "group_name"])
                 .where("authentik_group_pk", "in", [
                   ...first.ak().users.flatMap((u) => u.groups),
                   ...second.ak().users.flatMap((u) => u.groups),
@@ -621,7 +627,7 @@ describe.skipIf(!hasDb)(
                 .execute()
                 .then((rows) =>
                   rows.map((r) =>
-                    markedGroup(r.authentik_group_pk ?? "", r.name),
+                    markedGroup(r.authentik_group_pk ?? "", r.group_name),
                   ),
                 )),
             ],
@@ -670,7 +676,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
           // Untagged: never touched.
           fakeUser({ pk: PK + 63, groups: [pk] }),
         ],
-        { groups: [fakeGroup(pk, testbed.name)] },
+        { groups: [fakeGroup(pk, testbed.group_name)] },
       );
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -704,9 +710,9 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
         [fakeLearner(PK + 64), fakeLearner(PK + 65), fakeLearner(PK + 66)],
         {
           groups: [
-            markedGroup(rolePk, a.name, { roles: ["r1"] }),
-            markedGroup(parentPk, b.name, { parents: ["admins-uuid"] }),
-            markedGroup(superPk, c.name, { is_superuser: true }),
+            markedGroup(rolePk, a.group_name, { roles: ["r1"] }),
+            markedGroup(parentPk, b.group_name, { parents: ["admins-uuid"] }),
+            markedGroup(superPk, c.group_name, { is_superuser: true }),
           ],
         },
       );
@@ -734,7 +740,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
       );
       // The owner deleted the old group and made it again: a new pk.
       const ak = fakeAuthentik([fakeLearner(PK + 70)], {
-        groups: [markedGroup(newPk, testbed.name)],
+        groups: [markedGroup(newPk, testbed.group_name)],
       });
       await reconcileAccess(ak.api, asConn(trx), OFF);
 
@@ -776,7 +782,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
         {
           groups: [
             markedGroup(renamedPk, "RenamedByTheOwner"),
-            markedGroup(namedPk, testbed.name),
+            markedGroup(namedPk, testbed.group_name),
           ],
         },
       );
@@ -809,7 +815,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
         {
           groups: [
             markedGroup(stalePk, "RenamedByTheOwner"),
-            markedGroup(goodPk, good.name),
+            markedGroup(goodPk, good.group_name),
           ],
         },
       );
@@ -835,11 +841,12 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
       // `stale`'s name is a group another live testbed already holds.
       const owner = await makeTestbed(trx, type.id, {
         name: "Other",
+        group_name: "Other",
         authentik_group_pk: takenPk,
       });
       await bookingOn(trx, stale.id, type.id, PK + 76, -1, 2);
       const ak = fakeAuthentik([fakeLearner(PK + 76)], {
-        groups: [markedGroup(takenPk, stale.name)],
+        groups: [markedGroup(takenPk, stale.group_name)],
       });
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -865,7 +872,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
       });
       // A group with the deleted testbed's name exists, but is not relinked.
       const ak = fakeAuthentik([], {
-        groups: [markedGroup(groupPk(), gone.name)],
+        groups: [markedGroup(groupPk(), gone.group_name)],
       });
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       await reconcileAccess(ak.api, asConn(trx), OFF);
@@ -897,6 +904,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
         // The same name and group again after a delete and re-add.
         await makeTestbed(trx, type.id, {
           name: `${live.name} old`,
+          group_name: live.group_name,
           authentik_group_pk: pk,
           deleted_at: new Date(),
           created_at: at(deletedAge),
@@ -908,7 +916,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
             // Tagged and with no booking: this one does go.
             fakeLearner(PK + 81, { groups: [pk] }),
           ],
-          { groups: [markedGroup(pk, live.name)] },
+          { groups: [markedGroup(pk, live.group_name)] },
         );
         await reconcileAccess(ak.api, asConn(trx), OFF);
         expect(ak.users.find((u) => u.pk === PK + 80)?.groups).toEqual([pk]);
@@ -946,7 +954,7 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
       // The first read (the reconciler's own) answers; later ones are 404.
       let reads = 0;
       const ak = fakeAuthentik([fakeLearner(PK + 83)], {
-        groups: [markedGroup(pk, testbed.name)],
+        groups: [markedGroup(pk, testbed.group_name)],
         reply: (m, p) =>
           m === "GET" && p === `/core/groups/${pk}/` && ++reads > 1
             ? new Response('{"detail":"Not found."}', {

@@ -12,7 +12,11 @@ import {
   MAX_TESTBED_CLIENTS,
   type TestbedClientInput,
 } from "@/lib/catalog-input";
-import { TESTBED_NAME_HINT, type TestbedEditDefaults } from "@/lib/testbeds";
+import {
+  TESTBED_GROUP_NAME_HINT,
+  TESTBED_NAME_HINT,
+  type TestbedEditDefaults,
+} from "@/lib/testbeds";
 
 // The mock's order: Wireless first, and the default for a new row.
 const KINDS = [
@@ -24,12 +28,13 @@ const NONE = { value: "", label: "None" } as const;
 
 type Row = { readonly key: number; readonly client?: TestbedClientInput };
 
-// Spec 0004 AC-2, spec 0007 AC-2, AC-3, and spec 0017 AC-1, AC-5, inside the
-// form modal: empty to add, the loaded testbed to edit. Defaults are read
-// once (the admin row edit rule). The name is the Authentik group's name: typed
-// on add, then shown read only on edit (and never posted). Saving a new
-// testbed looks that group up, so a failure there arrives under the Name field
-// or as the modal's form level message.
+// Spec 0004 AC-2, spec 0007 AC-2, AC-3, spec 0017 AC-1, and spec 0018 AC-2,
+// inside the form modal: empty to add, the loaded testbed to edit. Defaults are
+// read once (the admin row edit rule). The Name is what learners see and stays
+// editable. The Group Name is the Authentik group's name: typed on add, then
+// shown read only on edit (and never posted). Saving a new testbed looks that
+// group up, so a failure there arrives under the Group Name field or as the
+// modal's form level message.
 export function TestbedFields({
   types,
   idps,
@@ -55,18 +60,36 @@ export function TestbedFields({
 
   return (
     <>
+      <Field path="name" label="Name" description={TESTBED_NAME_HINT}>
+        <Input
+          name="name"
+          required
+          maxLength={200}
+          autoComplete="off"
+          placeholder="e.g. Wireless Lab 1"
+          defaultValue={defaults?.name}
+        />
+      </Field>
       {defaults ? (
-        <Field path="name" label="Name" description={TESTBED_NAME_HINT.edit}>
+        <Field
+          path="groupName"
+          label="Group Name"
+          description={TESTBED_GROUP_NAME_HINT.edit}
+        >
           <Input
             readOnly
-            value={defaults.name}
+            value={defaults.groupName}
             className="bg-bg-inset font-mono text-fg2"
           />
         </Field>
       ) : (
-        <Field path="name" label="Name" description={TESTBED_NAME_HINT.create}>
+        <Field
+          path="groupName"
+          label="Group Name"
+          description={TESTBED_GROUP_NAME_HINT.create}
+        >
           <Input
-            name="name"
+            name="groupName"
             required
             maxLength={200}
             autoComplete="off"

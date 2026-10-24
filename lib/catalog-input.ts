@@ -83,8 +83,17 @@ export const DomainInput = z
   .max(DOMAIN_MAX_LENGTH, { error: DOMAIN_SHAPE_MESSAGE, abort: true })
   .regex(DOMAIN_PATTERN, DOMAIN_SHAPE_MESSAGE);
 
+// Spec 0018 AC-2: the exact Authentik group name, same rule as a name with its
+// own empty message.
+export const GroupName = z
+  .string()
+  .trim()
+  .min(1, "Enter the group name.")
+  .max(200, "Use at most 200 characters.");
+
 export const TestbedInput = z.object({
   name: CatalogName,
+  groupName: GroupName,
   domain: DomainInput,
   testbedTypeId: z.uuid("Choose a type."),
   // Empty (the None option) or missing means no IDP.
@@ -100,9 +109,9 @@ export const TestbedInput = z.object({
 });
 export type TestbedInput = z.infer<typeof TestbedInput>;
 
-// Spec 0017 AC-5: an edit never reads a posted name (the name is the
-// Authentik group), so a forged `name` field is dropped here.
-export const TestbedUpdateInput = TestbedInput.omit({ name: true });
+// Spec 0018 AC-4: an edit changes the Name but never reads a posted group
+// name, so a forged `groupName` field is dropped here.
+export const TestbedUpdateInput = TestbedInput.omit({ groupName: true });
 export type TestbedUpdateInput = z.infer<typeof TestbedUpdateInput>;
 
 // Spec 0006 AC-3. The base URL is shown and audited, so no secret may hide
