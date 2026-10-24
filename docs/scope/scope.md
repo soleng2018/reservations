@@ -331,7 +331,7 @@ Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creati
   - [ ] Gate and proof: the marker based HOL Labs gate, the group writes source scan, Playwright on marked throwaway groups (AC-4, 12, 13)
 - [ ] Verify it: `/check verify testbed domain & predefined groups`
 - [ ] Test it: `/test testbed domain & predefined groups`
-- [ ] Review it (fresh model): `/check review testbed domain & predefined groups`
+- [x] Review it (fresh model): `/check review testbed domain & predefined groups`
 - [ ] Document it: `/document testbed domain & predefined groups`
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 
