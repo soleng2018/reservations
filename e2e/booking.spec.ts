@@ -192,7 +192,7 @@ test.describe.serial("booking", () => {
     if (haveApi) {
       const users = await authentikGet(
         results(z.looseObject({ attributes: z.looseObject({}) })),
-        `/core/users/?username=${encodeURIComponent(first.email)}`,
+        `/core/users/?email=${encodeURIComponent(first.email)}`,
       );
       expect(users.results).toHaveLength(1);
       expect(users.results[0]?.attributes.hol_learner).toBe(true);

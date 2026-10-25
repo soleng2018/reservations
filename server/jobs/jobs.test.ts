@@ -1378,3 +1378,114 @@ const queueCalendarJob = (
       idempotency_key: `calendar:${bookingId}:${version}`,
     })
     .execute();
+
+// covers: spec 0019 AC-6 (read at send time, never stored, none on a cancel)
+describe.skipIf(!hasDb)("Nile login in the sent emails (spec 0019)", () => {
+  const textOf = (mime: string) =>
+    allParts(parseMime(mime)).find((p) => p.type === "text/plain")?.body ?? "";
+
+  it("shows the login in booked and rescheduled, not in cancelled, and stores it nowhere", () =>
+    inRollback(async (trx) => {
+      const { user, type, testbed, bookingId } = await confirmedBooking(trx);
+      const login = `priya.raman@${testbed.domain}`;
+      await trx
+        .insertInto("learner_domain_logins")
+        .values({
+          user_id: user.id,
+          domain: testbed.domain ?? "",
+          username: login,
+          used_at: sql<Date>`now()`,
+        })
+        .execute();
+      const moved = slot(30);
+      await rescheduleBooking(trx, {
+        id: bookingId,
+        expectedVersion: 1,
+        testbedId: testbed.id,
+        testbedTypeId: type.id,
+        startsAt: moved,
+        endsAt: new Date(moved.getTime() + 2 * 3_600_000),
+      });
+      await trx
+        .updateTable("jobs")
+        .set({ run_at: sql<Date>`now() - interval '1 hour'` })
+        .where("idempotency_key", "like", `email:${bookingId}:%`)
+        .execute();
+      const google = accepted();
+      await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () => config(),
+        fetch: google.fetch,
+        mint: minting().mint,
+      });
+      const [booked, rescheduled] = google.requests.map((r) =>
+        textOf(decoded(r)),
+      );
+      expect(booked).toMatch(/Nile login\s+priya\.raman@/);
+      expect(booked).toContain(login);
+      expect(rescheduled).toContain(login);
+
+      // Cancelling afterwards sends no login row.
+      await cancelBooking(trx, {
+        id: bookingId,
+        expectedVersion: 2,
+        source: "learner",
+        byUserId: null,
+      });
+      await trx
+        .updateTable("jobs")
+        .set({ run_at: sql<Date>`now() - interval '1 hour'` })
+        .where("idempotency_key", "like", `email:${bookingId}:cancelled%`)
+        .execute();
+      const after = accepted();
+      await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () => config(),
+        fetch: after.fetch,
+        mint: minting().mint,
+      });
+      const [cancelled] = after.requests.map((r) => textOf(decoded(r)));
+      expect(cancelled).toBeDefined();
+      expect(cancelled).not.toContain("Nile login");
+      expect(cancelled).not.toContain(login);
+
+      // Stored nowhere but its own table.
+      const rows = await emailsOf(trx, bookingId);
+      expect(JSON.stringify(rows.map((r) => r.details))).not.toContain(login);
+      const jobRows = await trx
+        .selectFrom("jobs")
+        .select(["payload", "last_error"])
+        .where("idempotency_key", "like", `%${bookingId}%`)
+        .execute();
+      expect(JSON.stringify(jobRows)).not.toContain(login);
+    }));
+
+  it("omits the row when the booking has no stored login for its domain", () =>
+    inRollback(async (trx) => {
+      const { user, bookingId } = await confirmedBooking(trx);
+      await trx
+        .insertInto("learner_domain_logins")
+        .values({
+          user_id: user.id,
+          domain: "other.example.test",
+          username: "priya.raman@other.example.test",
+          used_at: sql<Date>`now()`,
+        })
+        .execute();
+      await trx
+        .updateTable("jobs")
+        .set({ run_at: sql<Date>`now() - interval '1 hour'` })
+        .where("idempotency_key", "like", `email:${bookingId}:%`)
+        .execute();
+      const google = accepted();
+      await runJobs(asConn(trx), {
+        handlers: HANDLERS,
+        config: async () => config(),
+        fetch: google.fetch,
+        mint: minting().mint,
+      });
+      const [req] = google.requests;
+      if (!req) throw new Error("expected a send");
+      expect(textOf(decoded(req))).not.toContain("Nile login");
+    }));
+});

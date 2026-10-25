@@ -1,6 +1,10 @@
 import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
 import { describe, expect, it } from "vitest";
-import { fakeAuthentik, fakeLearner } from "@/server/authentik/testing";
+import {
+  fakeAuthentik,
+  fakeLearner,
+  fakeUser,
+} from "@/server/authentik/testing";
 import { rescheduleBooking } from "@/server/db/bookings";
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import {
@@ -639,6 +643,93 @@ describe.skipIf(!hasDb)("rescheduleOwnBooking Nile login", () => {
       expect(await bookingRow(trx, w.booking.id)).toMatchObject({
         starts_at: w.booking.starts_at,
         version: w.booking.version,
+      });
+    }));
+});
+
+// covers: spec 0019 AC-3, AC-5, AC-12 (the refusals leave the booking as it was)
+describe.skipIf(!hasDb)("rescheduleOwnBooking Nile login refusals", () => {
+  const emailCount = async (trx: Transaction<DB>, userId: string) =>
+    (
+      await trx
+        .selectFrom("email_messages")
+        .select("id")
+        .where("user_id", "=", userId)
+        .execute()
+    ).length;
+
+  it("refuses when the stored login is another user's now, and queues nothing", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const taken = `ana@${w.first.domain}`;
+      await trx
+        .insertInto("learner_domain_logins")
+        .values({
+          user_id: w.user.id,
+          domain: w.first.domain ?? "",
+          username: taken,
+          used_at: sql<Date>`now() - interval '1 day'`,
+        })
+        .execute();
+      // A newer login elsewhere, so this domain is not the one in use.
+      await trx
+        .insertInto("learner_domain_logins")
+        .values({
+          user_id: w.user.id,
+          domain: "elsewhere.example.test",
+          username: "ana@elsewhere.example.test",
+          used_at: sql<Date>`now()`,
+        })
+        .execute();
+      w.ak.users.push(fakeUser({ pk: 9, username: taken }));
+      const kept = w.ak.users[0]?.username;
+      await w.occupy(w.second.id, 72, 74);
+      const before = await bookingRow(trx, w.booking.id);
+      const emails = await emailCount(trx, w.user.id);
+      const r = await w.move(slot(72));
+      expect(r).toEqual({ ok: false, error: "unavailable" });
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        testbed_id: before?.testbed_id,
+        starts_at: before?.starts_at,
+        version: before?.version,
+      });
+      expect(await emailCount(trx, w.user.id)).toBe(emails);
+      // The learner's own Authentik user kept its name.
+      expect(w.ak.users[0]?.username).toBe(kept);
+      const audit = await trx
+        .selectFrom("audit_events")
+        .select("metadata")
+        .where("action", "=", "user.nile_login_conflict")
+        .where("created_at", ">=", sql<Date>`now()`)
+        .execute();
+      expect(audit.map((a) => a.metadata)).toContainEqual({
+        domain: w.first.domain,
+        username: taken,
+      });
+    }));
+
+  it("refuses an untagged Authentik user and moves nothing", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const pk = w.ak.users[0]?.pk ?? 0;
+      const untagged = fakeAuthentik([fakeUser({ pk, email: w.user.email })]);
+      await w.occupy(w.second.id, 72, 74);
+      const before = await bookingRow(trx, w.booking.id);
+      const r = await rescheduleOwnBooking(
+        untagged.api,
+        asConn(trx),
+        w.user.id,
+        {
+          bookingId: w.booking.id,
+          version: w.booking.version,
+          startsAt: slot(72),
+        },
+      );
+      expect(r).toEqual({ ok: false, error: "unavailable" });
+      expect(untagged.writes).toEqual([]);
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        testbed_id: before?.testbed_id,
+        version: before?.version,
       });
     }));
 });
