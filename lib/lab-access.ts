@@ -5,6 +5,9 @@ import type { TestbedClientKind } from "./db-enums";
 // both sides: the links themselves only ever come from `ownLabAccess`.
 
 export type LabLinks = {
+  // Spec 0019 AC-6: the learner's Nile login for this booking's domain, or
+  // null (a booking made before spec 0019 has none).
+  readonly nileLogin?: string | null;
   readonly portalUrl: string;
   readonly lmsUrl: string;
   readonly clients: readonly {

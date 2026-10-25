@@ -82,10 +82,12 @@ export function LabAccessEmail({
   kind,
   details,
   logins = [],
+  nileLogin = null,
 }: {
   readonly kind: LabAccessKind;
   readonly details: BookingEmailDetails;
   readonly logins?: readonly ClientLogin[];
+  readonly nileLogin?: string | null;
 }) {
   const text = copy(kind, details);
   const links = details.links;
@@ -112,6 +114,7 @@ export function LabAccessEmail({
         rows={[
           ["Lab type", details.labTypeName],
           ["Testbed", details.testbedName],
+          ...(nileLogin === null ? [] : ([["Nile login", nileLogin]] as const)),
           ["Starts", emailStart(details)],
           ["Ends", emailEnd(details)],
         ]}

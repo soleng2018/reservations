@@ -57,6 +57,7 @@ export function RescheduleSuccess({
           variant="success"
           note={SUCCESS_NOTE}
           rows={{ kind: "active", rows: labRows(done.access) }}
+          nileLogin={done.access.nileLogin}
         />
       ) : null}
 

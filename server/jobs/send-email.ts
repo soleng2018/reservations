@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { BookingEmailDetails, BookingEmailKind } from "@/lib/booking-email";
 import { routeEmail } from "@/lib/email-routing";
 import { LEAD_MS } from "@/lib/slots";
+import { nileLoginForEmail } from "@/server/booking/lab-access";
 import { clientLoginsForBooking } from "@/server/catalog/testbeds";
 import { dbNow } from "@/server/db/bookings";
 import { composeBookingEmail } from "@/server/email/compose";
@@ -104,6 +105,11 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
     kind.data === "cancelled"
       ? []
       : await clientLoginsForBooking(trx, row.booking_id);
+  // Spec 0019 AC-6: the Nile login, read now like the client logins.
+  const nileLogin =
+    kind.data === "cancelled"
+      ? null
+      : await nileLoginForEmail(trx, row.booking_id);
   const { raw } = await composeBookingEmail({
     emailId: row.id,
     bookingId: row.booking_id,
@@ -112,6 +118,7 @@ export const runSendEmail: JobHandler = async (trx, job, ctx) => {
     kind: kind.data,
     details: details.data,
     logins,
+    nileLogin,
     subject: row.subject,
     senderEmail: ctx.cfg.senderEmail,
     to: route.to,

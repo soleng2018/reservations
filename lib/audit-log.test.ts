@@ -95,6 +95,8 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "user.tagged_in_authentik": "booking_form",
   "authentik_group.released": "system",
   "testbed.group_relinked": "system",
+  "user.nile_login_set": "system",
+  "user.nile_login_conflict": "system",
   "access.granted": "system",
   "access.revoked": "system",
   "admin.sign_in_refused": "system",

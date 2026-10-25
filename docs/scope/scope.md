@@ -27,7 +27,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 - Amended 2026-10-22 (inputs for `/architect`, features 19 and 20):
   - Each Nile tenant is tied to one email domain, so every testbed carries a mandatory Domain that the admin types. It must look like a valid domain name, for example `nileworkshop-1.com`, `nile.global`, or `rw.nile.global` (examples, not a fixed list). Among live testbeds, the name is unique and the domain is unique, each on its own, so one testbed per tenant domain.
   - Testbed groups are predefined in Authentik by a separate script (for example `NileWorkshop1Admin`). The testbed name must equal the group name exactly. The app creates and deletes no group: it refuses a testbed whose group does not exist, shows a hint under the Name field, and only adds and removes members. Cloudflare Access uses the same group name.
-  - A learner's Authentik username is first name, a dot, last name and 4 random digits, at the domain of the assigned testbed (a one word name becomes the name plus 4 digits, and a clash gets a new number). The email stays the real address, because the set password email needs it. The Nile attributes from `soleng2018/nile-idp` (`scripts/nile_idp.py`) are set, with `mail` set to the username. A learner has one user per domain, each with its own set password email.
+  - A learner's Authentik username is `firstname.lastname@domain`, at the domain of the assigned testbed; a random number is appended to the name part only when that address clashes with an existing user (a one word name becomes `firstname@domain`, with a number only on a clash). The email stays the real address, because the set password email needs it. The Nile attributes from `soleng2018/nile-idp` (`scripts/nile_idp.py`) are set, with `mail` set to the username. A learner keeps one Authentik user and one password; only the username follows the booked domain, and the app remembers each domain's login (spec 0019).
   - The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens.
   - The booking rule does not change: a learner still holds at most one Upcoming or Current booking in total. The testbed, and so the domain, comes from availability, so a later booking can land in another domain. Only one of a learner's users is in a group at any moment.
   - Owner side work that goes with it: the `hol-labs-access` gate, the Cloudflare per VM rules, and each tenant's SAML NameID (to check, it should use the domain username).
@@ -55,7 +55,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
 | 19 | Testbed domain & predefined groups | Slice 6 | done |
-| 20 | Nile identity per domain | Slice 6 | planned |
+| 20 | Nile identity per domain | Slice 6 | in-progress |
 | 21 | Testbed friendly name | Slice 6 | done |
 
 ## Foundations
@@ -336,10 +336,22 @@ Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creati
 - [ ] Document it: `/document testbed domain & predefined groups`
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 
-### 20. Nile identity per domain · needs a decision · Full
-When a learner is booked on a testbed, they get an Authentik user in that testbed's domain, so they can sign in to that Nile tenant. The username is first name, a dot, last name and 4 random digits at the domain (a one word name becomes the name plus 4 digits, and a clash gets a new random number). The email stays the learner's real address, because the set password email needs it. The Nile attributes from the `nile-idp` script are set (`mail` set to the username, plus `firstName`, `lastName`, and `mobile`). A learner can have one user per domain, each with its own set password email. The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens. Builds on feature 19.
-**Done when:** a new booking creates or reuses the learner's Authentik user for the testbed's domain, with that username, those attributes, and the real email; a booking in another domain creates a second user, and never a second user in the same domain; each new user gets its own set password email; the reconciler adds the user of the booking's domain to the group and removes it at the end; sign in, deactivation, and ending sessions cover all of a learner's users; the Nile login reaches only the booking's own learner, in emails and on screens.
-- [ ] Design it (spec): `/architect nile identity per domain`
+### 20. Nile identity per domain · in-progress · Full
+When a learner is booked on a testbed, their Authentik user gets a username in that testbed's domain, so they can sign in to that Nile tenant. It stays one Authentik user per learner, with one password. The username is `firstname.lastname@domain` (lowercased); a random number is appended to the name part only when that address clashes with an existing user (`firstname.lastname4821@domain`). If only a first name is given, it is `firstname@domain`, with a number only on a clash. The email field stays the learner's real address, because the set password email needs it. The Nile attributes from the `nile-idp` script are set (`mail` set to the username, plus `firstName` and `lastName`; `mobile` is left unset). A small table remembers each learner's login per domain, so booking in a domain again gives the same login. When a booking or reschedule lands on another domain, only the username and `mail` change. The learner sees their Nile login in the booked, rescheduled, and reminder emails, and on the booking success and reservation screens. Builds on feature 19.
+**Done when:** a new booking sets the learner's Authentik username, `mail`, `firstName`, and `lastName` for the testbed's domain and leaves the real email alone; the same domain again changes nothing; another domain changes only the username and `mail`; a clash adds a random number, and none adds none; a failed Authentik step refuses the booking with nothing saved; the login reaches only the booking's own learner, in emails and on screens; the reconciler, sign in, and deactivation keep working on the same user.
+- [x] Design it (spec): `/architect nile identity per domain`
+- [x] Build it: `/develop nile identity per domain` (owner checks first: Authentik accepts the real email at sign in, and each tenant's SAML NameID uses the username; see the spec's Follow-up)
+  - [x] Login rules and storage: `lib/nile-login.ts`, migration `0015`, audit actions (AC-1, 2, 3, 10, 11)
+  - [x] Thin thread: `ensureNileLogin` in the guest saga, stored pk lookup, the booked email shows the login (AC-3, 4, 5, 6, 9, 12)
+  - [x] Reschedule onto another domain, with rollback and rename back (AC-4, 5)
+  - [x] Remaining surfaces: reminder and rescheduled emails, success screens, lab access card, admin Nile logins list, admin email fix (AC-6, 7, 8)
+  - [x] Proof: reconciler and deactivation unchanged, source scan, tests (AC-9, 12)
+- [ ] Verify it: `/check verify nile identity per domain`
+- [ ] Test it: `/test nile identity per domain`
+- [ ] Review it (fresh model): `/check review nile identity per domain`
+- [ ] Document it: `/document nile identity per domain`
+spec [0019](../specs/0019-nile-identity-per-domain.md)
+code in `lib/nile-login.ts`, `server/authentik/nile-login.ts`, `server/booking/`, `db/migrations/0015_learner_domain_logins.sql`
 
 ### 21. Testbed friendly name · done
 Builds on feature 19. Today a testbed's Name is the Authentik group name, so learners see something like `NileWorkshop1Admin` in invites and emails. Rename that field to Group Name (still must match a marked Authentik group, still unique among live testbeds). Add a new Name field, free text the admin chooses, which is what learners see in the booked, rescheduled, cancelled, and reminder emails, the calendar invite, and the booking and reservation screens. The group name stays on the admin side only.

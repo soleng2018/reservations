@@ -109,6 +109,7 @@ export function BookingSuccess({
           variant="success"
           note={SUCCESS_NOTE}
           rows={{ kind: "active", rows: labRows(booking.access) }}
+          nileLogin={booking.access.nileLogin}
         />
       ) : null}
 

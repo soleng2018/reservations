@@ -76,8 +76,15 @@ export async function findOrCreateLearner(
     readonly email: string;
     readonly name: string;
     readonly holUserId: string;
+    // Spec 0019 AC-9: the stored Authentik id, when the row has one. A renamed
+    // user is found by it, never by a username that is no longer the email.
+    readonly knownPk?: number | null;
   },
 ): Promise<Result<LearnerRef, FindOrCreateError>> {
+  if (input.knownPk != null) {
+    const known = await reuseLearner(api, input.knownPk, input.holUserId);
+    if (known.ok || known.error !== "gone") return mapGone(known);
+  }
   const username = input.email.toLowerCase();
   const found = await candidates(api, username);
   if (!found.ok) return err("unavailable");
@@ -85,7 +92,8 @@ export async function findOrCreateLearner(
   const matches = found.value.filter(sameEmail(username));
   if (matches.length > 1) return err("duplicate_email");
   const [existing] = matches;
-  if (existing) return reuseLearner(api, existing.pk, input.holUserId);
+  if (existing)
+    return mapGone(await reuseLearner(api, existing.pk, input.holUserId));
   if (found.value.some((u) => u.username.toLowerCase() === username))
     return err("username_taken");
 
@@ -111,14 +119,22 @@ export async function findOrCreateLearner(
   });
 }
 
+// "gone": the Authentik user is not there (only the stored pk can miss).
+const mapGone = (
+  r: Result<LearnerRef, FindOrCreateError | "gone">,
+): Result<LearnerRef, FindOrCreateError> =>
+  r.ok ? r : err(r.error === "gone" ? "unavailable" : r.error);
+
 async function reuseLearner(
   api: CoreApi,
   pk: number,
   holUserId: string,
-): Promise<Result<LearnerRef, FindOrCreateError>> {
+): Promise<Result<LearnerRef, FindOrCreateError | "gone">> {
   const guarded = await guardUserWrite(api, pk, "tag");
-  if (!guarded.ok)
-    return err(guarded.error === "is_admin" ? "is_admin" : "unavailable");
+  if (!guarded.ok) {
+    if (guarded.error === "is_admin") return err("is_admin");
+    return err(guarded.error === "not_found" ? "gone" : "unavailable");
+  }
   const user = guarded.value;
   if (user.isActive === false) return err("refused");
 
@@ -143,13 +159,20 @@ async function reuseLearner(
 }
 
 // Spec 0008 AC-6: an admin's name or email fix. A new email also becomes the
-// username (lowercased, the AC-5 rule), so it must not be another user's
+// username (lowercased, the AC-5 rule) unless a Nile login holds it (spec
+// 0019 AC-8), so it must not be another user's
 // email or username first; this user's own pk never counts, so a case only
 // change, or a save repeated after a failed commit, goes through.
 export async function updateLearnerIdentity(
   api: CoreApi,
   pk: number,
-  change: { readonly name?: string; readonly email?: string },
+  change: {
+    readonly name?: string;
+    readonly email?: string;
+    // Spec 0019 AC-8: the learner has a stored Nile login, so their username
+    // is that login and only the email field changes.
+    readonly hasNileLogin?: boolean;
+  },
 ): Promise<Result<void, UserRefusal | AuthentikFailure | "taken">> {
   if (change.email !== undefined) {
     const found = await candidates(api, change.email.toLowerCase());
@@ -164,7 +187,12 @@ export async function updateLearnerIdentity(
       patchedUserRequest: {
         ...(change.name !== undefined ? { name: change.name } : {}),
         ...(change.email !== undefined
-          ? { email: change.email, username: change.email.toLowerCase() }
+          ? {
+              email: change.email,
+              ...(change.hasNileLogin
+                ? {}
+                : { username: change.email.toLowerCase() }),
+            }
           : {}),
       },
     }),

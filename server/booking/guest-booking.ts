@@ -4,6 +4,13 @@ import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
 import type { CoreApi } from "@/server/authentik/client";
 import {
+  ensureNileLogin,
+  nileLoginRefusal,
+  restoreNileLogin,
+  type NileLoginError,
+  type RenamedFrom,
+} from "@/server/authentik/nile-login";
+import {
   deleteSagaLearner,
   findOrCreateLearner,
   type FindOrCreateError,
@@ -18,6 +25,7 @@ import {
   type StartedBooking,
   type StepOneError,
 } from "@/server/db/guest-saga";
+import { Refusal, refusable } from "@/server/db/refusal";
 import type { DB } from "@/server/db/types";
 import { appUrl } from "@/server/env";
 import { enqueueWelcome, welcomeKey } from "@/server/jobs/welcome-queue";
@@ -74,12 +82,20 @@ export async function bookAsGuest(
   }
   const booked = started.value;
   const ref: SagaRef = { userId: booked.userId, bookingId: booked.bookingId };
+  // Set once the Nile login renamed the user, so a later failure puts it back.
+  let renamed: RenamedFrom | null = null;
 
   try {
+    const stored = await conn
+      .selectFrom("users")
+      .select("authentik_user_pk")
+      .where("id", "=", ref.userId)
+      .executeTakeFirstOrThrow();
     const learner = await findOrCreateLearner(api, {
       email: input.email,
       name: input.name,
       holUserId: ref.userId,
+      knownPk: stored.authentik_user_pk,
     });
     if (!learner.ok) {
       await compensateGuestSaga(api, conn, ref);
@@ -101,30 +117,63 @@ export async function bookAsGuest(
         metadata: { authentikUserPk: pk },
       });
 
-    const confirmed = await conn.transaction().execute(async (trx) => {
-      const done = await confirmGuestBooking(trx, ref, {
-        timezone: input.timezone,
-        newAccount: created,
-      });
-      if (!done.ok) return done;
-      if (created)
-        await enqueueWelcome(trx, ref.userId, welcomeKey(ref.userId), appUrl());
-      await audit(trx, {
-        actorUserId: null,
-        action: "booking.created",
-        targetType: "booking",
-        targetId: ref.bookingId,
-        summary: "Guest booking confirmed",
-        metadata: { userId: ref.userId, testbedId: booked.testbedId },
-      });
-      return done;
-    });
+    // Spec 0019 AC-4, AC-5: the Nile login of the testbed's domain is the
+    // last step before the commit; a refusal rolls the confirm back.
+    const confirmed = await refusable<
+      Awaited<ReturnType<typeof confirmGuestBooking>>,
+      NileLoginError
+    >(() =>
+      conn.transaction().execute(async (trx) => {
+        const done = await confirmGuestBooking(trx, ref, {
+          timezone: input.timezone,
+          newAccount: created,
+        });
+        if (!done.ok) return done;
+        if (created)
+          await enqueueWelcome(
+            trx,
+            ref.userId,
+            welcomeKey(ref.userId),
+            appUrl(),
+          );
+        await audit(trx, {
+          actorUserId: null,
+          action: "booking.created",
+          targetType: "booking",
+          targetId: ref.bookingId,
+          summary: "Guest booking confirmed",
+          metadata: { userId: ref.userId, testbedId: booked.testbedId },
+        });
+        const testbed = await trx
+          .selectFrom("testbeds")
+          .select("domain")
+          .where("id", "=", booked.testbedId)
+          .executeTakeFirstOrThrow();
+        // A testbed with no domain (made before spec 0017) has no login.
+        if (testbed.domain === null) return done;
+        const login = await ensureNileLogin(api, trx, {
+          userId: ref.userId,
+          pk,
+          name: input.name,
+          email: input.email,
+          domain: testbed.domain,
+        });
+        if (!login.ok) throw new Refusal(login.error);
+        renamed = login.value.renamedFrom;
+        return done;
+      }),
+    );
     if (!confirmed.ok) {
       await compensateGuestSaga(api, conn, ref);
-      return confirmed;
+      return err(await nileLoginRefusal(conn, ref.userId, confirmed.error));
+    }
+    if (!confirmed.value.ok) {
+      await compensateGuestSaga(api, conn, ref);
+      return confirmed.value;
     }
     return ok({ ...booked, newUser: created });
   } catch (e) {
+    await restoreNileLogin(api, renamed);
     await compensateGuestSaga(api, conn, ref);
     throw e;
   }

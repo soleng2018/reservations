@@ -469,9 +469,16 @@ export async function updateLearner(
 
         const synced = nameChanged || emailChanged;
         if (synced) {
+          // Spec 0019 AC-8: a stored Nile login keeps the username.
+          const hasNileLogin =
+            (await trx
+              .selectFrom("learner_domain_logins")
+              .select("id")
+              .where("user_id", "=", id)
+              .executeTakeFirst()) !== undefined;
           const pushed = await updateLearnerIdentity(api, row.pk, {
             name: input.name,
-            ...(emailChanged ? { email: input.email } : {}),
+            ...(emailChanged ? { email: input.email, hasNileLogin } : {}),
           });
           if (!pushed.ok) throw new Refusal(identityRefusal(pushed.error));
         }
@@ -649,4 +656,28 @@ export async function cancelBookingByAdmin(
       });
     }),
   );
+}
+
+export type NileLoginRow = {
+  readonly domain: string;
+  readonly username: string;
+  // The row with the latest `used_at`: the login a booking last set, which
+  // can differ from Authentik after a manual change (spec 0019 AC-7).
+  readonly lastSetByBooking: boolean;
+};
+
+// Spec 0019 AC-7: the learner's stored Nile logins, newest use first. Read
+// only, no password. The page that calls it has passed requireAdmin().
+export async function nileLoginsForUser(
+  conn: Kysely<DB>,
+  userId: string,
+): Promise<readonly NileLoginRow[]> {
+  const rows = await conn
+    .selectFrom("learner_domain_logins")
+    .select(["domain", "username"])
+    .where("user_id", "=", userId)
+    .orderBy("used_at", "desc")
+    .orderBy("domain")
+    .execute();
+  return rows.map((r, i) => ({ ...r, lastSetByBooking: i === 0 }));
 }

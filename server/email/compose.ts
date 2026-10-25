@@ -93,11 +93,12 @@ export async function renderBookingEmail(
   kind: BookingEmailKind,
   details: BookingEmailDetails,
   logins: readonly ClientLogin[] = [],
+  nileLogin: string | null = null,
 ): Promise<Rendered> {
   return renderParts(
     kind === "cancelled"
       ? createElement(CancellationEmail, { details })
-      : createElement(LabAccessEmail, { kind, details, logins }),
+      : createElement(LabAccessEmail, { kind, details, logins, nileLogin }),
   );
 }
 
@@ -120,6 +121,8 @@ export type ComposeInput = {
   readonly details: BookingEmailDetails;
   // Read at send time, never stored (spec 0007).
   readonly logins: readonly ClientLogin[];
+  // Spec 0019 AC-6: read at send time too, so it is never stored.
+  readonly nileLogin?: string | null;
   // As stored; the route's prefix is added here.
   readonly subject: string;
   readonly senderEmail: string;
@@ -138,6 +141,7 @@ export async function composeBookingEmail(
     input.kind,
     input.details,
     input.logins,
+    input.nileLogin ?? null,
   );
   const invite = inviteFields({
     kind: input.kind,

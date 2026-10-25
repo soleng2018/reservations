@@ -4,11 +4,13 @@ import {
   deleteSagaLearner,
   findOrCreateLearner,
   issueSetPasswordLink,
+  updateLearnerIdentity,
 } from "./learners";
 import {
   ADMINS,
   FAKE_NEW_PK,
   fakeAuthentik,
+  fakeLearner,
   fakeUser,
   TESTBED_GROUP,
 } from "./testing";
@@ -231,5 +233,41 @@ describe("guarded writes (AC-4, AC-6)", () => {
       `POST /core/groups/${TESTBED_GROUP.pk}/add_user/`,
     ]);
     warn.mockRestore();
+  });
+});
+
+// covers: spec 0019 AC-8
+describe("updateLearnerIdentity and a Nile login", () => {
+  const setup = () =>
+    fakeAuthentik([
+      fakeLearner(900_801, {
+        username: "ana@nile.global",
+        email: "old@x.test",
+      }),
+    ]);
+
+  it("keeps the username when the learner has a stored login", async () => {
+    const ak = setup();
+    const r = await updateLearnerIdentity(ak.api, 900_801, {
+      email: "New@x.test",
+      hasNileLogin: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(ak.users[0]).toMatchObject({
+      username: "ana@nile.global",
+      email: "New@x.test",
+    });
+  });
+
+  it("sets the username to the new email when there is no stored login", async () => {
+    const ak = setup();
+    await updateLearnerIdentity(ak.api, 900_801, {
+      email: "New@x.test",
+      hasNileLogin: false,
+    });
+    expect(ak.users[0]).toMatchObject({
+      username: "new@x.test",
+      email: "New@x.test",
+    });
   });
 });

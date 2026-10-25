@@ -269,3 +269,58 @@ describe.skipIf(!hasDb)("bookAsGuest's welcome job (spec 0014 AC-15)", () => {
       expect(job?.payload).toEqual({ userId: user?.id, appUrl: appUrl() });
     }));
 });
+
+// covers: AC-4, AC-5, AC-9
+describe.skipIf(!hasDb)("bookAsGuest Nile login (spec 0019)", () => {
+  it("renames a new learner to the testbed domain and keeps the email", () =>
+    inRollback(async (trx) => {
+      const { input, email, testbed } = await setup(trx);
+      const ak = fakeAuthentik([]);
+      const r = await bookAsGuest(ak.api, asConn(trx), input);
+      expect(r.ok).toBe(true);
+      expect(ak.users[0]).toMatchObject({
+        username: `priya@${testbed.domain}`,
+        email,
+        attributes: {
+          hol_learner: true,
+          mail: `priya@${testbed.domain}`,
+          firstName: "Priya",
+        },
+      });
+    }));
+
+  it("finds a renamed learner by the stored pk on the next booking", () =>
+    inRollback(async (trx) => {
+      const { input, email, testbed } = await setup(trx);
+      const ak = fakeAuthentik([]);
+      await bookAsGuest(ak.api, asConn(trx), input);
+      await trx
+        .updateTable("bookings")
+        .set({
+          status: "cancelled",
+          cancelled_at: sql<Date>`now()`,
+          cancel_source: "learner",
+        })
+        .where("status", "=", "confirmed")
+        .execute();
+      const again = await bookAsGuest(ak.api, asConn(trx), {
+        ...input,
+        startsAt: slot(48),
+      });
+      expect(again.ok).toBe(true);
+      expect(ak.users).toHaveLength(1);
+      expect(ak.users[0]?.username).toBe(`priya@${testbed.domain}`);
+      expect(ak.users[0]?.email).toBe(email);
+    }));
+
+  it("refuses and saves nothing when the rename fails", () =>
+    inRollback(async (trx) => {
+      const { input, state } = await setup(trx);
+      const ak = fakeAuthentik([], { fail: (m) => m === "PATCH" });
+      const r = await bookAsGuest(ak.api, asConn(trx), input);
+      expect(r).toEqual({ ok: false, error: "unavailable" });
+      const s = await state();
+      expect(s.bookings).toEqual([]);
+      expect(s.jobs).toEqual([]);
+    }));
+});

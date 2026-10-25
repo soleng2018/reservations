@@ -11,6 +11,7 @@ import {
   ownReschedulable,
   rescheduleOwnBooking,
 } from "@/server/booking/manage";
+import { authentik } from "@/server/authentik/client";
 import { db } from "@/server/db";
 import { countAttempt } from "@/server/rate-limit";
 
@@ -147,7 +148,12 @@ export async function rescheduleAction(
   const input = RescheduleInput.safeParse({ bookingId, version, startsAt });
   if (!input.success) return failed("invalid");
 
-  const moved = await rescheduleOwnBooking(conn, user.id, input.data);
+  const moved = await rescheduleOwnBooking(
+    authentik(),
+    conn,
+    user.id,
+    input.data,
+  );
   revalidatePath("/reservations");
   if (!moved.ok) return failed(moved.error);
   // Read after the move committed; a miss or a failed read leaves the card out.

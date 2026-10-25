@@ -214,7 +214,23 @@ export function fakeAuthentik(
         link: `https://auth.test/recover/${user.pk}?for=${body?.token_duration}`,
       });
     if (method === "GET") return json(user);
-    if (method === "PATCH") return json(Object.assign(user, body));
+    if (method === "PATCH") {
+      // Like Authentik: a username is unique.
+      if (
+        body.username &&
+        users.some((u) => u.pk !== user.pk && u.username === body.username)
+      )
+        return json(
+          { username: ["A user with that username already exists."] },
+          400,
+        );
+      // A session names its user's current username.
+      if (body.username)
+        sessions.forEach((x) => {
+          if (x.user === user.pk) x.username = body.username;
+        });
+      return json(Object.assign(user, body));
+    }
     if (method === "DELETE") return noContent();
     return json({}, 405);
   };

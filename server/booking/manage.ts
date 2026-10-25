@@ -12,6 +12,14 @@ import { preferFirst } from "@/lib/manage-reservations";
 import { err, type Result } from "@/lib/result";
 import { HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
 import { audit } from "@/server/audit";
+import type { CoreApi } from "@/server/authentik/client";
+import {
+  ensureNileLogin,
+  nileLoginRefusal,
+  restoreNileLogin,
+  type NileLoginError,
+  type RenamedFrom,
+} from "@/server/authentik/nile-login";
 import {
   bookableTestbedsOfType,
   cancelBooking,
@@ -330,12 +338,18 @@ async function alreadyRescheduled(
 // the original booking is untouched. `now()` in every guard is the
 // transaction's start time.
 export async function rescheduleOwnBooking(
+  api: CoreApi,
   conn: Kysely<DB>,
   userId: string,
   input: RescheduleInput,
 ): Promise<Result<Rescheduled, RescheduleRefusal>> {
+  // Set once the Nile login renamed the user, so a failed commit puts it back.
+  let renamed: RenamedFrom | null = null;
   try {
-    return await refusable<Rescheduled, RescheduleRefusal>(() =>
+    const moved = await refusable<
+      Rescheduled,
+      RescheduleRefusal | NileLoginError
+    >(() =>
       conn.transaction().execute(async (trx) => {
         // (0) the learner, serialized with deactivation.
         if (!(await lockActiveLearner(trx, userId))) throw new Refusal("stale");
@@ -441,6 +455,28 @@ export async function rescheduleOwnBooking(
               ),
             },
           });
+          // Spec 0019 AC-4, AC-5: the new testbed's domain login is the last
+          // step before the commit. A testbed with no domain (made before
+          // spec 0017) has none.
+          const domain = locked.value.domain;
+          if (domain !== null) {
+            const learner = await trx
+              .selectFrom("users")
+              .select(["name", "email", "authentik_user_pk"])
+              .where("id", "=", userId)
+              .executeTakeFirstOrThrow();
+            if (learner.authentik_user_pk === null)
+              throw new Refusal("unavailable");
+            const login = await ensureNileLogin(api, trx, {
+              userId,
+              pk: learner.authentik_user_pk,
+              name: learner.name,
+              email: learner.email,
+              domain,
+            });
+            if (!login.ok) throw new Refusal(login.error);
+            renamed = login.value.renamedFrom;
+          }
           return {
             testbedName: locked.value.name,
             typeName: type.name,
@@ -451,7 +487,12 @@ export async function rescheduleOwnBooking(
         return assign(0, false);
       }),
     );
+    if (moved.ok) return moved;
+    if (typeof moved.error === "object" || moved.error === "refused")
+      return err(await nileLoginRefusal(conn, userId, moved.error));
+    return err(moved.error);
   } catch (e) {
+    await restoreNileLogin(api, renamed);
     return err(toRescheduleError(e));
   }
 }
