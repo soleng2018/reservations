@@ -1,4 +1,4 @@
-import type { Insertable, Kysely } from "kysely";
+import { sql, type Insertable, type Kysely } from "kysely";
 import { describe, expect, it, vi } from "vitest";
 import {
   hasDb,
@@ -9,7 +9,12 @@ import {
   slot,
 } from "@/server/db/testing";
 import type { Bookings, DB } from "@/server/db/types";
-import { ownLabAccess, ownLabLinks, sessionLabLinks } from "./lab-access";
+import {
+  nileLoginForEmail,
+  ownLabAccess,
+  ownLabLinks,
+  sessionLabLinks,
+} from "./lab-access";
 
 vi.mock("server-only", () => ({}));
 
@@ -81,6 +86,7 @@ describe.skipIf(!hasDb)("ownLabAccess (AC-1)", () => {
           startsAt: b.starts_at,
           endsAt: b.ends_at,
           links: {
+            nileLogin: null,
             portalUrl: "https://portal.example.test",
             lmsUrl: "https://lms.example.test",
             clients: [
@@ -217,4 +223,59 @@ describe.skipIf(!hasDb)("sessionLabLinks and ownLabLinks", () => {
     expect(error).toHaveBeenCalledOnce();
     error.mockRestore();
   });
+});
+
+// covers: spec 0019 AC-6
+describe.skipIf(!hasDb)("Nile login reads", () => {
+  const store = (trx: Kysely<DB>, userId: string, domain: string) =>
+    trx
+      .insertInto("learner_domain_logins")
+      .values({
+        user_id: userId,
+        domain,
+        username: `ana@${domain}`,
+        used_at: sql<Date>`now()`,
+      })
+      .execute();
+
+  it("shows the login of the booking's domain to its own learner only", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(-1, 1);
+      await store(trx, w.user.id, w.testbed.domain ?? "");
+      const own = await ownLabAccess(trx, w.user.id, b.id);
+      expect(own.kind === "ok" && own.access.links.nileLogin).toBe(
+        `ana@${w.testbed.domain}`,
+      );
+      const other = await makeUser(trx, VERIFIED);
+      expect(await ownLabAccess(trx, other.id, b.id)).toEqual({
+        kind: "missing",
+      });
+      expect(await nileLoginForEmail(trx, b.id)).toBe(
+        `ana@${w.testbed.domain}`,
+      );
+    }));
+
+  it("omits the login for a booking made before, or in another domain", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(-1, 1);
+      expect(await nileLoginForEmail(trx, b.id)).toBeNull();
+      await store(trx, w.user.id, "elsewhere.example.test");
+      expect(await nileLoginForEmail(trx, b.id)).toBeNull();
+      const own = await ownLabAccess(trx, w.user.id, b.id);
+      expect(own.kind === "ok" && own.access.links.nileLogin).toBeNull();
+    }));
+
+  it("gives the email reader nothing once the booking is cancelled", () =>
+    inRollback(async (trx) => {
+      const w = await world(trx);
+      const b = await w.book(24, 26, {
+        status: "cancelled",
+        cancelled_at: new Date(),
+        cancel_source: "learner",
+      });
+      await store(trx, w.user.id, w.testbed.domain ?? "");
+      expect(await nileLoginForEmail(trx, b.id)).toBeNull();
+    }));
 });

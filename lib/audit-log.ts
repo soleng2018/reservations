@@ -77,6 +77,11 @@ export const AUDIT_ACTION_INFO = {
     label: "Testbed group found again",
     area: "testbeds",
   },
+  "user.nile_login_set": { label: "Nile login set", area: "users" },
+  "user.nile_login_conflict": {
+    label: "Nile login taken in Authentik",
+    area: "users",
+  },
   "access.granted": { label: "Access granted", area: "access_groups" },
   "access.revoked": { label: "Access revoked", area: "access_groups" },
   "user.created": { label: "User created", area: "users" },

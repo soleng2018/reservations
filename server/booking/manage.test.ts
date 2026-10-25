@@ -1,5 +1,6 @@
 import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
 import { describe, expect, it } from "vitest";
+import { fakeAuthentik, fakeLearner } from "@/server/authentik/testing";
 import { rescheduleBooking } from "@/server/db/bookings";
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import {
@@ -369,7 +370,9 @@ async function twoBeds(trx: Transaction<DB>, from = 48, to = 50) {
   const type = await makeType(trx);
   const first = await makeTestbed(trx, type.id, { name: `A bed ${u}` });
   const second = await makeTestbed(trx, type.id, { name: `B bed ${u}` });
-  const user = await makeUser(trx);
+  const pk = 900_600 + Math.floor(Math.random() * 1000);
+  const user = await makeUser(trx, { authentik_user_pk: pk });
+  const ak = fakeAuthentik([fakeLearner(pk, { email: user.email })]);
   const booking = await insertBooking(trx, {
     user_id: user.id,
     testbed_id: second.id,
@@ -391,12 +394,12 @@ async function twoBeds(trx: Transaction<DB>, from = 48, to = 50) {
     });
   };
   const move = (startsAt: Date, version = booking.version) =>
-    rescheduleOwnBooking(asConn(trx), user.id, {
+    rescheduleOwnBooking(ak.api, asConn(trx), user.id, {
       bookingId: booking.id,
       version,
       startsAt,
     });
-  return { type, first, second, user, booking, occupy, move };
+  return { type, first, second, user, booking, occupy, move, ak };
 }
 
 const refused = (error: string) => ({ ok: false, error });
@@ -556,7 +559,7 @@ describe.skipIf(!hasDb)("rescheduleOwnBooking", () => {
       const w = await twoBeds(trx);
       const other = await makeUser(trx);
       expect(
-        await rescheduleOwnBooking(asConn(trx), other.id, {
+        await rescheduleOwnBooking(w.ak.api, asConn(trx), other.id, {
           bookingId: w.booking.id,
           version: w.booking.version,
           startsAt: slot(72),
@@ -607,6 +610,39 @@ function failingAudit(trx: Transaction<DB>, error: unknown): Kysely<DB> {
   });
 }
 
+// covers: spec 0019 AC-4, AC-5
+describe.skipIf(!hasDb)("rescheduleOwnBooking Nile login", () => {
+  it("renames the learner to the new testbed's domain when the move lands there", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      // Someone else holds `second` at the new time, so the move lands on
+      // `first`, which has its own domain.
+      await w.occupy(w.second.id, 72, 74);
+      const r = await w.move(slot(72));
+      expect(r.ok).toBe(true);
+      expect(w.ak.users[0]?.username).toMatch(
+        new RegExp(`@${w.first.domain}$`),
+      );
+      expect(w.ak.users[0]?.email).toBe(w.user.email);
+    }));
+
+  it("refuses and moves nothing when Authentik is down", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      const down = fakeAuthentik([], { down: true });
+      const r = await rescheduleOwnBooking(down.api, asConn(trx), w.user.id, {
+        bookingId: w.booking.id,
+        version: w.booking.version,
+        startsAt: slot(72),
+      });
+      expect(r).toEqual({ ok: false, error: "unavailable" });
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        starts_at: w.booking.starts_at,
+        version: w.booking.version,
+      });
+    }));
+});
+
 // covers: AC-9 (a race cannot be staged on one connection, so each half)
 describe.skipIf(!hasDb)("reschedule races", () => {
   it("lets the overlap constraint refuse a move into a held range", () =>
@@ -634,11 +670,16 @@ describe.skipIf(!hasDb)("reschedule races", () => {
     inRollback(async (trx) => {
       const w = await twoBeds(trx);
       expect(
-        await rescheduleOwnBooking(failingAudit(trx, error), w.user.id, {
-          bookingId: w.booking.id,
-          version: w.booking.version,
-          startsAt: slot(72),
-        }),
+        await rescheduleOwnBooking(
+          w.ak.api,
+          failingAudit(trx, error),
+          w.user.id,
+          {
+            bookingId: w.booking.id,
+            version: w.booking.version,
+            startsAt: slot(72),
+          },
+        ),
       ).toEqual(refused("slot_taken"));
       expect(await bookingRow(trx, w.booking.id)).toMatchObject({
         starts_at: w.booking.starts_at,
@@ -652,7 +693,7 @@ describe.skipIf(!hasDb)("reschedule races", () => {
       const w = await twoBeds(trx);
       const boom = new Error("boom");
       await expect(
-        rescheduleOwnBooking(failingAudit(trx, boom), w.user.id, {
+        rescheduleOwnBooking(w.ak.api, failingAudit(trx, boom), w.user.id, {
           bookingId: w.booking.id,
           version: w.booking.version,
           startsAt: slot(72),

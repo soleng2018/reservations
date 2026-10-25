@@ -17,6 +17,45 @@ const MISSING: OwnLabAccess = { kind: "missing" };
 const LabStatus = z.enum(["confirmed", "completed"]);
 const isId = (id: string) => z.uuid().safeParse(id).success;
 
+// Spec 0019 AC-6: the learner's stored login for a testbed domain.
+async function storedLogin(
+  conn: Kysely<DB>,
+  userId: string,
+  domain: string | null,
+): Promise<string | null> {
+  if (domain === null) return null;
+  const row = await conn
+    .selectFrom("learner_domain_logins")
+    .select("username")
+    .where("user_id", "=", userId)
+    .where("domain", "=", domain)
+    .executeTakeFirst();
+  return row?.username ?? null;
+}
+
+// Spec 0019 AC-6: read at send time for a booked, rescheduled, or reminder
+// email, never stored on the email row. Only while the booking is confirmed,
+// and only the login of the domain it is in now; a brand new learner has no
+// verified email yet and still gets it here.
+export async function nileLoginForEmail(
+  conn: Kysely<DB>,
+  bookingId: string,
+): Promise<string | null> {
+  const row = await conn
+    .selectFrom("bookings as b")
+    .innerJoin("testbeds as t", "t.id", "b.testbed_id")
+    .innerJoin("learner_domain_logins as l", (join) =>
+      join
+        .onRef("l.user_id", "=", "b.user_id")
+        .onRef("l.domain", "=", "t.domain"),
+    )
+    .select("l.username")
+    .where("b.id", "=", bookingId)
+    .where("b.status", "=", "confirmed")
+    .executeTakeFirst();
+  return row?.username ?? null;
+}
+
 export async function ownLabAccess(
   conn: Kysely<DB>,
   userId: string,
@@ -34,6 +73,7 @@ export async function ownLabAccess(
       "b.ends_at",
       "b.testbed_id",
       "t.name as testbedName",
+      "t.domain",
       "t.portal_url",
       "t.lms_url",
       "ty.name as typeName",
@@ -54,6 +94,8 @@ export async function ownLabAccess(
     .orderBy("position")
     .execute();
 
+  const nileLogin = await storedLogin(conn, userId, row.domain);
+
   return {
     kind: "ok",
     access: {
@@ -63,6 +105,7 @@ export async function ownLabAccess(
       startsAt: row.starts_at,
       endsAt: row.ends_at,
       links: {
+        nileLogin,
         portalUrl: row.portal_url,
         lmsUrl: row.lms_url,
         clients: clients.map((c) => ({

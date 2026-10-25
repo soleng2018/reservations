@@ -8,12 +8,25 @@ const ctx = vi.hoisted(() => ({
   // requireLearner() redirects.
   learnerId: undefined as string | undefined,
   revalidated: [] as string[],
+  // The fake Authentik behind authentik() (spec 0019: a move renames).
+  api: undefined as import("@/server/authentik/client").CoreApi | undefined,
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/cache", () => ({
   revalidatePath: (path: string) => ctx.revalidated.push(path),
 }));
+vi.mock("@/server/authentik/client", async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import("@/server/authentik/client")>();
+  return {
+    ...real,
+    authentik: () => {
+      if (!ctx.api) throw new Error("no fake Authentik");
+      return ctx.api;
+    },
+  };
+});
 vi.mock("@/server/auth/require", () => ({
   requireLearner: async () => {
     if (!ctx.learnerId) throw new Error("NEXT_REDIRECT");
@@ -30,6 +43,8 @@ const {
   previewRescheduleAction,
   rescheduleAction,
 } = await import("./actions");
+const { fakeAuthentik, fakeLearner } =
+  await import("@/server/authentik/testing");
 const { asConn, hasDb, inRollback, makeTestbed, makeType, makeUser, slot } =
   await import("@/server/db/testing");
 
@@ -48,7 +63,9 @@ const withConn = (fn: (trx: Transaction<DB>) => Promise<void>) =>
 async function signedIn(trx: Kysely<DB>) {
   const type = await makeType(trx);
   const testbed = await makeTestbed(trx, type.id);
-  const user = await makeUser(trx);
+  const pk = 900_700 + Math.floor(Math.random() * 1000);
+  const user = await makeUser(trx, { authentik_user_pk: pk });
+  ctx.api = fakeAuthentik([fakeLearner(pk, { email: user.email })]).api;
   const booking = await trx
     .insertInto("bookings")
     .values({

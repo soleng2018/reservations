@@ -51,5 +51,9 @@ export const AuditAction = z.enum([
   // (AC-9), and the reconciler found a recreated group again by name (AC-10).
   "authentik_group.released",
   "testbed.group_relinked",
+  // Feature 20 (spec 0019). A learner's Nile login was set or first stored,
+  // or a stored one was found taken in Authentik by another user.
+  "user.nile_login_set",
+  "user.nile_login_conflict",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

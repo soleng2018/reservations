@@ -148,6 +148,15 @@ export interface Jobs {
   updated_at: Generated<Timestamp>;
 }
 
+export interface LearnerDomainLogins {
+  created_at: Generated<Timestamp>;
+  domain: string;
+  id: Generated<string>;
+  used_at: Timestamp;
+  user_id: string;
+  username: string;
+}
+
 export interface RateLimits {
   bucket_key: string;
   count: number;
@@ -234,6 +243,7 @@ export interface DB {
   "hol_auth.user": HolAuthUser;
   "hol_auth.verification": HolAuthVerification;
   jobs: Jobs;
+  learner_domain_logins: LearnerDomainLogins;
   rate_limits: RateLimits;
   set_password_links: SetPasswordLinks;
   testbed_clients: TestbedClients;

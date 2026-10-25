@@ -68,6 +68,7 @@ export default async function LabAccessPage(
           note={view.note}
           rows={labCardRows(access.links, view)}
           testbedName={access.testbedName}
+          nileLogin={access.links.nileLogin}
         />
       </div>
     </LearnerFrame>

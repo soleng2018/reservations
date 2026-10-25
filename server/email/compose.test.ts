@@ -366,3 +366,33 @@ describe("welcome email (spec 0014 AC-7)", () => {
     );
   });
 });
+
+// covers: spec 0019 AC-6 (the Nile login row)
+describe("Nile login in the booking emails", () => {
+  it.each(["booked", "rescheduled", "reminder"] as const)(
+    "shows a Nile login row in the %s email, html and text",
+    async (kind) => {
+      const { html, text } = await renderBookingEmail(
+        kind,
+        SAMPLE_BOOKING_DETAILS,
+        [],
+        "ana.souza@nileworkshop-1.com",
+      );
+      expect(html).toContain("Nile login");
+      expect(html).toContain("ana.souza@nileworkshop-1.com");
+      expect(text).toMatch(/Nile login\s+ana\.souza@nileworkshop-1\.com/);
+    },
+  );
+
+  it("omits the row with no login, and for a cancellation", async () => {
+    const plain = await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
+    expect(plain.html).not.toContain("Nile login");
+    const gone = await renderBookingEmail(
+      "cancelled",
+      cancelled(SAMPLE_BOOKING_DETAILS),
+      [],
+      "ana.souza@nileworkshop-1.com",
+    );
+    expect(gone.html).not.toContain("ana.souza");
+  });
+});

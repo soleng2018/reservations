@@ -50,7 +50,11 @@ import { requireAdmin } from "@/server/auth/require";
 import { googleConfigured } from "@/server/catalog/api-keys";
 import { db } from "@/server/db";
 import { listUserEmails, type EmailRow } from "@/server/email/messages";
-import { getLearnerDetail, type LearnerDetail } from "@/server/users/learners";
+import {
+  getLearnerDetail,
+  nileLoginsForUser,
+  type LearnerDetail,
+} from "@/server/users/learners";
 import {
   cancelBookingAdminAction,
   checkDeactivate,
@@ -80,10 +84,11 @@ export default async function UserDetailPage(
   const { user: admin } = await requireAdmin();
   const { id } = await props.params;
   const { learner, bookings } = await load(id);
-  const [emails, emailReady, history] = await Promise.all([
+  const [emails, emailReady, history, nileLogins] = await Promise.all([
     listUserEmails(db(), learner.id),
     googleConfigured(db()),
     learnerHistory(db(), learner.id, admin.timezone, HISTORY_LIMIT),
+    nileLoginsForUser(db(), learner.id),
   ]);
   const status = learnerStatusLabel(learner.status);
   // AC-7: only an active learner who has not set a password yet.
@@ -154,6 +159,44 @@ export default async function UserDetailPage(
             ) : null}
           </div>
         </section>
+
+        {nileLogins.length > 0 ? (
+          <section
+            aria-labelledby="nile-logins-heading"
+            className="rounded-xl border bg-card shadow-xs"
+          >
+            <h2
+              id="nile-logins-heading"
+              className="px-6 pt-5 pb-1.5 text-base font-bold text-fg1"
+            >
+              Nile logins
+            </h2>
+            <Table className="min-w-120" region="Nile logins">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Domain</TableHead>
+                  <TableHead>Login</TableHead>
+                  <TableHead>Note</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {nileLogins.map((l) => (
+                  <TableRow key={l.domain}>
+                    <TableCell className="text-fg2">{l.domain}</TableCell>
+                    <TableCell className="font-semibold text-fg1">
+                      {l.username}
+                    </TableCell>
+                    <TableCell>
+                      {l.lastSetByBooking ? (
+                        <Badge tone="info">Last set by a booking</Badge>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </section>
+        ) : null}
 
         <section
           aria-labelledby="reservations-heading"

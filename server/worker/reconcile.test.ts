@@ -317,11 +317,16 @@ describe.skipIf(!hasDb)(
     it("removes a learner who moved their Current booking later", () =>
       inRollback(async (trx) => {
         const w = await inLab(trx);
-        const moved = await rescheduleOwnBooking(asConn(trx), w.user.id, {
-          bookingId: w.booking.id,
-          version: w.version,
-          startsAt: slot(24),
-        });
+        const moved = await rescheduleOwnBooking(
+          w.ak.api,
+          asConn(trx),
+          w.user.id,
+          {
+            bookingId: w.booking.id,
+            version: w.version,
+            startsAt: slot(24),
+          },
+        );
         expect(moved.ok).toBe(true);
         await reconcileAccess(w.ak.api, asConn(trx), OFF);
         expect(w.ak.users[0]?.groups).toEqual([]);
@@ -334,11 +339,16 @@ describe.skipIf(!hasDb)(
         const w = await inLab(trx);
         // Someone else holds a at the new time, so the move lands on b.
         await bookingOn(trx, w.a.id, w.a.testbed_type_id, PK + 21, 23, 27);
-        const moved = await rescheduleOwnBooking(asConn(trx), w.user.id, {
-          bookingId: w.booking.id,
-          version: w.version,
-          startsAt: slot(24),
-        });
+        const moved = await rescheduleOwnBooking(
+          w.ak.api,
+          asConn(trx),
+          w.user.id,
+          {
+            bookingId: w.booking.id,
+            version: w.version,
+            startsAt: slot(24),
+          },
+        );
         expect(moved.ok && moved.value.testbedName).toBe(w.b.name);
         // Forced: the moved booking's start arrives.
         await trx

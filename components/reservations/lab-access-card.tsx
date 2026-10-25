@@ -14,11 +14,13 @@ export function LabAccessCard({
   note,
   rows,
   testbedName,
+  nileLogin = null,
 }: {
   readonly variant: "success" | "detail";
   readonly note: string;
   readonly rows: LabCardRows;
   readonly testbedName?: string; // the detail page's "Testbed assigned" row
+  readonly nileLogin?: string | null; // spec 0019 AC-6
 }) {
   const headingId = useId();
   const detail = variant === "detail";
@@ -61,6 +63,16 @@ export function LabAccessCard({
             </span>
             <strong className={cn(labelSize, "wrap-anywhere text-nile-blue")}>
               {testbedName}
+            </strong>
+          </li>
+        ) : null}
+        {nileLogin !== null ? (
+          <li className={cn(row, "bg-nile-blue-050")}>
+            <span className={cn(labelSize, "font-semibold text-fg1")}>
+              Nile login
+            </span>
+            <strong className={cn(labelSize, "wrap-anywhere text-nile-blue")}>
+              {nileLogin}
             </strong>
           </li>
         ) : null}

@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { describe, expect, it } from "vitest";
 import { formatDateTime } from "@/lib/format-time";
 import type { LearnerInput } from "@/lib/learner-input";
@@ -28,6 +28,7 @@ import {
   getLearnerDetail,
   isConsoleLearner,
   listLearnersForAdmin,
+  nileLoginsForUser,
   resendSetPasswordByAdmin,
   updateLearner,
 } from "./learners";
@@ -1006,3 +1007,40 @@ describe.skipIf(!hasDb)(
       }));
   },
 );
+
+// covers: spec 0019 AC-7
+describe.skipIf(!hasDb)("nileLoginsForUser", () => {
+  it("lists the logins newest use first and marks the latest", () =>
+    inRollback(async (trx) => {
+      const user = await makeUser(trx);
+      await trx
+        .insertInto("learner_domain_logins")
+        .values([
+          {
+            user_id: user.id,
+            domain: "a.example.test",
+            username: "ana@a.example.test",
+            used_at: sql<Date>`now() - interval '2 days'`,
+          },
+          {
+            user_id: user.id,
+            domain: "b.example.test",
+            username: "ana@b.example.test",
+            used_at: sql<Date>`now() - interval '1 day'`,
+          },
+        ])
+        .execute();
+      expect(await nileLoginsForUser(trx, user.id)).toEqual([
+        {
+          domain: "b.example.test",
+          username: "ana@b.example.test",
+          lastSetByBooking: true,
+        },
+        {
+          domain: "a.example.test",
+          username: "ana@a.example.test",
+          lastSetByBooking: false,
+        },
+      ]);
+    }));
+});
