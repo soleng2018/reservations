@@ -749,3 +749,38 @@ describe.skipIf(!hasDb)("the console's Emails section (AC-13)", () => {
       expect(kinds).toContain("reminder");
     }));
 });
+
+// covers: spec 0019 AC-6 (the reminder reads the login at send time too)
+describe.skipIf(!hasDb)("a reminder's Nile login row (spec 0019)", () => {
+  it("shows the stored login in the sent reminder and keeps it out of the rows", () =>
+    inRollback(async (trx) => {
+      const { reminderId, bookingId } = await queuedReminder(trx);
+      const b = await trx
+        .selectFrom("bookings as b")
+        .innerJoin("testbeds as t", "t.id", "b.testbed_id")
+        .select(["b.user_id", "t.domain"])
+        .where("b.id", "=", bookingId)
+        .executeTakeFirstOrThrow();
+      const login = `priya.raman@${b.domain}`;
+      await trx
+        .insertInto("learner_domain_logins")
+        .values({
+          user_id: b.user_id,
+          domain: b.domain ?? "",
+          username: login,
+          used_at: sql<Date>`now()`,
+        })
+        .execute();
+      const [req] = await run(trx);
+      if (!req) throw new Error("expected a send");
+      const mime = decoded(req);
+      expect(mime).toMatch(/^Subject: Reminder: /m);
+      expect(mime).toContain(login);
+      const row = await trx
+        .selectFrom("email_messages")
+        .select("details")
+        .where("id", "=", reminderId)
+        .executeTakeFirstOrThrow();
+      expect(JSON.stringify(row.details)).not.toContain(login);
+    }));
+});

@@ -323,4 +323,43 @@ describe.skipIf(!hasDb)("bookAsGuest Nile login (spec 0019)", () => {
       expect(s.bookings).toEqual([]);
       expect(s.jobs).toEqual([]);
     }));
+
+  it("adds a number when another Authentik user holds the plain login", () =>
+    inRollback(async (trx) => {
+      const { input, email, testbed } = await setup(trx);
+      const ak = fakeAuthentik([
+        fakeUser({ pk: 7, username: `priya@${testbed.domain}` }),
+      ]);
+      const r = await bookAsGuest(ak.api, asConn(trx), input);
+      expect(r.ok).toBe(true);
+      const mine = ak.users.find((u) => u.email === email);
+      expect(mine?.username).toMatch(
+        new RegExp(`^priya\\d{4}@${testbed.domain?.replaceAll(".", "\\.")}$`),
+      );
+      expect(mine?.attributes).toMatchObject({ mail: mine?.username });
+      const stored = await trx
+        .selectFrom("learner_domain_logins")
+        .select("username")
+        .where("domain", "=", testbed.domain ?? "")
+        .execute();
+      expect(stored.map((x) => x.username)).toEqual([mine?.username]);
+    }));
+
+  it("refuses an Authentik admin who books with their own email, before any write", () =>
+    inRollback(async (trx) => {
+      const { input, email, state } = await setup(trx);
+      const ak = fakeAuthentik([
+        fakeUser({
+          pk: 8,
+          username: email,
+          email,
+          groups: [ADMINS.pk],
+        }),
+      ]);
+      const r = await bookAsGuest(ak.api, asConn(trx), input);
+      expect(r.ok).toBe(false);
+      expect(ak.users[0]?.username).toBe(email);
+      expect(ak.writes).toEqual([]);
+      expect((await state()).bookings).toEqual([]);
+    }));
 });
