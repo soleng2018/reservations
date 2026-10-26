@@ -26,6 +26,7 @@ export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 export interface ApiKeys {
   base_url: string;
   calendar_id: string | null;
+  cleanup_failed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   dev_inbox: string | null;

@@ -40,6 +40,7 @@ import { authentik } from "@/server/authentik/client";
 import {
   createApiKey,
   deleteApiKey,
+  storedCleanupUrl,
   updateApiKey,
   type ApiKeyCreate,
   type ApiKeyCreateError,
@@ -549,6 +550,8 @@ const apiKeyError = (
       };
     case "google_exists":
       return fieldError("type", API_KEY_MESSAGES.googleExists);
+    case "cleanup_exists":
+      return fieldError("type", API_KEY_MESSAGES.cleanupExists);
     case "google_delegation":
       return fieldError(
         "keyFile",
@@ -652,11 +655,18 @@ export async function updateApiKeyAction(
   const encryption = assertEncryptionEnv();
   if (!encryption.ok) return NOT_CONFIGURED;
   const { keyring } = encryption.value;
-  const parsed = ApiKeyUpdateInput.safeParse(apiKeyFields(form));
-  const upload = await readGoogleUpload(form, false);
-  if (!parsed.success || !upload.ok) return apiKeyFormError(parsed, upload);
   if (!isId(id))
     return { kind: "error", message: API_KEY_MESSAGES.gone, fields: {} };
+  const posted = apiKeyFields(form);
+  // Spec 0021 AC-1: the edit form never holds a CLEANUP key's URL, so a blank
+  // one keeps the stored URL.
+  const fields =
+    posted.type === "CLEANUP" && !posted.baseUrl
+      ? { ...posted, baseUrl: await storedCleanupUrl(db(), id) }
+      : posted;
+  const parsed = ApiKeyUpdateInput.safeParse(fields);
+  const upload = await readGoogleUpload(form, false);
+  if (!parsed.success || !upload.ok) return apiKeyFormError(parsed, upload);
 
   const credential = await googleCredential(
     upload.value,
@@ -695,6 +705,7 @@ function updateError(
     case "cloudflare_invalid":
     case "cloudflare_unavailable":
     case "google_exists":
+    case "cleanup_exists":
     case "google_invalid":
     case "google_delegation":
     case "google_calendar":

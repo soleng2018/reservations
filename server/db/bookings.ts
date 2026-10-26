@@ -2,7 +2,9 @@ import "server-only";
 import { sql, type Kysely, type Selectable } from "kysely";
 import type { CancelSource } from "@/lib/db-enums";
 import { err, ok, type Result } from "@/lib/result";
+import { cleanupHookOn } from "@/server/catalog/api-keys";
 import { queueBookingNotice } from "@/server/jobs/booking-notice";
+import { queueCleanupNotice } from "@/server/jobs/cleanup-queue";
 import type { DB, Testbeds } from "./types";
 
 // Data rules for booking writes (spec 0002). Every function takes the caller's
@@ -92,6 +94,26 @@ export async function rescheduleBooking(
   trx: Kysely<DB>,
   r: Reschedule,
 ): Promise<Result<{ version: number }, "stale">> {
+  // Spec 0021 AC-3: with a live CLEANUP key, a Current booking's old slot is
+  // read first (the caller holds the row FOR UPDATE; Current is decided in
+  // SQL, the database being the clock).
+  const hook = await cleanupHookOn(trx);
+  const old = hook
+    ? await trx
+        .selectFrom("bookings")
+        .select([
+          "testbed_id",
+          "starts_at",
+          "ends_at",
+          sql<boolean>`starts_at <= now()`.as("was_current"),
+        ])
+        .where("id", "=", r.id)
+        .where("status", "=", "confirmed")
+        .where("ends_at", ">", sql<Date>`now()`)
+        .where("version", "=", r.expectedVersion)
+        .forUpdate()
+        .executeTakeFirst()
+    : undefined;
   const row = await trx
     .updateTable("bookings")
     .set({
@@ -109,6 +131,15 @@ export async function rescheduleBooking(
   if (!row) return err("stale");
   // Spec 0013 AC-6: the rescheduled notice, in this transaction.
   await queueBookingNotice(trx, r.id, row.version, "rescheduled");
+  if (old?.was_current)
+    await queueCleanupNotice(trx, {
+      bookingId: r.id,
+      version: row.version,
+      event: "booking.moved",
+      oldTestbedId: old.testbed_id,
+      oldStartsAt: old.starts_at,
+      oldEndsAt: old.ends_at,
+    });
   return ok(row);
 }
 
@@ -137,9 +168,26 @@ export async function cancelBooking(
     .where("status", "=", "confirmed")
     .where("ends_at", ">", sql<Date>`now()`)
     .where("version", "=", c.expectedVersion)
-    .returning("version")
+    .returning([
+      "version",
+      "testbed_id",
+      "starts_at",
+      "ends_at",
+      sql<boolean>`starts_at <= now()`.as("was_current"),
+    ])
     .executeTakeFirst();
   if (!row) return err("stale");
   await queueBookingNotice(trx, c.id, row.version, "cancelled");
-  return ok(row);
+  // Spec 0021 AC-2: only a Current booking (confirmed, started, not ended)
+  // frees its testbed early, and only with a live CLEANUP key.
+  if (row.was_current && (await cleanupHookOn(trx)))
+    await queueCleanupNotice(trx, {
+      bookingId: c.id,
+      version: row.version,
+      event: "booking.ended_early",
+      oldTestbedId: row.testbed_id,
+      oldStartsAt: row.starts_at,
+      oldEndsAt: row.ends_at,
+    });
+  return ok({ version: row.version });
 }

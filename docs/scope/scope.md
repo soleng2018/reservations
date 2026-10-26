@@ -58,6 +58,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 20 | Nile identity per domain | Slice 6 | done |
 | 21 | Testbed friendly name | Slice 6 | done |
 | 22 | Cleanup gap between labs | Slice 6 | done |
+| 23 | Cleanup hook for labs that end early | Slice 6 | in-progress |
 
 ## Foundations
 
@@ -382,6 +383,19 @@ Builds on the booking rule in feature 12. Cleanup automation needs time on a tes
 - [x] Verify it: `/check verify cleanup gap between labs`
 - [x] Test it: `/test cleanup gap between labs`
 spec [0020](../specs/0020-cleanup-gap-between-labs/index.md) · code in `lib/slots.ts`, `server/booking/availability.ts`, `server/booking/manage.ts`, `db/migrations/0016_booking_cleanup_gap.sql`
+
+### 23. Cleanup hook for labs that end early · in-progress
+Follow up from spec 0020. A Current booking that is cancelled (by anyone) or moved frees its testbed at once, but the cleanup automation only acts at `ends_at`. The worker sends a signed call to an owner configured URL (a new `CLEANUP` API key) so the automation can reset the testbed right then.
+**Done when:** with a live `CLEANUP` key, cancelling or moving a Current booking sends one HMAC signed POST from the worker; Upcoming bookings and no key send nothing; a failing hook never affects a booking and shows as an audit row and a Needs attention badge; the URL and secret never leak.
+- [x] Design it (spec): `/architect cleanup hook for labs that end early`
+- [x] Build it: `/develop cleanup hook for labs that end early`
+  - [x] Migration 0017, enums, and the `CLEANUP` key rules, masked URL, and badge (AC-1, 9)
+  - [x] The thread: queue on a Current cancel, the handler, and the separate "cleanup hook" worker step (AC-2, 4, 5, 8, 10, 13)
+  - [x] The move path and the 30 minute stale cutoff (AC-3, 12)
+  - [x] Outcomes, failure audit, and the guarded badge (AC-6, 7), then tests and scans (AC-9, 11)
+- [ ] Verify it: `/check verify cleanup hook for labs that end early`
+- [ ] Test it: `/test cleanup hook for labs that end early`
+spec [0021](../specs/0021-cleanup-hook-early-end.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.

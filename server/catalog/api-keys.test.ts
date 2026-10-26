@@ -256,6 +256,7 @@ describe.skipIf(!hasDb)("createApiKey and listApiKeys", () => {
       expect(Object.keys(mine[0]).sort()).toEqual([
         "baseUrl",
         "calendarId",
+        "cleanupFailedAt",
         "devInbox",
         "googleAuth",
         "googleRejectedAt",

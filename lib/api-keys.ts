@@ -19,6 +19,8 @@ export const API_KEY_MESSAGES = {
   cloudflareUnavailable:
     "Couldn't reach Cloudflare to check the token. Try again.",
   cloudflareRetype: "Enter the key again to change its type or account.",
+  // Spec 0021 AC-1, the CLEANUP key.
+  cleanupExists: "Only one Cleanup key can exist. Edit the existing one.",
   // Spec 0013 AC-1 to AC-4, the GOOGLE key.
   googleExists: "Only one Google key can exist. Edit the existing one.",
   keyFileMissing: "Choose the key file.",
@@ -97,3 +99,14 @@ export const googleCalendarMessage = (sender: string) =>
 // AC-5: an IDP key that testbeds use cannot become an AI key.
 export const typeInUseMessage = (names: readonly string[]): string =>
   `Used as the IDP by: ${names.join(", ")}. Remove it from them first.`;
+
+// Spec 0021 AC-7, AC-9: the API Keys list's words for a CLEANUP key.
+export const CLEANUP_FAILED_LINE =
+  "The last cleanup hook call failed for good. Check the receiver, then save the key again or wait for the next call.";
+
+// Spec 0021 AC-9: the hook URL is a capability, so the list and the edit
+// form show only its host, never the path.
+export const maskHookUrl = (url: string): string => {
+  const host = URL.parse(url)?.host;
+  return host ? `https://${host}/…` : "https://…";
+};
