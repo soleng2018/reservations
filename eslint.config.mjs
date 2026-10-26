@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Esbuild bundles of the worker and migrate (npm run build:bundle).
+    "dist/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
