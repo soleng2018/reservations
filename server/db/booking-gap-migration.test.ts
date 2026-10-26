@@ -5,7 +5,7 @@ import {
   applyBookingGapMigration,
   attempt,
   hasDb,
-  inRollback,
+  inRollbackDdl,
   makeTestbed,
   makeType,
   makeUser,
@@ -47,7 +47,7 @@ describe.skipIf(!hasDb)("migration 0016, the cleanup gap", () => {
   afterAll(() => db().destroy());
 
   it("stops with the pair count and keeps the old rule when a live pair sits in a gap (AC-7)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await restoreOldOverlapRule(trx);
       const old = await ruleOf(trx);
       const type = await makeType(trx);
@@ -63,7 +63,7 @@ describe.skipIf(!hasDb)("migration 0016, the cleanup gap", () => {
     }));
 
   it("applies when no live pair sits in a gap (AC-7)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await restoreOldOverlapRule(trx);
       const old = await ruleOf(trx);
       const type = await makeType(trx);

@@ -13,6 +13,7 @@ import {
   applyBookingGapMigration,
   hasDb,
   inRollback,
+  inRollbackDdl,
   makeTestbed,
   makeType,
   makeUser,
@@ -295,7 +296,7 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
   // covers: spec 0020 AC-3. The constraint picks the testbed, so a start in
   // a gap moves on to the next one and refuses once none is left.
   it("treats a testbed inside the cleanup gap as taken (spec 0020 AC-3)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const { input, type } = await setup(trx);
       const other = (n: number, hours: number) => ({
