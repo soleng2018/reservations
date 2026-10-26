@@ -519,3 +519,63 @@ describe("DomainInput (spec 0017 AC-1)", () => {
     expect(parsed.name).toBe("Bench 1");
   });
 });
+
+// covers: spec 0021 AC-1 (the CLEANUP key's URL and signing secret)
+describe("a CLEANUP key", () => {
+  const SECRET = "sixteen-chars-ok!";
+  const key = (over: Record<string, string> = {}) => ({
+    name: "Cleanup hook",
+    type: "CLEANUP",
+    baseUrl: "https://n8n.example.test/webhook/abc",
+    secret: SECRET,
+    ...over,
+  });
+  const issue = (schema: typeof ApiKeyCreateInput, input: unknown) =>
+    schema.safeParse(input).error?.issues.map((i) => [i.path[0], i.message]);
+
+  it("accepts an https URL and a 16 character secret, trimmed", () => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(schema.parse(key({ secret: `  ${SECRET}  ` }))).toMatchObject({
+        type: "CLEANUP",
+        secret: SECRET,
+      });
+  });
+
+  it.each([
+    ["http://n8n.example.test/hook", "baseUrl"],
+    ["https://user:pw@n8n.example.test/hook", "baseUrl"],
+    ["https://n8n.example.test/hook?token=1", "baseUrl"],
+    ["https://n8n.example.test/hook#frag", "baseUrl"],
+    ["https://n8n.example.test/hook#", "baseUrl"],
+  ])("refuses the URL %s", (baseUrl, path) => {
+    for (const schema of [ApiKeyCreateInput, ApiKeyUpdateInput])
+      expect(issue(schema, key({ baseUrl }))?.map((i) => i[0])).toContain(path);
+  });
+
+  it("needs a secret on add, and 16 characters when one is given", () => {
+    expect(issue(ApiKeyCreateInput, key({ secret: "" }))).toEqual([
+      ["secret", "Enter the key."],
+    ]);
+    expect(issue(ApiKeyCreateInput, key({ secret: "short" }))).toEqual([
+      ["secret", "Use at least 16 characters."],
+    ]);
+    expect(issue(ApiKeyUpdateInput, key({ secret: "short" }))).toEqual([
+      ["secret", "Use at least 16 characters."],
+    ]);
+  });
+
+  it("keeps the stored secret on a blank secret in an edit", () => {
+    expect(ApiKeyUpdateInput.safeParse(key({ secret: "" })).success).toBe(true);
+  });
+
+  it("applies the 16 character rule to CLEANUP only", () => {
+    expect(
+      ApiKeyCreateInput.safeParse({
+        name: "Okta",
+        type: "IDP",
+        baseUrl: "https://acme.okta.example",
+        secret: "short",
+      }).success,
+    ).toBe(true);
+  });
+});

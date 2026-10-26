@@ -162,15 +162,49 @@ const isCloudflareBaseUrl = (key: {
   readonly baseUrl: string;
 }) => key.type !== "CLOUDFLARE" || CLOUDFLARE_BASE_URL.test(key.baseUrl);
 
+// Spec 0021 AC-1: a CLEANUP key's URL is the hook the worker calls, with no
+// fragment either, and its secret signs every call, so it is at least 16
+// characters when given (a blank secret on edit keeps the stored one).
+export const CLEANUP_SECRET_MIN = 16;
+const quiet = (path: string) => (payload: z.core.ParsePayload) =>
+  payload.issues.every((i) => i.path?.[0] !== "type" && i.path?.[0] !== path);
+const cleanupFragment = {
+  message: "Remove the # part from the URL.",
+  path: ["baseUrl"],
+  when: quiet("baseUrl"),
+};
+const cleanupSecret = {
+  message: `Use at least ${CLEANUP_SECRET_MIN} characters.`,
+  path: ["secret"],
+  when: quiet("secret"),
+};
+const isCleanupUrl = (key: {
+  readonly type: ApiKeyType;
+  readonly baseUrl: string;
+}) => key.type !== "CLEANUP" || !key.baseUrl.includes("#");
+const isCleanupSecret = (key: {
+  readonly type: ApiKeyType;
+  readonly secret: string;
+}) =>
+  key.type !== "CLEANUP" ||
+  key.secret === "" ||
+  key.secret.length >= CLEANUP_SECRET_MIN;
+
 const StandardKeyCreate = ApiKeyBase.extend({
   secret: ApiKeySecret.min(1, "Enter the key."),
-}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
+})
+  .refine(isCloudflareBaseUrl, cloudflareBaseUrl)
+  .refine(isCleanupUrl, cleanupFragment)
+  .refine(isCleanupSecret, cleanupSecret);
 export type StandardKeyCreate = z.infer<typeof StandardKeyCreate>;
 
 // A blank secret keeps the stored one.
 const StandardKeyUpdate = ApiKeyBase.extend({
   secret: ApiKeySecret,
-}).refine(isCloudflareBaseUrl, cloudflareBaseUrl);
+})
+  .refine(isCloudflareBaseUrl, cloudflareBaseUrl)
+  .refine(isCleanupUrl, cleanupFragment)
+  .refine(isCleanupSecret, cleanupSecret);
 export type StandardKeyUpdate = z.infer<typeof StandardKeyUpdate>;
 
 // Spec 0013 AC-1: a GOOGLE key's base URL is this constant, stored and never

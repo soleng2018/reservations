@@ -34,6 +34,8 @@ export const AuditAction = z.enum([
   "api_key.updated",
   "api_key.secret_replaced",
   "api_key.deleted",
+  // Spec 0021 AC-7: a cleanup hook job failed for good (system actor).
+  "cleanup_hook.failed",
   // Feature 9 (spec 0007). Never with a client's OS username or password.
   "testbed.updated",
   "testbed.deleted",

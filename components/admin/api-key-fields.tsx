@@ -27,6 +27,7 @@ const TYPES = [
   { value: "AI", label: "AI" },
   { value: "CLOUDFLARE", label: "CLOUDFLARE" },
   { value: "GOOGLE", label: "GOOGLE" },
+  { value: "CLEANUP", label: "CLEANUP" },
 ] as const satisfies readonly { value: ApiKeyType; label: string }[];
 
 // Spec 0013 AC-25: Service account first, and selected on create.
@@ -39,6 +40,9 @@ export type ApiKeyDefaults = {
   readonly name: string;
   readonly type: ApiKeyType;
   readonly baseUrl: string;
+  // CLEANUP edit only: the URL's host, since the URL itself stays on the
+  // server (spec 0021 AC-9).
+  readonly maskedUrl: string;
   // GOOGLE only (spec 0013 AC-4, AC-29); empty (or the first method) for
   // every other type.
   readonly googleAuth: GoogleAuthMethod;
@@ -52,6 +56,7 @@ const NEW_KEY: ApiKeyDefaults = {
   name: "",
   type: "IDP",
   baseUrl: "",
+  maskedUrl: "",
   googleAuth: "service_account",
   senderEmail: "",
   calendarId: "",
@@ -79,6 +84,10 @@ export function ApiKeyFields({
   const [type, setType] = useState<ApiKeyType>(defaults.type);
   const editing = lastChanged !== undefined;
   const changedNote = editing ? `Last changed ${lastChanged}` : undefined;
+  // A CLEANUP key's URL and secret stay on the server, so an edit of one
+  // leaves either blank to keep it (spec 0021 AC-1).
+  const keepsHook =
+    editing && defaults.type === "CLEANUP" && type === "CLEANUP";
   return (
     <>
       <Field path="name" label="Name">
@@ -111,15 +120,27 @@ export function ApiKeyFields({
               name="baseUrl"
               type="url"
               inputMode="url"
-              required
-              placeholder="https://…"
+              required={!keepsHook}
+              placeholder={
+                keepsHook
+                  ? `Leave blank to keep ${defaults.maskedUrl}`
+                  : "https://…"
+              }
               autoComplete="off"
               spellCheck={false}
               className="font-mono"
               defaultValue={defaults.type === "GOOGLE" ? "" : defaults.baseUrl}
             />
           </Field>
-          <Field path="secret" label="Key value" description={changedNote}>
+          <Field
+            path="secret"
+            label={type === "CLEANUP" ? "Signing secret" : "Key value"}
+            description={
+              type === "CLEANUP"
+                ? `At least 16 characters. Every call is signed with it.${changedNote ? ` ${changedNote}.` : ""}`
+                : changedNote
+            }
+          >
             <Input
               name="secret"
               type="password"

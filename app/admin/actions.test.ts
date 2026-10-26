@@ -690,6 +690,90 @@ describe.skipIf(!hasDb)("API key actions", () => {
       });
     }));
 
+  // covers: spec 0021 AC-1, AC-9 (the CLEANUP key through the actions)
+  it("adds a CLEANUP key, refuses a second, and keeps its URL and secret on a blank edit", () =>
+    as("admin", async (trx) => {
+      // Any real CLEANUP key is set aside, since only one may be live.
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "CLEANUP")
+        .where("deleted_at", "is", null)
+        .execute();
+      const URL_PATH = `capability${crypto.randomUUID().slice(0, 8)}`;
+      const hookUrl = `https://hook.example.test/${URL_PATH}`;
+      const SIGNING = `sign-${crypto.randomUUID()}`;
+      const cleanupForm = (name: string, baseUrl: string, secret: string) => {
+        const f = new FormData();
+        f.set("name", name);
+        f.set("type", "CLEANUP");
+        f.set("baseUrl", baseUrl);
+        f.set("secret", secret);
+        return f;
+      };
+
+      const name = newName();
+      const saved = await createApiKeyAction(
+        IDLE,
+        cleanupForm(name, hookUrl, SIGNING),
+      );
+      expect(saved).toEqual({ kind: "saved", message: `Created ${name}.` });
+
+      const second = await createApiKeyAction(
+        IDLE,
+        cleanupForm(newName(), "https://other.example.test/hook", SIGNING),
+      );
+      expect(second).toEqual({
+        kind: "error",
+        fields: {
+          type: "Only one Cleanup key can exist. Edit the existing one.",
+        },
+      });
+
+      const before = await trx
+        .selectFrom("api_keys")
+        .select(["id", "base_url", "secret_ciphertext"])
+        .where("name", "=", name)
+        .executeTakeFirstOrThrow();
+      expect(before.base_url).toBe(hookUrl);
+
+      // The edit form never holds the URL or the secret, so both post blank.
+      const renamed = newName();
+      const edited = await updateApiKeyAction(
+        before.id,
+        IDLE,
+        cleanupForm(renamed, "", ""),
+      );
+      expect(edited).toEqual({ kind: "saved", message: `Updated ${renamed}.` });
+      const after = await trx
+        .selectFrom("api_keys")
+        .select(["name", "base_url", "secret_ciphertext"])
+        .where("id", "=", before.id)
+        .executeTakeFirstOrThrow();
+      expect(after).toEqual({
+        name: renamed,
+        base_url: hookUrl,
+        secret_ciphertext: before.secret_ciphertext,
+      });
+
+      // A short secret on edit is refused, and neither reply echoes a value.
+      const short = await updateApiKeyAction(
+        before.id,
+        IDLE,
+        cleanupForm(renamed, "", "short"),
+      );
+      expect(short).toEqual({
+        kind: "error",
+        fields: { secret: "Use at least 16 characters." },
+      });
+      expect(JSON.stringify([saved, second, edited, short])).not.toContain(
+        URL_PATH,
+      );
+      expect(JSON.stringify([saved, second, edited, short])).not.toContain(
+        SIGNING,
+      );
+    }));
+
   it("says the key is gone for a deleted key or a malformed id", () =>
     as("admin", async (trx) => {
       const key = await makeKey(trx);

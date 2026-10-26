@@ -19,7 +19,9 @@ import {
 import {
   API_KEY_MESSAGES,
   GOOGLE_METHOD_LABEL,
+  CLEANUP_FAILED_LINE,
   GOOGLE_REJECTED_LINE,
+  maskHookUrl,
   SECRET_MASK,
 } from "@/lib/api-keys";
 import { targetHistoryHref } from "@/lib/audit-log";
@@ -45,6 +47,7 @@ const TYPE_TONE = {
   AI: "accent",
   CLOUDFLARE: "neutral",
   GOOGLE: "neutral",
+  CLEANUP: "neutral",
 } as const satisfies Record<ApiKeyType, "info" | "accent" | "neutral">;
 
 // Spec 0006: list, search, add, edit, and delete IDP, AI, Cloudflare, and
@@ -64,7 +67,10 @@ export default async function ApiKeysPage() {
   const rows = keys.map((k) => {
     const changed = formatDay(k.secretUpdatedAt, user.timezone);
     // A GOOGLE key's Base URL is a constant; its sender says more.
-    const shownUrl = k.senderEmail ?? k.baseUrl;
+    // A CLEANUP key's URL is a capability: only its host shows (spec 0021).
+    const shownUrl =
+      k.senderEmail ??
+      (k.type === "CLEANUP" ? maskHookUrl(k.baseUrl) : k.baseUrl);
     return {
       id: k.id,
       label: k.name,
@@ -80,6 +86,15 @@ export default async function ApiKeysPage() {
               <span className="text-xs text-fg3">
                 {GOOGLE_METHOD_LABEL[k.googleAuth]}
               </span>
+            ) : null}
+            {k.type === "CLEANUP" && k.cleanupFailedAt ? (
+              <>
+                <Badge tone="accent">Needs attention</Badge>
+                <span className="max-w-56 text-xs text-fg2">
+                  Since {formatDay(k.cleanupFailedAt, user.timezone)}:{" "}
+                  {CLEANUP_FAILED_LINE}
+                </span>
+              </>
             ) : null}
             {k.googleAuth && k.googleRejectedAt ? (
               <>
@@ -130,7 +145,9 @@ export default async function ApiKeysPage() {
               defaults={{
                 name: k.name,
                 type: k.type,
-                baseUrl: k.baseUrl,
+                // The hook URL never reaches the browser (spec 0021 AC-9).
+                baseUrl: k.type === "CLEANUP" ? "" : k.baseUrl,
+                maskedUrl: k.type === "CLEANUP" ? shownUrl : "",
                 googleAuth: k.googleAuth ?? "service_account",
                 senderEmail: k.senderEmail ?? "",
                 calendarId: k.calendarId ?? "",

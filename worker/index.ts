@@ -5,6 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { revokeStateLine, type RevokeKind } from "@/lib/reconcile";
 import { authentik } from "@/server/authentik/client";
 import {
+  cleanupHookConfig,
   cloudflareRevokeConfig,
   googleMailConfig,
 } from "@/server/catalog/api-keys";
@@ -24,6 +25,7 @@ import {
   runJobs,
   type Handlers,
 } from "@/server/jobs/runner";
+import { runCleanupHooks } from "@/server/jobs/cleanup-hook";
 import { syncBookingEvent } from "@/server/jobs/calendar-sync";
 import { queueReminders } from "@/server/jobs/reminders";
 import { runSendEmail } from "@/server/jobs/send-email";
@@ -155,6 +157,14 @@ async function main(): Promise<number> {
     for (const f of step.failed) console.error(`jobs: ${f} failed`);
     if (step.breaker) console.error(breakerLogLine(step.method));
   };
+  // Spec 0021 AC-13: its own step, with no Google key needed. The hook's
+  // URL and secret are read per call (AC-10) and never logged.
+  const cleanupHook = async () => {
+    const step = await runCleanupHooks(conn, {
+      source: () => cleanupHookConfig(conn, () => encryptionEnv().keyring),
+    });
+    for (const f of step.failed) console.error(`cleanup hook: ${f} failed`);
+  };
   const reminders = async () => {
     const { queued } = await queueReminders(conn);
     if (queued > 0) log(`reminders: queued ${queued}`);
@@ -181,6 +191,7 @@ async function main(): Promise<number> {
       // Spec 0015 AC-2: right before "jobs", so a reminder queued here can
       // send in the same tick.
       { name: "reminders", run: reminders },
+      { name: "cleanup hook", run: cleanupHook },
       { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
         ? [

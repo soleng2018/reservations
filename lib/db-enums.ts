@@ -16,7 +16,13 @@ export type DurationUnit = z.infer<typeof DurationUnit>;
 export const TestbedClientKind = z.enum(["wired", "wireless"]);
 export type TestbedClientKind = z.infer<typeof TestbedClientKind>;
 
-export const ApiKeyType = z.enum(["IDP", "AI", "CLOUDFLARE", "GOOGLE"]);
+export const ApiKeyType = z.enum([
+  "IDP",
+  "AI",
+  "CLOUDFLARE",
+  "GOOGLE",
+  "CLEANUP",
+]);
 export type ApiKeyType = z.infer<typeof ApiKeyType>;
 
 // Spec 0013 AC-25, AC-34: how a GOOGLE key signs in.
@@ -41,6 +47,7 @@ export const JobKind = z.enum([
   "calendar_upsert",
   "calendar_delete",
   "send_welcome",
+  "cleanup_notify",
 ]);
 export type JobKind = z.infer<typeof JobKind>;
 

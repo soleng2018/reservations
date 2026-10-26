@@ -63,6 +63,8 @@ export type ApiKeyRow = {
   // When the worker's breaker found Google no longer accepts the key
   // (AC-31, AC-32); null while it works.
   readonly googleRejectedAt: Date | null;
+  // CLEANUP only (spec 0021 AC-7): when a hook job last failed for good.
+  readonly cleanupFailedAt: Date | null;
 };
 
 // Spec 0013 AC-1, AC-4, AC-28, AC-29: a GOOGLE save carries, by method, the
@@ -85,7 +87,8 @@ const aad = (id: string) => secretAad("api_keys", "secret_ciphertext", id);
 // so a write error that is not an expected constraint leaves only this.
 const WRITE_FAILED = "api key write failed";
 
-type UniqueError = "duplicate_name" | "cloudflare_exists" | "google_exists";
+type UniqueError =
+  "duplicate_name" | "cloudflare_exists" | "google_exists" | "cleanup_exists";
 
 // The unique indexes a save can hit, or undefined for anything else.
 const uniqueError = (e: unknown): UniqueError | undefined => {
@@ -96,6 +99,7 @@ const uniqueError = (e: unknown): UniqueError | undefined => {
       case "duplicate_name":
       case "cloudflare_exists":
       case "google_exists":
+      case "cleanup_exists":
         return mapped.error;
       default:
         return undefined;
@@ -318,6 +322,7 @@ export const listApiKeysQuery = (conn: Kysely<DB>) =>
       "ops_bcc",
       "google_auth",
       "google_rejected_at",
+      "cleanup_failed_at",
     ])
     .where("deleted_at", "is", null)
     .orderBy(sql`lower(name)`);
@@ -342,6 +347,7 @@ export async function listApiKeys(
     opsBcc: r.ops_bcc,
     googleAuth: googleAuthOf(r.google_auth),
     googleRejectedAt: r.google_rejected_at,
+    cleanupFailedAt: r.cleanup_failed_at,
   }));
 }
 
@@ -428,7 +434,8 @@ export async function createApiKey(
         summary: "API key created",
         metadata: {
           type: fields.type,
-          baseUrl: fields.baseUrl,
+          // Spec 0021 AC-9: a hook URL is a capability, never audited.
+          ...(fields.type === "CLEANUP" ? {} : { baseUrl: fields.baseUrl }),
           ...googleAuditFields(fields),
         },
       });
@@ -499,7 +506,8 @@ const needsGoogleCredential = (
   }
 };
 
-// google_rejected_at is not audited (AC-29).
+// google_rejected_at and cleanup_failed_at are not audited (AC-29, spec 0021
+// AC-7).
 const AUDITED_FIELDS = [
   "name",
   "type",
@@ -581,11 +589,19 @@ export async function updateApiKey(
       const changed = changedFields(AUDITED_FIELDS, before, after);
       const fieldsChanged = Object.keys(changed).length > 0;
       if (!fieldsChanged && ciphertext === undefined) return ok(undefined);
+      // Spec 0021 AC-9: a hook URL never reaches the audit diff, before or
+      // after a type change.
+      const hidesUrl = before.type === "CLEANUP" || after.type === "CLEANUP";
+      const { baseUrl: urlDiff, ...changedNoUrl } = changed;
+      const auditChanged = hidesUrl ? changedNoUrl : changed;
 
       if (ciphertext === undefined) {
         const needed = needsGoogleCredential(before, after);
         if (needed) return err(needed);
         if (before.type === "GOOGLE" && after.type !== "GOOGLE")
+          return err("key_required");
+        // Spec 0021 AC-1: the signing secret never changes type unseen.
+        if ((before.type === "CLEANUP") !== (after.type === "CLEANUP"))
           return err("key_required");
         if (needsCloudflareToken(before, after))
           return err("cloudflare_retype");
@@ -625,6 +641,13 @@ export async function updateApiKey(
           ...(ciphertext !== undefined || after.type !== "GOOGLE"
             ? { google_rejected_at: null }
             : {}),
+          // Spec 0021 AC-7: a save that changes the key (its URL, secret, or
+          // type) clears the marker; one that changes nothing never gets here.
+          ...(ciphertext !== undefined ||
+          urlDiff !== undefined ||
+          after.type !== "CLEANUP"
+            ? { cleanup_failed_at: null }
+            : {}),
         })
         .where("id", "=", id)
         .execute();
@@ -635,7 +658,12 @@ export async function updateApiKey(
           targetType: "api_key",
           targetId: id,
           summary: "API key updated",
-          metadata: changed,
+          metadata: {
+            ...auditChanged,
+            ...(hidesUrl && urlDiff !== undefined
+              ? { baseUrlChanged: true }
+              : {}),
+          },
         });
       if (ciphertext !== undefined)
         await audit(trx, {
@@ -810,4 +838,133 @@ export async function googleConfigured(conn: Kysely<DB>): Promise<boolean> {
     .where("deleted_at", "is", null)
     .executeTakeFirst();
   return row !== undefined;
+}
+
+// Spec 0021 AC-1: a blank URL on a CLEANUP edit keeps the stored one, which
+// the browser never receives. Server only; undefined when the row is not a
+// live CLEANUP key.
+export async function storedCleanupUrl(
+  conn: Kysely<DB>,
+  id: string,
+): Promise<string | undefined> {
+  const row = await conn
+    .selectFrom("api_keys")
+    .select("base_url")
+    .where("id", "=", id)
+    .where("type", "=", "CLEANUP")
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+  return row?.base_url;
+}
+
+// Spec 0021 AC-2: whether a live CLEANUP key exists, in the booking's own
+// transaction. Never decrypts, never locks.
+export async function cleanupHookOn(trx: Kysely<DB>): Promise<boolean> {
+  const row = await trx
+    .selectFrom("api_keys")
+    .select("id")
+    .where("type", "=", "CLEANUP")
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+// The key as the worker saw it. Its marker writes check all three, so a
+// failure under an old URL or secret never marks a key saved since (spec 0021
+// AC-7). In memory only: the URL is a capability.
+export type CleanupStamp = {
+  readonly id: string;
+  readonly url: string;
+  readonly secretUpdatedAt: Date;
+};
+
+export type CleanupHookConfig = CleanupStamp & { readonly secret: string };
+
+export type CleanupHookSource =
+  | { readonly kind: "off" }
+  // The row exists but its secret could not be read.
+  | { readonly kind: "broken"; readonly stamp: CleanupStamp }
+  | { readonly kind: "on"; readonly config: CleanupHookConfig };
+
+const CLEANUP_STAMP_COLUMNS = ["id", "base_url", "secret_updated_at"] as const;
+
+// Spec 0021 AC-9, AC-10: the only place the hook's secret is decrypted,
+// read at send time. A decrypt or keyring failure answers `broken`, and
+// nothing about it is logged here; a database error throws like any read.
+export async function cleanupHookConfig(
+  conn: Kysely<DB>,
+  keyring: () => Keyring,
+): Promise<CleanupHookSource> {
+  const row = await conn
+    .selectFrom("api_keys")
+    .select([...CLEANUP_STAMP_COLUMNS, "secret_ciphertext"])
+    .where("type", "=", "CLEANUP")
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+  if (!row) return { kind: "off" };
+  const stamp: CleanupStamp = {
+    id: row.id,
+    url: row.base_url,
+    secretUpdatedAt: row.secret_updated_at,
+  };
+  try {
+    const secret = decryptSecret(keyring(), row.secret_ciphertext, aad(row.id));
+    return { kind: "on", config: { ...stamp, secret } };
+  } catch {
+    return { kind: "broken", stamp };
+  }
+}
+
+// The live CLEANUP key's stamp, without its secret, for a failure that has no
+// config in hand (a job the sweeper failed).
+export async function cleanupHookStamp(
+  conn: Kysely<DB>,
+): Promise<CleanupStamp | null> {
+  const row = await conn
+    .selectFrom("api_keys")
+    .select(CLEANUP_STAMP_COLUMNS)
+    .where("type", "=", "CLEANUP")
+    .where("deleted_at", "is", null)
+    .executeTakeFirst();
+  return row
+    ? { id: row.id, url: row.base_url, secretUpdatedAt: row.secret_updated_at }
+    : null;
+}
+
+// Spec 0021 AC-7: the Needs attention marker. One autocommit statement each,
+// guarded by the key's id and its stamp (a JS Date keeps milliseconds, so the
+// timestamp compares at that precision). A mark keeps the first failure's
+// time; a clear touches only a marked key.
+export async function setCleanupFailed(
+  conn: Kysely<DB>,
+  stamp: CleanupStamp,
+): Promise<void> {
+  await conn
+    .updateTable("api_keys")
+    .set({ cleanup_failed_at: sql<Date>`now()` })
+    .where("id", "=", stamp.id)
+    .where("deleted_at", "is", null)
+    .where("base_url", "=", stamp.url)
+    .where(
+      sql<boolean>`date_trunc('milliseconds', secret_updated_at) = ${stamp.secretUpdatedAt}`,
+    )
+    .where("cleanup_failed_at", "is", null)
+    .execute();
+}
+
+export async function clearCleanupFailed(
+  conn: Kysely<DB>,
+  stamp: CleanupStamp,
+): Promise<void> {
+  await conn
+    .updateTable("api_keys")
+    .set({ cleanup_failed_at: null })
+    .where("id", "=", stamp.id)
+    .where("deleted_at", "is", null)
+    .where("base_url", "=", stamp.url)
+    .where(
+      sql<boolean>`date_trunc('milliseconds', secret_updated_at) = ${stamp.secretUpdatedAt}`,
+    )
+    .where("cleanup_failed_at", "is not", null)
+    .execute();
 }

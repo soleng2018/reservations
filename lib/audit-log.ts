@@ -46,6 +46,10 @@ export const AUDIT_ACTION_INFO = {
     area: "api_keys",
   },
   "api_key.deleted": { label: "API key deleted", area: "api_keys" },
+  "cleanup_hook.failed": {
+    label: "Cleanup hook failed",
+    area: "api_keys",
+  },
   "testbed_type.created": {
     label: "Testbed type created",
     area: "testbed_types",

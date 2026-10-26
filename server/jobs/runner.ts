@@ -241,11 +241,18 @@ export async function finishJob(
 
 // AC-8: a job that crashed on its last attempt can never be claimed again
 // (attempts would pass the cap), so its expired lease ends it here.
+// Spec 0021 AC-7: answers the jobs it failed, so a step can surface its own.
+export type SweptJob = {
+  readonly id: string;
+  readonly kind: JobKind;
+  readonly payload: unknown;
+};
+
 export async function sweepExhausted(
   conn: Kysely<DB>,
   kinds: readonly JobKind[],
-): Promise<number> {
-  if (kinds.length === 0) return 0;
+): Promise<readonly SweptJob[]> {
+  if (kinds.length === 0) return [];
   return conn.transaction().execute(async (trx) => {
     const failed = await trx
       .updateTable("jobs")
@@ -258,14 +265,14 @@ export async function sweepExhausted(
       .where("locked_until", "<", sql<Date>`now()`)
       .where("attempts", ">=", MAX_ATTEMPTS)
       .where("kind", "in", kinds)
-      .returning("id")
+      .returning(["id", "kind", "payload"])
       .execute();
     await failEmails(
       trx,
       failed.map((f) => f.id),
       LEASE_EXHAUSTED,
     );
-    return failed.length;
+    return failed.map((f) => ({ ...f, kind: JobKind.parse(f.kind) }));
   });
 }
 
@@ -379,7 +386,11 @@ export async function runJobs(
   conn: Kysely<DB>,
   deps: JobsDeps,
 ): Promise<JobsStep> {
-  const kinds = JobKind.options.filter((k) => deps.handlers[k] !== undefined);
+  // Spec 0021 AC-13: the hook has its own step, so a missing Google key or a
+  // tripped breaker never holds it, and this step never claims it.
+  const kinds = JobKind.options.filter(
+    (k) => k !== "cleanup_notify" && deps.handlers[k] !== undefined,
+  );
   await sweepExhausted(conn, kinds);
   const cfg = await deps.config();
   if (cfg === null) return { kind: "no_key" };
