@@ -1,7 +1,7 @@
 # 0021. Cleanup hook for labs that end early
 
 **Date**: 2026-10-26
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -188,5 +188,7 @@ Build approach: Tracer Bullet. Prove one real thread (a Current cancel through t
 
 - [ ] Owner: build the receiver (n8n or a script) that checks `X-HOL-Signature` and de-duplicates on `X-HOL-Delivery`
 - [ ] Owner: save the `CLEANUP` key in the console after the deploy that carries migration 0017
+- [ ] Owner, after the deploy: run the three unticked steps in `verify.md` (a real signed POST from the worker to a receiver on a cancel and a move, the Needs attention badge after a failed call, and a learner cancel and reschedule looking unchanged)
+- [ ] The `CLEANUP` database tests insert their own key, so they fail while a live `CLEANUP` key exists in the shared database; make them tolerate one before the owner saves the real key
 - [ ] If a test button is ever wanted, add a signed `test` event in a new spec
 - [ ] Notes for `server/jobs/AGENTS.md` (the new job kind) once built (via `/sync`)
