@@ -379,7 +379,7 @@ Builds on the booking rule in feature 12. Cleanup automation needs time on a tes
   - [x] Picker and server recheck: `GAP_MS`, `freeStarts`, `busyRanges`, and the lead time check (AC-2, 3, 6, 10)
   - [x] Reschedule clash query, cancel and complete behavior (AC-4, 5)
   - [x] Existing test fixes, new scenarios, and the learner and admin copy scan (AC-9, and the tests for all)
-- [ ] Verify it: `/check verify cleanup gap between labs`
+- [x] Verify it: `/check verify cleanup gap between labs`
 - [ ] Test it: `/test cleanup gap between labs`
 spec [0020](../specs/0020-cleanup-gap-between-labs/index.md) · code in `lib/slots.ts`, `server/booking/availability.ts`, `server/booking/manage.ts`, `db/migrations/0016_booking_cleanup_gap.sql`
 
