@@ -13,6 +13,7 @@ import {
   attempt,
   hasDb,
   inRollback,
+  inRollbackDdl,
   makeTestbed,
   makeType,
   makeUser,
@@ -310,7 +311,7 @@ describe.skipIf(!hasDb)("cancelOwnBooking", () => {
 
   // covers: spec 0020 AC-5. An early cancel frees the testbed and its gap.
   it("frees the testbed and its gap at once for a Current booking (spec 0020 AC-5)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const w = await world(trx);
       const current = await w.book(-1, 2);
@@ -514,7 +515,7 @@ describe.skipIf(!hasDb)("rescheduleOwnBooking", () => {
     }));
 
   it("moves next to its own old slot, which the gap never counts (spec 0020 AC-4)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const w = await twoBeds(trx); // 48 to 50 on the second bed
       const r = await w.move(slot(50));

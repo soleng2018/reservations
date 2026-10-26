@@ -13,13 +13,26 @@ export const hasDb = hasDbEnv();
 
 class Rollback extends Error {}
 
-export async function inRollback(
+// A test that runs ALTER TABLE on `bookings` (the cleanup gap migration)
+// holds an ACCESS EXCLUSIVE lock until its rollback, which would starve every
+// other DB test file running beside it. So every test takes this advisory lock
+// shared, and a DDL test takes it exclusive first (`inRollbackDdl`).
+const DDL_LOCK_KEY = 20_260_020;
+
+async function rollbackWith(
+  lock: "shared" | "exclusive" | "none",
   fn: (trx: Transaction<DB>) => Promise<void>,
-  conn: Kysely<DB> = db(),
+  conn: Kysely<DB>,
 ): Promise<void> {
   await conn
     .transaction()
     .execute(async (trx) => {
+      if (lock === "shared")
+        await sql`select pg_advisory_xact_lock_shared(${DDL_LOCK_KEY})`.execute(
+          trx,
+        );
+      if (lock === "exclusive")
+        await sql`select pg_advisory_xact_lock(${DDL_LOCK_KEY})`.execute(trx);
       await fn(trx);
       throw new Rollback();
     })
@@ -27,6 +40,26 @@ export async function inRollback(
       if (!(e instanceof Rollback)) throw e;
     });
 }
+
+export const inRollback = (
+  fn: (trx: Transaction<DB>) => Promise<void>,
+  conn: Kysely<DB> = db(),
+): Promise<void> => rollbackWith("shared", fn, conn);
+
+// A second concurrent connection inside a test that already holds the lock
+// (the AC-1 race). Taking it again could queue behind a waiting DDL test,
+// which is waiting on the first connection: a deadlock.
+export const inRollbackNested = (
+  fn: (trx: Transaction<DB>) => Promise<void>,
+  conn: Kysely<DB> = db(),
+): Promise<void> => rollbackWith("none", fn, conn);
+
+// For a test that changes the schema (`applyBookingGapMigration`,
+// `restoreOldOverlapRule`): waits for the running tests, then runs alone.
+export const inRollbackDdl = (
+  fn: (trx: Transaction<DB>) => Promise<void>,
+  conn: Kysely<DB> = db(),
+): Promise<void> => rollbackWith("exclusive", fn, conn);
 
 // Code under test that opens its own `conn.transaction()` cannot run on a
 // rollback transaction (Kysely refuses nesting). This view runs each such

@@ -16,6 +16,8 @@ import {
   attempt,
   hasDb,
   inRollback,
+  inRollbackDdl,
+  inRollbackNested,
   makeTestbed,
   makeType,
   makeUser,
@@ -81,7 +83,7 @@ describe.skipIf(!hasDb)("booking data rules", () => {
   // Spec 0020 AC-1: a live booking holds its testbed 30 minutes past ends_at,
   // and the gap counts on both sides.
   it("holds the cleanup gap on both sides of a live booking (spec 0020 AC-1)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const w = await world(trx);
       // One live booking per learner, so each try gets its own.
@@ -110,7 +112,7 @@ describe.skipIf(!hasDb)("booking data rules", () => {
   // millisecond. Only starts_at sits on the half hour grid, so the earlier
   // booking gets an off grid ends_at.
   it("agrees with GAP_MS to the millisecond (spec 0020 AC-8)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const w = await world(trx);
       const other = await makeUser(trx);
@@ -140,7 +142,7 @@ describe.skipIf(!hasDb)("booking data rules", () => {
 
   // Spec 0020 AC-5: a cancelled booking holds neither its range nor its gap.
   it("frees the gap when a booking is cancelled (spec 0020 AC-5)", () =>
-    inRollback(async (trx) => {
+    inRollbackDdl(async (trx) => {
       await applyBookingGapMigration(trx);
       const w = await world(trx);
       const other = await makeUser(trx);
@@ -178,7 +180,7 @@ describe.skipIf(!hasDb)("booking data rules", () => {
       const w = await world(a);
       await w.book(24, 26);
       const fromB = (from: number, to: number) =>
-        inRollback(async (b) => {
+        inRollbackNested(async (b) => {
           await sql`set local lock_timeout = '300ms'`.execute(b);
           await insertBooking(b, {
             user_id: crypto.randomUUID(),
