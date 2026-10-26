@@ -156,7 +156,7 @@ Server modules:
 ### Critical test scenarios
 
 - Happy path (Playwright): an admin creates a type and a testbed naming a marked Authentik group; a guest with a `dev-` email books the first listed start; the confirmation shows the type, testbed, and times in the chosen zone; the DB holds one confirmed booking and Authentik one tagged user. Verifies **AC-1**, **AC-2**, **AC-3**, **AC-5**, **AC-6**.
-- Slots (unit): `freeStarts` at boundaries: lead time exactly 1 hour, horizon end, back to back bookings, a day long type, two testbeds with one busy. Verifies **AC-3**.
+- Slots (unit): `freeStarts` at boundaries: lead time exactly 1 hour, horizon end, bookings inside and exactly at the 30 minute gap (spec 0020), a day long type, two testbeds with one busy. Verifies **AC-3**.
 - Assignment race (DB integration, two connections, rolled back): two inserts for the same range with one free testbed, so one succeeds and one gets `slot_taken`; with two testbeds, both succeed on different ones. Verifies **AC-5**, **AC-7**, **AC-10**.
 - Step 1 rollback: a new email that gets `slot_taken` (and separately `not_bookable`) leaves no `users` row. Verifies **AC-9**.
 - Live booking: a second booking for the same email returns `has_live_booking`; one while the first is `provisioning` returns `booking_pending`. Verifies **AC-8**.

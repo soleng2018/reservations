@@ -57,6 +57,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | done |
 | 21 | Testbed friendly name | Slice 6 | done |
+| 22 | Cleanup gap between labs | Slice 6 | in-progress |
 
 ## Foundations
 
@@ -368,6 +369,19 @@ Builds on feature 19. Today a testbed's Name is the Authentik group name, so lea
 - [x] Test it: `/test testbed friendly name`
 - [x] Review it (fresh model): `/check review testbed friendly name`
 spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
+
+### 22. Cleanup gap between labs · in-progress
+Builds on the booking rule in feature 12. Cleanup automation needs time on a testbed between two labs, so a testbed is held for a set gap (30 minutes) after each booking ends. A lab booked 8 am to 12 pm means the next lab on that testbed cannot start before 12:30 pm. Today two bookings only have to not overlap, so a next lab can start at the exact minute the last one ends.
+**Done when:** the start time picker never offers a start inside the gap, for new bookings and for reschedules; the server and the database both refuse a booking that would start inside the gap, with the same "time no longer available" reply as an overlap; a booking never blocks itself when it is rescheduled; cancelling a booking frees its gap too; bookings already in the system keep working; learner screens and emails that show times are unchanged.
+- [x] Design it (spec): `/architect cleanup gap between labs`
+- [x] Build it: `/develop cleanup gap between labs` (the one deploy carries migration 0016; run the read only pre-check first, see the spec's migration plan)
+  - [x] Migration 0016 and the database rule, proved on a throwaway copy (AC-1, 7, 8)
+  - [x] Picker and server recheck: `GAP_MS`, `freeStarts`, `busyRanges`, and the lead time check (AC-2, 3, 6, 10)
+  - [x] Reschedule clash query, cancel and complete behavior (AC-4, 5)
+  - [x] Existing test fixes, new scenarios, and the learner and admin copy scan (AC-9, and the tests for all)
+- [ ] Verify it: `/check verify cleanup gap between labs`
+- [ ] Test it: `/test cleanup gap between labs`
+spec [0020](../specs/0020-cleanup-gap-between-labs/index.md) · code in `lib/slots.ts`, `server/booking/availability.ts`, `server/booking/manage.ts`, `db/migrations/0016_booking_cleanup_gap.sql`
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.

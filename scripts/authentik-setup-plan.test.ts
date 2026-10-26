@@ -22,6 +22,7 @@ import {
   uncoveredProviders,
   desiredRecoveryLoginStage,
   RECOVERY_STAGE_ORDER,
+  authorizeProbeProblem,
 } from "./authentik-setup-plan";
 
 describe("isolationExpression (AC-17)", () => {
@@ -156,6 +157,10 @@ describe("desiredProvider", () => {
         redirect_uri_type: "authorization",
       },
     ]);
+  });
+
+  it("allows the authorization code and refresh grants (an empty list fails every sign in)", () => {
+    expect(p.grant_types).toEqual(["authorization_code", "refresh_token"]);
   });
 
   it("makes the http regex match only its own callback", () => {
@@ -315,5 +320,29 @@ describe("no pod- left in the setup plan (spec 0017 AC-12)", () => {
       "utf8",
     );
     expect(source).not.toMatch(/pod-/);
+  });
+});
+
+describe("authorizeProbeProblem", () => {
+  it("accepts a redirect to a login flow", () => {
+    expect(
+      authorizeProbeProblem(302, "/if/flow/default-authentication-flow/?x=1"),
+    ).toBeUndefined();
+  });
+
+  it("reports the error Authentik sends back to the callback", () => {
+    expect(
+      authorizeProbeProblem(
+        302,
+        `https://hol.example${CALLBACK_PATH}?error=invalid_request&error_description=The%20request%20is%20otherwise%20malformed&state=x`,
+      ),
+    ).toBe(
+      "Authentik refused the request: invalid_request (The request is otherwise malformed)",
+    );
+  });
+
+  it("reports a response that is not a redirect", () => {
+    expect(authorizeProbeProblem(500, null)).toMatch(/500/);
+    expect(authorizeProbeProblem(200, null)).toMatch(/200/);
   });
 });

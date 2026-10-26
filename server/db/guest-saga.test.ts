@@ -10,6 +10,7 @@ import {
   type GuestBookingInput,
 } from "./guest-saga";
 import {
+  applyBookingGapMigration,
   hasDb,
   inRollback,
   makeTestbed,
@@ -289,6 +290,37 @@ describe.skipIf(!hasDb)("guest saga data (AC-13)", () => {
         ok: false,
         error: "slot_taken",
       });
+    }));
+
+  // covers: spec 0020 AC-3. The constraint picks the testbed, so a start in
+  // a gap moves on to the next one and refuses once none is left.
+  it("treats a testbed inside the cleanup gap as taken (spec 0020 AC-3)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const { input, type } = await setup(trx);
+      const other = (n: number, hours: number) => ({
+        ...input,
+        email: `gap-${n}-${input.email}`,
+        startsAt: slot(24 + hours),
+      });
+      const a = await started(trx, input); // 24 to 26
+      // The only testbed ends at 26, so a start at 26 is inside its gap.
+      expect(await startGuestBooking(trx, other(1, 2))).toEqual({
+        ok: false,
+        error: "slot_taken",
+      });
+      // A second testbed takes that start.
+      const second = await makeTestbed(trx, type.id);
+      const b = await started(trx, other(2, 2));
+      expect(b.testbedId).toBe(second.id);
+      // Both are held at 26 (one gap, one overlap): refused.
+      expect(await startGuestBooking(trx, other(3, 2))).toEqual({
+        ok: false,
+        error: "slot_taken",
+      });
+      // At 26:30 the first testbed's gap is over, the second still holds it.
+      const c = await started(trx, other(4, 2.5));
+      expect(c.testbedId).toBe(a.testbedId);
     }));
 
   it("refuses a start inside the lead time or off the grid", () =>

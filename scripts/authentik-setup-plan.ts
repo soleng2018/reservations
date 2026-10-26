@@ -159,6 +159,8 @@ export type ProviderInputs = {
 export const desiredProvider = (i: ProviderInputs) => ({
   name: PROVIDER_NAME,
   client_type: "confidential",
+  // Authentik 2026.8 refuses every authorize request when this list is empty.
+  grant_types: ["authorization_code", "refresh_token"],
   sub_mode: "user_id", // `sub` = Authentik user pk = users.authentik_user_pk
   issuer_mode: "per_provider",
   include_claims_in_id_token: true,
@@ -168,6 +170,22 @@ export const desiredProvider = (i: ProviderInputs) => ({
   property_mappings: [...i.scopeMappings].toSorted(),
   redirect_uris: redirectUris(i.appUrls),
 });
+
+// The sign in probe: an authorize request for the HOL client, not followed.
+// A healthy provider sends the browser on to a login flow (a path under
+// /if/flow/). Authentik answers a provider it cannot use, for example one
+// with no grant types, with a redirect back to the callback carrying `error=`.
+export const authorizeProbeProblem = (
+  status: number,
+  location: string | null,
+): string | undefined => {
+  if (status < 300 || status > 399 || location === null)
+    return `Authentik answered ${status} instead of a redirect to a login flow`;
+  const error = new URL(location, "https://authentik.invalid").searchParams;
+  return error.has("error")
+    ? `Authentik refused the request: ${error.get("error")} (${error.get("error_description") ?? "no description"})`
+    : undefined;
+};
 
 // ---- Learner isolation (AC-17) ----------------------------------------------
 

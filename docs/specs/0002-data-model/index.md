@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted
+**Amended**: 2026-10-26 by [spec 0020](../0020-cleanup-gap-between-labs/index.md): `bookings_no_overlap` holds each live booking for 30 minutes past `ends_at`, so back to back bookings are no longer allowed (AC-1 and the concurrency test below).
 **Amended**: 2026-10-14 by [spec 0013](../0013-email-delivery-booking-confirmations/index.md): `integration_secrets` is dropped from the target; `api_keys` gains `sender_email`, `calendar_id`, `dev_inbox`, `ops_bcc`; `email_messages` is built with `sent_to`, `details`, and a `suppressed` status, without the welcome unique index (left to feature 16).
 **Amended**: 2026-10-17 by [spec 0014](../0014-set-password-welcome-email/index.md): the welcome unique index `(user_id) where kind = 'welcome'` is dropped from the target (resend and email change send more than one; one send at a time is enforced when the job runs); welcome `details` is `{ name, expiresAt, timeZone }`; new table `set_password_links`.
 
@@ -17,7 +18,7 @@ This spec fixes the database tables every later feature builds on: people, the l
 - As the owner, I want rules that matter (no overlap, one live booking, unchangeable audit) enforced by the database, so that a code bug or a race cannot break them.
 
 **Acceptance criteria**:
-- **AC-1**: Two live bookings (status `provisioning` or `confirmed`) on the same testbed whose `[starts_at, ends_at)` ranges overlap are rejected by the database, including when two transactions insert at the same moment. Back to back bookings (one ends exactly when the next starts) are allowed.
+- **AC-1**: Two live bookings (status `provisioning` or `confirmed`) on the same testbed whose `[starts_at, ends_at)` ranges overlap are rejected by the database, including when two transactions insert at the same moment. Back to back bookings are not allowed: since spec 0020 a live booking holds its testbed for 30 minutes after `ends_at`, so the next one must start at least 30 minutes after the last ends.
 - **AC-2**: A user cannot hold two live bookings. The booking transaction first marks that user's `confirmed` bookings whose `ends_at <= now()` as `completed`, so a learner whose lab just ended can book again at once.
 - **AC-3**: `cancelled` and `completed` bookings never block a new booking (neither the overlap rule nor the one live booking rule).
 - **AC-4**: Soft deleting a testbed type used by any non deleted testbed, an API key assigned to any non deleted testbed, or a testbed with a live booking whose `ends_at > now()` is refused, and the refusal lists the blocking rows by name. Bookings that reference soft deleted rows still join to their testbed, type, and clients.
@@ -325,7 +326,7 @@ None new. Uses the existing `DATABASE_*` settings and `btree_gist` from `db/boot
 ### Critical test scenarios
 
 - Happy path: from an empty schema, migrate, insert a type, a testbed with two clients, a learner, and a confirmed booking; regenerate types with no diff. Verifies **AC-10**.
-- Concurrency: two transactions insert overlapping live bookings on one testbed at once; exactly one commits, the other gets `overlap`. Back to back succeeds. Verifies **AC-1**.
+- Concurrency: two transactions insert overlapping live bookings on one testbed at once; exactly one commits, the other gets `overlap`. A start inside the 30 minute gap gets `overlap` too (spec 0020). Verifies **AC-1**.
 - One live: a second live booking for the same user fails with `user_has_live_booking`; after the first's `ends_at` passes, `completeEndedForUser` then insert succeeds. A cancelled booking blocks nothing. Verifies **AC-2**, **AC-3**.
 - Blockers: soft deleting a type used by a testbed returns that testbed; after soft deleting a testbed with only Past bookings, those bookings still join. Verifies **AC-4**.
 - Uniqueness: `Lab A` vs `lab a` is rejected while both are live and allowed once one is soft deleted; a reused slug is rejected; `Priya@x.com` vs `priya@x.com` is rejected. Verifies **AC-5**, **AC-6**.

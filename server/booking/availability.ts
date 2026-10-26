@@ -2,7 +2,13 @@ import "server-only";
 import { sql, type Kysely } from "kysely";
 import { DurationUnit, LIVE_BOOKING_STATUSES } from "@/lib/db-enums";
 import { durationMs } from "@/lib/duration";
-import { freeStarts, HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
+import {
+  freeStarts,
+  GAP_MS,
+  HORIZON_MS,
+  isOfferableStart,
+  LEAD_MS,
+} from "@/lib/slots";
 import { preferFirst } from "@/lib/manage-reservations";
 import { bookableTestbedsOfType, dbNow } from "@/server/db/bookings";
 import type { DB } from "@/server/db/types";
@@ -64,8 +70,9 @@ async function typeDuration(
 // 0011 AC-7, AC-8): its own range never counts as busy. /book passes none.
 export type ExcludeOwn = { readonly excludeBookingId?: string };
 
-// Live bookings of these testbeds that overlap [from, to), less the excluded
-// one.
+// Live bookings of these testbeds that can affect [from, to) once the cleanup
+// gap is counted (one ending up to GAP_MS before it, one starting up to GAP_MS
+// after it), less the excluded one. Callers pass the plain window.
 const busyRanges = (
   conn: Kysely<DB>,
   testbedIds: readonly string[],
@@ -82,8 +89,8 @@ const busyRanges = (
     ])
     .where("testbed_id", "in", testbedIds)
     .where("status", "in", LIVE_BOOKING_STATUSES)
-    .where("starts_at", "<", to)
-    .where("ends_at", ">", from)
+    .where("starts_at", "<", new Date(to.getTime() + GAP_MS))
+    .where("ends_at", ">", new Date(from.getTime() - GAP_MS))
     .$if(excludeBookingId !== undefined, (q) =>
       q.where("id", "!=", excludeBookingId ?? ""),
     )
@@ -130,7 +137,7 @@ export async function startsFor(
 
 // The testbed the saga would most likely assign (spec 0010 AC-7): the first
 // bookable testbed of the type, in the saga's lower(name) order, with no live
-// booking overlapping [start, start + duration). A reschedule keeps its own
+// booking within the cleanup gap of [start, start + duration). A reschedule keeps its own
 // testbed when it can (spec 0011 AC-8): `preferTestbedId` is tried first.
 // Advice only; it takes no lock and holds nothing. Null when none is free or
 // the start is no longer offered.

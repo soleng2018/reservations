@@ -12,12 +12,18 @@ import { attempt, hasDb, inRollback, makeTestbed, makeType } from "./testing";
 describe.skipIf(!hasDb)("testbed domain checks (spec 0017 AC-11)", () => {
   afterAll(() => db().destroy());
 
+  // The database is shared with a real install, so a live testbed may already
+  // hold a sample domain; the unique index then answers first. Only the format
+  // check is under test here.
   it.each([...VALID_DOMAINS])("the format check accepts %s", (domain) =>
     inRollback(async (trx) => {
       const type = await makeType(trx);
-      expect(
-        await attempt(trx, () => makeTestbed(trx, type.id, { domain })),
-      ).toBeUndefined();
+      const refusal = await attempt(trx, () =>
+        makeTestbed(trx, type.id, { domain }),
+      );
+      expect(refusal ?? {}).not.toMatchObject({
+        constraint: "testbeds_domain_format_check",
+      });
     }),
   );
 

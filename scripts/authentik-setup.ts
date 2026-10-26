@@ -49,6 +49,8 @@ import {
   labsAppProblems,
   parseAppUrls,
   parseTeamDomain,
+  authorizeProbeProblem,
+  CALLBACK_PATH,
   planPermissions,
   uncoveredProviders,
   type FieldChange,
@@ -840,10 +842,20 @@ async function ensureIsolation(
       );
   }
 
-  // Warn (never write) about providers isolation does not cover.
-  const providers = await list(
-    z.looseObject({ name: z.string(), authorization_flow: z.string() }),
-    "/providers/all/?page_size=200",
+  // Warn (never write) about providers isolation does not cover. A provider
+  // with no authorization flow (a SCIM provider) never reaches the deny.
+  const providers = (
+    await list(
+      z.looseObject({
+        name: z.string(),
+        authorization_flow: z.string().nullable(),
+      }),
+      "/providers/all/?page_size=200",
+    )
+  ).flatMap((p) =>
+    p.authorization_flow === null
+      ? []
+      : [{ ...p, authorization_flow: p.authorization_flow }],
   );
   uncoveredProviders(providers, [
     ...flows.map(({ flow }) => flow.pk),
@@ -967,6 +979,35 @@ async function ensureProvisioning() {
   return account;
 }
 
+// Read only: asks Authentik to start a sign in for the HOL client, the way the
+// app does, and checks that it answers with a login flow (never followed).
+async function checkSignIn(
+  clientId: string,
+  appUrls: readonly string[],
+): Promise<boolean> {
+  say("Sign in check");
+  const base = appUrls.find((u) => u.startsWith("https://")) ?? appUrls[0];
+  const url = new URL(`${env.AUTHENTIK_URL}/application/o/authorize/`);
+  url.search = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: `${base}${CALLBACK_PATH}`,
+    response_type: "code",
+    scope: "openid email profile",
+    state: "authentik-setup-check",
+  }).toString();
+  const res = await fetch(url, { redirect: "manual" });
+  const problem = authorizeProbeProblem(
+    res.status,
+    res.headers.get("location"),
+  );
+  say(
+    problem
+      ? `  FAILED  ${problem}`
+      : "  ok      a sign in reaches the login flow",
+  );
+  return problem === undefined;
+}
+
 async function main(): Promise<number> {
   const urls = parseAppUrls(env.APP_URLS);
   if (!urls.ok) {
@@ -1004,6 +1045,9 @@ async function main(): Promise<number> {
   await ensureLabsApplication(labs?.provider.pk);
   await ensureIsolation(holFlowPk, labFlowPk);
   const account = await ensureProvisioning();
+  const signInOk = provider
+    ? await checkSignIn(provider.client_id, urls.urls)
+    : true;
   say(
     `\nLearner path: ${LEARNER_PATH} (Authentik creates a path when the first user is put in it; nothing to set up)`,
   );
@@ -1023,7 +1067,7 @@ async function main(): Promise<number> {
 
   if (!provider || !apply) {
     say("\nDry run done. Nothing was written.");
-    return 0;
+    return signInOk ? 0 : 1;
   }
   say(`\nAUTHENTIK_CLIENT_ID=${provider.client_id}`);
   const out = args["secret-out"];
@@ -1043,7 +1087,7 @@ async function main(): Promise<number> {
       `  4. Add each admin to ${ADMIN_GROUP} and turn on MFA for them`,
     ].join("\n"),
   );
-  return 0;
+  return signInOk ? 0 : 1;
 }
 
 main().then(

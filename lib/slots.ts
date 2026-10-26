@@ -4,6 +4,11 @@
 
 export const SLOT_MS = 30 * 60 * 1000;
 export const LEAD_MS = 60 * 60 * 1000; // 1 hour
+// Spec 0020: a live booking holds its testbed this long after ends_at, for the
+// cleanup automation. It must equal the interval in the bookings_no_overlap
+// constraint (migration 0016); a database test keeps the two in step. LEAD_MS
+// stays at least this long, so no start lands in a gap that has begun.
+export const GAP_MS = 30 * 60 * 1000; // 30 minutes
 export const HORIZON_MS = 90 * 24 * 60 * 60 * 1000; // 90 days (spec 0010)
 // Spec 0015 AC-1: the reminder email's lead time, set only here.
 export const REMINDER_LEAD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -30,8 +35,9 @@ export function isOfferableStart(
 }
 
 // Every offerable start where at least one testbed has no busy range
-// overlapping [start, start + duration). Ranges are half open, so back to
-// back bookings do not overlap.
+// within the cleanup gap of [start, start + duration): a busy range ends at
+// least GAP_MS before the start, or starts at least GAP_MS after the end
+// (spec 0020 AC-2).
 export function freeStarts(args: {
   readonly now: Date;
   readonly leadMs: number;
@@ -50,7 +56,9 @@ export function freeStarts(args: {
     const end = start + args.durationMs;
     return ranges.some((busy) =>
       busy.every(
-        (b) => b.endsAt.getTime() <= start || b.startsAt.getTime() >= end,
+        (b) =>
+          b.endsAt.getTime() + GAP_MS <= start ||
+          b.startsAt.getTime() >= end + GAP_MS,
       ),
     );
   };
