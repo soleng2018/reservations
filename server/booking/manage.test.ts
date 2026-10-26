@@ -341,6 +341,34 @@ describe.skipIf(!hasDb)("cancelOwnBooking", () => {
       expect(await next(2)).toBeUndefined();
     }));
 
+  // covers: spec 0020 AC-5. Moving a Current booking frees its old range and
+  // gap at once, the same as a cancel.
+  it("frees the old range and gap when a Current booking is moved (spec 0020 AC-5)", () =>
+    inRollbackDdl(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await twoBeds(trx, -1, 1); // Current, on the second bed
+      const next = () =>
+        attempt(trx, async () =>
+          insertBooking(trx, {
+            user_id: (await makeUser(trx)).id,
+            testbed_id: w.second.id,
+            testbed_type_id: w.type.id,
+            starts_at: slot(1),
+            ends_at: slot(3),
+            status: "confirmed",
+          }),
+        );
+      // 1 is inside the Current booking's gap (it ends at 1, the gap to 1.5).
+      expect(mapConstraintError(await next())).toEqual({
+        ok: false,
+        error: "overlap",
+      });
+      await w.occupy(w.second.id, 72, 74); // so the move must leave this bed
+      const r = await w.move(slot(72));
+      expect(r.ok && r.value.testbedName).toBe(w.first.name);
+      expect(await next()).toBeUndefined();
+    }));
+
   it("returns stale and writes nothing for a stale version, a Past booking, or another learner's id", () =>
     inRollback(async (trx) => {
       const w = await world(trx);
