@@ -394,7 +394,7 @@ Follow up from spec 0020. A Current booking that is cancelled (by anyone) or mov
   - [x] The move path and the 30 minute stale cutoff (AC-3, 12)
   - [x] Outcomes, failure audit, and the guarded badge (AC-6, 7), then tests and scans (AC-9, 11)
 - [ ] Verify it: `/check verify cleanup hook for labs that end early`
-- [ ] Test it: `/test cleanup hook for labs that end early`
+- [x] Test it: `/test cleanup hook for labs that end early`
 spec [0021](../specs/0021-cleanup-hook-early-end/index.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
 
 ## Deferred
