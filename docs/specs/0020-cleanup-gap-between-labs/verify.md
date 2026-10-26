@@ -5,10 +5,12 @@ _Steps derived from spec 0020 acceptance criteria. `/check verify` runs these; `
 - [x] With one testbed of a type, book a lab 8 am to 12 pm on /book, then open the picker for the same type → 12:00 is not offered, 12:30 is; with a second testbed of that type, 12:00 is offered again        → AC-2 · Value sourcing (picker)
 - [x] Open the picker for a start whose lab would end 30 minutes or less before another live booking on the only testbed → that start is not offered; one that ends exactly 30 minutes before is        → AC-2, AC-6
 - [x] Book as a guest, with testbed A inside a gap and testbed B free → the booking lands on B; with both inside a gap, the reply is "time no longer available"        → AC-3 · Value sourcing (saga insert)
-- [ ] Reschedule to a start inside another learner's gap (after and before it) → refused with the same reply as an overlap and nothing changes; reschedule to the slot right after your own old slot → allowed        → AC-4 · Value sourcing (reschedule clash)
+- [x] Reschedule to a start inside another learner's gap (after and before it) → refused with the same reply as an overlap and nothing changes; reschedule to the slot right after your own old slot → allowed        → AC-4 · Value sourcing (reschedule clash)
 - [x] Cancel a Current booking, then open the picker → its range and its 30 minutes are free at once        → AC-5
-- [ ] Read the book, reschedule, and manage screens, the booked and reschedule emails, and the calendar event → no new text, and every time still ends at `ends_at`        → AC-9
+- [x] Read the book, reschedule, and manage screens, the booked and reschedule emails, and the calendar event → no new text, and every time still ends at `ends_at`        → AC-9
 - [x] With a Current booking, watch lab access in Authentik → access is removed at `ends_at`, not 30 minutes later        → AC-9
+
+_Reschedule refusal and the screens, emails, and calendar step: verified by the owner in the real app (2026-10-26)._
 
 ## Commands
 - [x] Run the read only pre check from the migration plan on the shared database (the `do` block's `select count(*)`, as a plain select) → 0 pairs        → AC-7
