@@ -57,7 +57,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 19 | Testbed domain & predefined groups | Slice 6 | done |
 | 20 | Nile identity per domain | Slice 6 | done |
 | 21 | Testbed friendly name | Slice 6 | done |
-| 22 | Cleanup gap between labs | Slice 6 | in-progress |
+| 22 | Cleanup gap between labs | Slice 6 | done |
 
 ## Foundations
 
@@ -370,7 +370,7 @@ Builds on feature 19. Today a testbed's Name is the Authentik group name, so lea
 - [x] Review it (fresh model): `/check review testbed friendly name`
 spec [0018](../specs/0018-testbed-friendly-name.md) · code in `server/catalog/testbeds.ts`, `db/migrations/0014_testbed_group_name.sql`
 
-### 22. Cleanup gap between labs · in-progress
+### 22. Cleanup gap between labs · done
 Builds on the booking rule in feature 12. Cleanup automation needs time on a testbed between two labs, so a testbed is held for a set gap (30 minutes) after each booking ends. A lab booked 8 am to 12 pm means the next lab on that testbed cannot start before 12:30 pm. Today two bookings only have to not overlap, so a next lab can start at the exact minute the last one ends.
 **Done when:** the start time picker never offers a start inside the gap, for new bookings and for reschedules; the server and the database both refuse a booking that would start inside the gap, with the same "time no longer available" reply as an overlap; a booking never blocks itself when it is rescheduled; cancelling a booking frees its gap too; bookings already in the system keep working; learner screens and emails that show times are unchanged.
 - [x] Design it (spec): `/architect cleanup gap between labs`

@@ -15,7 +15,7 @@ _Steps derived from spec 0020 acceptance criteria. `/check verify` runs these; `
 - [x] `npm test` against the dev database → all green; the migration and AC-8 tests apply 0016 inside a rolled back transaction        → AC-1, AC-7, AC-8, AC-10
 - [x] `npm run lint && npm run typecheck && npm run format:check` → clean        → all
 - [x] After the deploy: `select pg_get_constraintdef(oid) from pg_constraint where conname = 'bookings_no_overlap'` → the definition holds `'00:30:00'::interval`        → AC-1, AC-7
-- [ ] After the deploy: `scripts/deploy.sh` leaves `migrate` exited 0 and `web` and `worker` up        → AC-7
+- [x] After the deploy: `scripts/deploy.sh` leaves `migrate` exited 0 and `web` and `worker` up        → AC-7
 
 ## Acceptance-criteria coverage
 - AC-1 · covered by the constraint test and the post deploy query · AC-2 · picker and `freeStarts` tests · AC-3 · saga test · AC-4 · reschedule tests · AC-5 · cancel tests and the manual step · AC-6 · `firstFreeTestbed` and `startsFor` tests · AC-7 · migration test and the pre check · AC-8 · millisecond test · AC-9 · the screen, email, and access steps · AC-10 · lead time test
