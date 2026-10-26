@@ -192,4 +192,4 @@ Build approach: Tracer Bullet. Prove one real thread (a Current cancel through t
 - [ ] Owner, when convenient: watch a real `booking.moved` and a 500 retry against the real receiver, and a learner cancel and reschedule in a browser (proven in tests and by diff only)
 - [x] The `CLEANUP` database tests set a real `CLEANUP` key aside inside their rollback, so they pass while a live one exists in the shared database (checked 2026-10-26 with a temporary live key)
 - [ ] If a test button is ever wanted, add a signed `test` event in a new spec
-- [ ] Notes for `server/jobs/AGENTS.md` (the new job kind) once built (via `/sync`)
+- [x] Notes for `server/jobs/AGENTS.md` (the new job kind) once built (via `/sync`, 2026-10-26)
