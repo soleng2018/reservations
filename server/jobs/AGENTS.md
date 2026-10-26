@@ -14,6 +14,8 @@ The database backed job queue (the `jobs` table) and its handlers: booking email
 | `calendar-sync.ts` | `syncBookingEvent` for `calendar_upsert` and `calendar_delete`, `queueCalendarBackfill` (`npm run calendar:backfill`) |
 | `send-welcome.ts` | `runSendWelcome`, the `send_welcome` handler (spec 0014): eligibility under the user's `FOR SHARE` lock, one send per user at a time (`alreadyCovered`), a new link token per email, then the row and the link hash written only after Gmail answers |
 | `welcome-queue.ts` | `enqueueWelcome`, `sendWelcomePayload` (`{ userId, appUrl }`), and the keys `welcomeKey`, `resendKey`, `emailChangeKey`; every caller passes `appUrl()` so the link comes back to the app that queued it |
+| `cleanup-queue.ts` | `queueCleanupNotice` and `cleanupPayload` (spec 0021): one `cleanup_notify` job per booking change, key `cleanup:<booking>:<version>`, payload ids and times only |
+| `cleanup-hook.ts` | `runCleanupHooks` (the worker's own "cleanup hook" step) and `runCleanupNotify`: the signed `POST` (HMAC SHA256 of `<timestamp>.<body>`, 5 second timeout, no redirects), the reply to outcome map, the 30 minute stale cutoff, then the `cleanup_hook.failed` audit row and the guarded `cleanup_failed_at` mark |
 | `../email/compose.ts` | `renderBookingEmail` (React Email to HTML and text), `renderInvite` (the `.ics`), `composeBookingEmail` (the MIME message) |
 | `../email/templates/` | the booked, rescheduled, and cancelled templates and their shared frame, card, button, and footer |
 | `../email/messages.ts` | a learner's email history for the admin console |
@@ -29,6 +31,7 @@ The database backed job queue (the `jobs` table) and its handlers: booking email
 - Test addresses (`dev-`, `hol-test-`, `.test`, `example.com`, and so on, in `lib/email-routing.ts`) go to the key's dev inbox with a `[dev] ` subject prefix, or are suppressed when no dev inbox is set. Real addresses get the ops BCC, except a welcome, which never does (it carries a working set password link).
 - Reads name their columns. Lab links are copied into `email_messages.details` when queued; `messages.ts` never selects `details`. Client OS logins are never in `details`: `runSendEmail` reads them at send time through `clientLoginsForBooking` (`server/catalog/testbeds.ts`) and passes them to the renderer only, so no row keeps a copy.
 - Calendar handlers sync the booking's current row (event id = booking id without dashes), so a late or repeated job still leaves the right event. A calendar failure never touches the email.
+- The cleanup hook (spec 0021) is the one job the `jobs` step never claims: `runJobs` skips `cleanup_notify`, and the separate "cleanup hook" worker step runs before it, so a missing Google key or an email backlog never delays it. A Current booking that is cancelled or moved queues it only when `cleanupHookOn` finds a live `CLEANUP` key. The hook URL and signing secret are read at send time through `cleanupHookConfig` and never reach a log, a payload, `last_error`, or audit metadata.
 - To add a job kind: add it to `JobKind` in `lib/db-enums.ts` (it has a DB CHECK, so a migration too), a handler here, and an entry in `HANDLERS` in `worker/index.ts`.
 
 ## Gotchas
@@ -49,6 +52,7 @@ The database backed job queue (the `jobs` table) and its handlers: booking email
 ## Related specs
 
 - [0013 Email delivery and booking confirmations](../../docs/specs/0013-email-delivery-booking-confirmations/index.md)
+- [0021 Cleanup hook for labs that end early](../../docs/specs/0021-cleanup-hook-early-end/index.md) (the `cleanup_notify` job and its worker step)
 - [0001 Stack](../../docs/specs/0001-stack-architecture/index.md) (the jobs table design)
 - [0003 Authentik sign in and provisioning](../../docs/specs/0003-authentik-sign-in-provisioning/index.md) (the welcome job)
 - [0014 Set password and welcome email](../../docs/specs/0014-set-password-welcome-email/index.md) (the welcome handler and the app's own link)
