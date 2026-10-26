@@ -190,6 +190,6 @@ Build approach: Tracer Bullet. Prove one real thread (a Current cancel through t
 - [ ] Owner: save the `CLEANUP` key in the console after the deploy that carries migration 0017
 - [x] Live worker run, failure audit, and badge verified 2026-10-26 (see `verify.md`); the deploy `sha-2db4b38` carries migration 0017
 - [ ] Owner, when convenient: watch a real `booking.moved` and a 500 retry against the real receiver, and a learner cancel and reschedule in a browser (proven in tests and by diff only)
-- [ ] The `CLEANUP` database tests insert their own key, so they fail while a live `CLEANUP` key exists in the shared database; make them tolerate one before the owner saves the real key
+- [x] The `CLEANUP` database tests set a real `CLEANUP` key aside inside their rollback, so they pass while a live one exists in the shared database (checked 2026-10-26 with a temporary live key)
 - [ ] If a test button is ever wanted, add a signed `test` event in a new spec
 - [ ] Notes for `server/jobs/AGENTS.md` (the new job kind) once built (via `/sync`)

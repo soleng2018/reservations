@@ -693,6 +693,13 @@ describe.skipIf(!hasDb)("API key actions", () => {
   // covers: spec 0021 AC-1, AC-9 (the CLEANUP key through the actions)
   it("adds a CLEANUP key, refuses a second, and keeps its URL and secret on a blank edit", () =>
     as("admin", async (trx) => {
+      // Any real CLEANUP key is set aside, since only one may be live.
+      await trx
+        .updateTable("api_keys")
+        .set({ deleted_at: new Date() })
+        .where("type", "=", "CLEANUP")
+        .where("deleted_at", "is", null)
+        .execute();
       const URL_PATH = `capability${crypto.randomUUID().slice(0, 8)}`;
       const hookUrl = `https://hook.example.test/${URL_PATH}`;
       const SIGNING = `sign-${crypto.randomUUID()}`;
