@@ -399,6 +399,8 @@ After you switch an account that already had bookings:
 
 #### Service account (Google Workspace, for production)
 
+Your Workspace admin can do steps 1 to 3 from [Appendix A](#appendix-a-creating-the-google-service-account-hand-off-for-a-workspace-admin).
+
 1. In a Google Cloud project, enable the **Gmail API** and the **Google Calendar API**. Create a service account, then on its **Keys** tab click *Add key* → *Create new key* → **JSON**. The browser downloads the key once, and Google keeps no copy. Note the service account's client ID. If key creation is blocked, an org admin must allow it for this project (`iam.disableServiceAccountKeyCreation`).
 2. In the Google Admin console (a super admin does this): *Security* → *API controls* → **Domain wide delegation** → add that client ID with exactly these scopes: `https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/calendar.events`.
 3. In the HOL mailbox's Google Calendar (it must be a real Workspace user), create the "HOL bookings" calendar, share it read only with the admins, and copy its Calendar ID.
@@ -670,3 +672,79 @@ docker compose -f docker/compose.yaml exec -T db \
 | `reconciler: testbed … is stale and no usable group has the testbed's name` every tick | The testbed's Authentik group was deleted, renamed, or unmarked. Make or rename a marked group with exactly the testbed's name and the next tick finds it again. If the testbed is no longer used, delete it in the console (see "Testbed groups") |
 | Sign in fails with a redirect URI error | Add the public URL to the provider with `npm run authentik:setup` (step 5) |
 | Guest bookings and adding learners fail, and Authentik answers `403 Token invalid/expired` | The provisioning account or its token is gone or was edited, or the saved token has intent App password instead of API. See "Replacing the provisioning account or token" under step 5 of Getting the webapp running |
+
+## Appendix A: Creating the Google service account (hand-off for a Workspace admin)
+
+Give this appendix to the person who administers your Google Workspace. It makes the service account that [step 8](#service-account-google-workspace-for-production) uses. The app sends booking emails from one mailbox and writes events to one shared calendar, with nobody signing in, using domain wide delegation. You need a Workspace **Super Admin** and a Google Cloud project in the company organization.
+
+Values below use placeholders. Replace `example.com` and the names with your own.
+
+| Item | Example |
+| --- | --- |
+| Cloud project | `hol-reservations` |
+| Service account | `hol-reservations-mailer` |
+| Sender mailbox (the user the app acts as) | `hol-sender@example.com` |
+| Shared calendar | `HOL bookings` |
+
+### A.1 Create the project and enable the APIs
+
+1. In <https://console.cloud.google.com>, create a new project in the company organization and select it.
+2. *APIs & Services* → *Library*: enable the **Gmail API**, then the **Google Calendar API**.
+
+### A.2 Create the service account and its key
+
+1. *IAM & Admin* → *Service Accounts* → **Create service account**. Name it `hol-reservations-mailer`.
+2. **Grant no IAM role** and skip "Grant users access". The account needs no Google Cloud permissions, because delegation is granted in the Admin console.
+3. Open the account and copy its **Unique ID** (the client ID, about 21 digits).
+4. *Keys* → *Add key* → *Create new key* → **JSON**. The file downloads once. Treat it like a password.
+5. If key creation is blocked, the organization policy `iam.disableServiceAccountKeyCreation` is on. A Cloud Organization Policy Administrator must switch it off for this project.
+
+### A.3 Authorize domain wide delegation (Super Admin)
+
+1. In <https://admin.google.com>: *Security* → *Access and data control* → *API controls* → **Manage Domain Wide Delegation** → **Add new**.
+2. Client ID: the Unique ID from A.2.
+3. OAuth scopes, exactly these two and nothing else:
+
+   ```
+   https://www.googleapis.com/auth/gmail.send,https://www.googleapis.com/auth/calendar.events
+   ```
+
+4. **Authorize**. It can take a few minutes, occasionally up to 24 hours, to take effect.
+
+### A.4 Prepare the sender mailbox and calendar
+
+1. Use a **dedicated, non-admin** Workspace user with a Gmail license, for example `hol-sender@example.com`. No admin roles, not a person's own mailbox, no delegates, no forwarding, a strong unique password, and 2-Step Verification.
+2. As that user, create a calendar named `HOL bookings` (*Other calendars* → *Create new calendar*). The user must own it.
+3. *Settings and sharing* → *Integrate calendar*: copy the **Calendar ID** (it ends in `@group.calendar.google.com`).
+4. Do not share the calendar publicly or with the whole organization. Share it only with the named people who need to see bookings, view only.
+
+### A.5 What to hand back
+
+Send these over a secure channel (the key not by plain email):
+
+1. The JSON key file.
+2. The sender mailbox address.
+3. The Calendar ID.
+
+Then follow [step 8](#service-account-google-workspace-for-production) to add the `GOOGLE` API key.
+
+### A.6 Least-privilege checklist
+
+- **Exactly two scopes** (A.3). Never use `mail.google.com`, `gmail.modify`, `gmail.readonly`, `calendar`, or any Drive, Directory, or Admin scope. `gmail.send` can only send; it cannot read, search, or delete mail.
+- **No IAM roles** on the service account, in the project or the organization.
+- **A dedicated Cloud project** that holds nothing else, with only the Gmail and Calendar APIs enabled.
+- **One key only.** Create a single JSON key, hand it over once, and delete every local copy. Set a key expiry if your policy supports it, and review the key yearly.
+- **No memberships.** Do not add the service account to any Google Group, shared drive, or other Workspace resource.
+- **Delegation is per domain, not per user.** Google cannot limit it to one mailbox, so the two scopes technically apply to every user in the domain. This is why the scope list must stay minimal and the key guarded. The app only ever acts as the sender mailbox.
+- **Monitoring (recommended).** In the Admin console, *Reporting* → *Audit and investigation* → *Gmail log events* and *Calendar log events*, add an alert for sends from any account other than the sender mailbox.
+
+To revoke access, delete the delegation entry (A.3) or delete the key (A.2).
+
+### A.7 Troubleshooting
+
+| Error | Usual cause |
+| --- | --- |
+| `unauthorized_client` | Delegation entry missing, wrong Client ID, or scopes not exactly as listed. Wait a few minutes and recheck A.3 |
+| `invalid_grant` | The sender mailbox doesn't exist, is suspended, or has no Gmail license |
+| Key creation disabled | An organization policy blocks keys (A.2, step 5) |
+| 403 on the calendar | The sender mailbox lacks edit rights on `HOL bookings` (A.4, step 2) |
