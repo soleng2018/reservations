@@ -68,7 +68,7 @@ describe.skipIf(!hasDb)("availability (AC-3)", () => {
       const type = await makeType(trx, { duration_value: 2 });
       const testbed = await makeTestbed(trx, type.id);
       const first = await firstStart(trx);
-      await book(trx, testbed, first + 2 * HOUR, first + 4 * HOUR);
+      await book(trx, testbed, first + 2.5 * HOUR, first + 4.5 * HOUR);
 
       const starts = (await startsFor(trx, type.id)).starts.map((d) =>
         d.getTime(),
@@ -76,7 +76,8 @@ describe.skipIf(!hasDb)("availability (AC-3)", () => {
       expect(starts[0]).toBe(first);
       expect(starts).not.toContain(first + HOUR);
       expect(starts).not.toContain(first + 3 * HOUR);
-      expect(starts).toContain(first + 4 * HOUR);
+      expect(starts).not.toContain(first + 4.5 * HOUR); // inside the gap
+      expect(starts).toContain(first + 5 * HOUR);
 
       // A second testbed frees the busy window again.
       await makeTestbed(trx, type.id);
@@ -188,15 +189,15 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
       ).toBeNull();
     }));
 
-  // Bookings are [start, end): one ending at the start, or starting at the
-  // end, leaves the testbed free, and so does a cancelled one.
-  it("is not blocked by back to back or cancelled bookings", () =>
+  // Spec 0020: a booking one gap away on either side leaves the testbed free,
+  // and so does a cancelled one; one ending at the start does not.
+  it("is not blocked by bookings a gap away or cancelled ones", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx, { duration_value: 2 });
       const testbed = await makeTestbed(trx, type.id, { name: "only bench" });
       const start = (await firstStart(trx)) + 4 * HOUR;
-      await book(trx, testbed, start - 2 * HOUR, start);
-      await book(trx, testbed, start + 2 * HOUR, start + 4 * HOUR);
+      await book(trx, testbed, start - 2.5 * HOUR, start - 0.5 * HOUR);
+      await book(trx, testbed, start + 2.5 * HOUR, start + 4.5 * HOUR);
       const canceller = await makeUser(trx);
       await trx
         .insertInto("bookings")
@@ -215,6 +216,10 @@ describe.skipIf(!hasDb)("firstFreeTestbed (AC-7)", () => {
       expect(
         (await firstFreeTestbed(trx, type.id, new Date(start)))?.testbedName,
       ).toBe("only bench");
+      // No gap before the start: the testbed is held (AC-2, AC-6).
+      expect(
+        await firstFreeTestbed(trx, type.id, new Date(start + 4.5 * HOUR)),
+      ).toBeNull();
     }));
 
   // The preview must never name a testbed the saga would not assign.

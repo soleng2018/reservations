@@ -1,4 +1,6 @@
 import "server-only";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
 import { db } from "@/server/db";
 import { hasDbEnv } from "@/server/env";
@@ -71,6 +73,29 @@ export async function attempt(
     await sql`rollback to savepoint attempt`.execute(trx);
     return e;
   }
+}
+
+// Spec 0020: the bookings_no_overlap rule with the cleanup gap. Runs the real
+// migration inside the test transaction (Postgres DDL is transactional), so
+// the shared database keeps its own constraint and the test rolls it back.
+export async function applyBookingGapMigration(trx: Kysely<DB>): Promise<void> {
+  const file = path.join(
+    process.cwd(),
+    "db/migrations/0016_booking_cleanup_gap.sql",
+  );
+  await sql.raw(await readFile(file, "utf8")).execute(trx);
+}
+
+// The rule before spec 0020: no gap. For a test that needs the old state,
+// whatever the database has applied.
+export async function restoreOldOverlapRule(trx: Kysely<DB>): Promise<void> {
+  await sql`alter table hol_app.bookings drop constraint bookings_no_overlap`.execute(
+    trx,
+  );
+  await sql`alter table hol_app.bookings add constraint bookings_no_overlap exclude using gist (
+    testbed_id with =,
+    tstzrange(starts_at, ends_at, '[)') with &&
+  ) where (status in ('provisioning', 'confirmed'))`.execute(trx);
 }
 
 const unique = () => crypto.randomUUID().slice(0, 8);

@@ -9,8 +9,10 @@ import {
   lockBookableTestbed,
   rescheduleBooking,
 } from "./bookings";
+import { GAP_MS } from "@/lib/slots";
 import { mapConstraintError } from "./constraint-errors";
 import {
+  applyBookingGapMigration,
   attempt,
   hasDb,
   inRollback,
@@ -58,7 +60,7 @@ const mapped = (e: unknown) => {
 describe.skipIf(!hasDb)("booking data rules", () => {
   afterAll(() => db().destroy());
 
-  it("rejects overlapping live bookings on a testbed, allows back to back (AC-1)", () =>
+  it("rejects overlapping live bookings on a testbed (AC-1)", () =>
     inRollback(async (trx) => {
       const w = await world(trx);
       const other = await makeUser(trx);
@@ -74,7 +76,76 @@ describe.skipIf(!hasDb)("booking data rules", () => {
         }),
       );
       expect(mapped(clash)).toBe("overlap");
-      const backToBack = await attempt(trx, () =>
+    }));
+
+  // Spec 0020 AC-1: a live booking holds its testbed 30 minutes past ends_at,
+  // and the gap counts on both sides.
+  it("holds the cleanup gap on both sides of a live booking (spec 0020 AC-1)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await world(trx);
+      // One live booking per learner, so each try gets its own.
+      const insertOther = (from: number, to: number) =>
+        attempt(trx, async () =>
+          insertBooking(trx, {
+            user_id: (await makeUser(trx)).id,
+            testbed_id: w.testbed.id,
+            testbed_type_id: w.type.id,
+            starts_at: slot(from),
+            ends_at: slot(to),
+            status: "confirmed",
+          }),
+        );
+      await w.book(24, 28);
+      // Before: ending at the start, or inside the gap, is refused.
+      expect(mapped(await insertOther(20, 24))).toBe("overlap");
+      expect(mapped(await insertOther(20, 24.5))).toBe("overlap");
+      expect(await insertOther(20, 23.5)).toBeUndefined(); // exactly the gap
+      // After: starting at the end is refused, a gap later is allowed.
+      expect(mapped(await insertOther(28, 30))).toBe("overlap");
+      expect(await insertOther(28.5, 30.5)).toBeUndefined();
+    }));
+
+  // Spec 0020 AC-8: GAP_MS and the constraint's interval agree to the
+  // millisecond. Only starts_at sits on the half hour grid, so the earlier
+  // booking gets an off grid ends_at.
+  it("agrees with GAP_MS to the millisecond (spec 0020 AC-8)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await world(trx);
+      const other = await makeUser(trx);
+      const start = slot(26);
+      const earlier = await w.book(22, 24, {
+        ends_at: new Date(start.getTime() - GAP_MS + 1),
+      });
+      const later = () =>
+        insertBooking(trx, {
+          user_id: other.id,
+          testbed_id: w.testbed.id,
+          testbed_type_id: w.type.id,
+          starts_at: start,
+          ends_at: slot(28),
+          status: "confirmed",
+        });
+      // earlier.ends_at + GAP_MS - 1 ms is the start of the later booking
+      expect(mapped(await attempt(trx, later))).toBe("overlap");
+      await trx
+        .updateTable("bookings")
+        .set({ ends_at: new Date(start.getTime() - GAP_MS) })
+        .where("id", "=", earlier.id)
+        .execute();
+      // earlier.ends_at + GAP_MS is the start of the later booking
+      expect(await attempt(trx, later)).toBeUndefined();
+    }));
+
+  // Spec 0020 AC-5: a cancelled booking holds neither its range nor its gap.
+  it("frees the gap when a booking is cancelled (spec 0020 AC-5)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await world(trx);
+      const other = await makeUser(trx);
+      const first = await w.book(24, 26);
+      const next = () =>
         insertBooking(trx, {
           user_id: other.id,
           testbed_id: w.testbed.id,
@@ -82,9 +153,19 @@ describe.skipIf(!hasDb)("booking data rules", () => {
           starts_at: slot(26),
           ends_at: slot(28),
           status: "confirmed",
-        }),
-      );
-      expect(backToBack).toBeUndefined();
+        });
+      expect(mapped(await attempt(trx, next))).toBe("overlap");
+      await trx
+        .updateTable("bookings")
+        .set({
+          status: "cancelled",
+          cancelled_at: new Date(),
+          cancel_source: "learner",
+          cancelled_by_user_id: w.user.id,
+        })
+        .where("id", "=", first.id)
+        .execute();
+      expect(await attempt(trx, next)).toBeUndefined();
     }));
 
   // Never commits (spec 0002): a second connection cannot see the first one's
@@ -109,7 +190,7 @@ describe.skipIf(!hasDb)("booking data rules", () => {
           });
         }).catch((e: unknown) => (e as { code?: string }).code);
       expect(await fromB(25, 27)).toBe("55P03"); // lock_not_available: waited on A
-      expect(await fromB(26, 28)).toBe("23503"); // no wait; only B's FK fails
+      expect(await fromB(27, 29)).toBe("23503"); // no wait; only B's FK fails
     }));
 
   it("allows one live booking per user, completing ended ones first (AC-2)", () =>

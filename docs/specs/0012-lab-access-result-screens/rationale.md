@@ -139,7 +139,7 @@ Cloudflare's documentation says Access "does not control the length of an active
 Forces:
 - The VMs sit behind one shared Cloudflare tunnel on the VM server, which the owner keeps. Anything that restarts or cleans up that tunnel cuts every VM at once.
 - The app runs on the same server today, but may later run in the cloud with no network path to the VMs.
-- Back to back bookings on one testbed are allowed (spec 0002 AC-1), and QEMU VNC shares one screen among all viewers. An open stream that outlives a booking can watch and control the next learner's desktop.
+- Bookings on one testbed need only a 30 minute gap between them (spec 0020), which does not stop a stream, and QEMU VNC shares one screen among all viewers. An open stream that outlives a booking can watch and control the next learner's desktop.
 
 ### Options considered
 

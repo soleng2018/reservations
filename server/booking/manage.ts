@@ -10,7 +10,7 @@ import {
 import { durationMs } from "@/lib/duration";
 import { preferFirst } from "@/lib/manage-reservations";
 import { err, type Result } from "@/lib/result";
-import { HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
+import { GAP_MS, HORIZON_MS, isOfferableStart, LEAD_MS } from "@/lib/slots";
 import { audit } from "@/server/audit";
 import type { CoreApi } from "@/server/authentik/client";
 import {
@@ -418,8 +418,8 @@ export async function rescheduleOwnBooking(
             .where("testbed_id", "=", candidate.id)
             .where("id", "!=", input.bookingId)
             .where("status", "in", LIVE_BOOKING_STATUSES)
-            .where("starts_at", "<", endsAt)
-            .where("ends_at", ">", input.startsAt)
+            .where("starts_at", "<", new Date(endsAt.getTime() + GAP_MS))
+            .where("ends_at", ">", new Date(input.startsAt.getTime() - GAP_MS))
             .executeTakeFirst();
           if (clash) return assign(i + 1, true);
 

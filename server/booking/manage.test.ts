@@ -8,6 +8,7 @@ import {
 import { rescheduleBooking } from "@/server/db/bookings";
 import { mapConstraintError } from "@/server/db/constraint-errors";
 import {
+  applyBookingGapMigration,
   asConn,
   attempt,
   hasDb,
@@ -307,6 +308,38 @@ describe.skipIf(!hasDb)("cancelOwnBooking", () => {
       }),
   );
 
+  // covers: spec 0020 AC-5. An early cancel frees the testbed and its gap.
+  it("frees the testbed and its gap at once for a Current booking (spec 0020 AC-5)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await world(trx);
+      const current = await w.book(-1, 2);
+      const next = (hours: number) =>
+        attempt(trx, async () =>
+          insertBooking(trx, {
+            user_id: (await makeUser(trx)).id,
+            testbed_id: w.testbed.id,
+            testbed_type_id: w.type.id,
+            starts_at: slot(hours),
+            ends_at: slot(hours + 2),
+            status: "confirmed",
+          }),
+        );
+      expect(mapConstraintError(await next(2))).toEqual({
+        ok: false,
+        error: "overlap",
+      });
+      expect(
+        await cancelOwnBooking(
+          asConn(trx),
+          w.user.id,
+          current.id,
+          current.version,
+        ),
+      ).toEqual({ ok: true, value: undefined });
+      expect(await next(2)).toBeUndefined();
+    }));
+
   it("returns stale and writes nothing for a stale version, a Past booking, or another learner's id", () =>
     inRollback(async (trx) => {
       const w = await world(trx);
@@ -461,6 +494,35 @@ describe.skipIf(!hasDb)("rescheduleOwnBooking", () => {
       const w = await twoBeds(trx);
       const r = await w.move(slot(49));
       expect(r.ok && r.value.testbedName).toBe(w.second.name);
+    }));
+
+  // covers: spec 0020 AC-4. The clash query counts a live booking within the
+  // gap on either side, so this holds before the constraint changes too.
+  it("gives slot_taken for a start inside another learner's gap, on either side", () =>
+    inRollback(async (trx) => {
+      const w = await twoBeds(trx);
+      await w.occupy(w.first.id, 72, 74);
+      await w.occupy(w.second.id, 72, 74);
+      expect(await w.move(slot(74))).toEqual(refused("slot_taken")); // after
+      expect(await w.move(slot(70))).toEqual(refused("slot_taken")); // 70 to 72
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        starts_at: w.booking.starts_at,
+        version: w.booking.version,
+      });
+      const r = await w.move(slot(74.5));
+      expect(r.ok && r.value.startsAt).toEqual(slot(74.5));
+    }));
+
+  it("moves next to its own old slot, which the gap never counts (spec 0020 AC-4)", () =>
+    inRollback(async (trx) => {
+      await applyBookingGapMigration(trx);
+      const w = await twoBeds(trx); // 48 to 50 on the second bed
+      const r = await w.move(slot(50));
+      expect(r.ok && r.value.testbedName).toBe(w.second.name);
+      expect(await bookingRow(trx, w.booking.id)).toMatchObject({
+        starts_at: slot(50),
+        testbed_id: w.second.id,
+      });
     }));
 
   it("gives slot_taken and changes nothing when every testbed is busy", () =>
