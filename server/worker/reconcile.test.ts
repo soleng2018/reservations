@@ -118,6 +118,23 @@ describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {
       ]);
     }));
 
+  // covers: spec 0020 AC-9. The gap holds the testbed, never the access: an
+  // ended booking still inside its 30 minute gap loses its group at once.
+  it("removes access at ends_at, not after the cleanup gap (spec 0020 AC-9)", () =>
+    inRollback(async (trx) => {
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      await bookingOn(trx, testbed.id, type.id, PK + 1, -2, -0.1);
+      const ak = fakeAuthentik([fakeLearner(PK + 1, { groups: [pk] })], {
+        groups: [markedGroup(pk, testbed.group_name)],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users[0]?.groups).toEqual([]);
+    }));
+
   it("empties a soft deleted testbed's group of tagged learners", () =>
     inRollback(async (trx) => {
       const type = await makeType(trx);
