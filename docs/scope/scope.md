@@ -393,7 +393,7 @@ Follow up from spec 0020. A Current booking that is cancelled (by anyone) or mov
   - [x] The thread: queue on a Current cancel, the handler, and the separate "cleanup hook" worker step (AC-2, 4, 5, 8, 10, 13)
   - [x] The move path and the 30 minute stale cutoff (AC-3, 12)
   - [x] Outcomes, failure audit, and the guarded badge (AC-6, 7), then tests and scans (AC-9, 11)
-- [ ] Verify it: `/check verify cleanup hook for labs that end early` (console and tests verified 2026-10-26; the live worker run, the Needs attention badge, and the learner screens are owed after the deploy, see `verify.md`)
+- [x] Verify it: `/check verify cleanup hook for labs that end early` (2026-10-26: console, a live worker run against a signed https receiver with a 200 and a 404, the audit row, and the Needs attention badge; the 500 retry and the move event are proven in tests only, and the learner screens by diff and tests, see `verify.md`)
 - [x] Test it: `/test cleanup hook for labs that end early`
 spec [0021](../specs/0021-cleanup-hook-early-end/index.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
 

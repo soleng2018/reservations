@@ -16,9 +16,9 @@ Admin console, API Keys page (dev server on the LAN IP, observed by the owner):
 - [x] The list row shows type `CLEANUP`, the host only with the path hidden (`https://example.invalid/…`), and a masked key value   → AC-1, AC-9
 - [x] Add a second `CLEANUP` key → "Only one Cleanup key can exist. Edit the existing one."   → AC-1
 - [x] Edit the key → Base URL is empty with only the host in its placeholder, and the secret box says "Leave blank to keep the current key."   → AC-1, AC-9
-- [ ] Delete the test key when done (the owner removes it, then confirm the row is gone)   → AC-1
-- [ ] After a real hook failure, the key row shows a "Needs attention" badge and the failed call line   → AC-7
-- [ ] Sign in as a learner, cancel and reschedule a booking → the screens and results look the same as before this spec   → AC-11
+- [x] Delete the test key when done → the key is gone (live database holds no live `CLEANUP` key)   → AC-1
+- [x] After a real hook failure (404 from a live receiver), the key row shows a "Needs attention" badge, the host only, and the failed call line (owner's screenshot, 2026-10-26)   → AC-7, AC-9
+- [ ] Sign in as a learner in a browser, cancel and reschedule a booking → the screens and results look the same as before this spec. Not done in a browser (no learner in Authentik). Checked instead: the branch changes no learner page or action, only `server/db/bookings.ts` with the same result types, and the 171 learner booking tests pass   → AC-11
 
 ## Commands
 
@@ -27,10 +27,11 @@ Admin console, API Keys page (dev server on the LAN IP, observed by the owner):
 - [x] `npx vitest run` → 126 files, 1980 tests, all pass against the real database (cancel and reschedule queueing, signed POST with a real local receiver, retries, stale cutoff, failure audit and guarded badge mark, jobs step never claims the hook)   → AC-2 to AC-8, AC-10, AC-12, AC-13
 - [x] `npx tsc --noEmit` and `npm run lint` → no errors   → all
 - [x] `tests/secret-column-scan.test.ts` and `tests/cleanup-hook-scan.test.ts` pass → the URL and secret stay out of logs, payloads, and audit   → AC-9
-- [ ] Save a `CLEANUP` key pointing at a local receiver, run `npm run worker`, cancel a Current booking on a test testbed → one signed POST arrives with `X-HOL-Event`, `X-HOL-Delivery`, `X-HOL-Timestamp`, and a signature that verifies   → AC-5, AC-13
-- [ ] Reply 500 from the receiver → the job retries; reply 404 → one `cleanup_hook.failed` audit row and the badge   → AC-6, AC-7
-- [ ] Reschedule a Current booking → one `booking.moved` POST naming the old testbed and times   → AC-3
+- [x] Save a `CLEANUP` key pointing at a local https receiver, run the real `npm run worker`, cancel two Current bookings on a test testbed → two `booking.ended_early` jobs queued with no URL or secret in the payload, then two signed POSTs arrive (`application/json`, `X-HOL-Event`, `X-HOL-Delivery`, `X-HOL-Timestamp`, signature verifies, no personal data in the body)   → AC-2, AC-5, AC-9, AC-13 (live, 2026-10-26)
+- [x] Receiver replies 200 → the job is `done`; replies 404 → the job is `failed` after one attempt, one `cleanup_hook.failed` audit row (system actor, target the booking, `{event, reason: status_4xx}`), and the key's Needs attention flag is set   → AC-6, AC-7 (live)
+- [ ] Receiver replies 500 → the job retries with backoff. Proven in the tests only, not against a live receiver   → AC-6
+- [ ] Reschedule a Current booking → one `booking.moved` POST naming the old testbed and times. Proven in the tests only, not live   → AC-3
 
 ## Acceptance-criteria coverage
 
-- AC-1 console checks met · AC-2 to AC-8 met in tests, live worker run owed · AC-9 met (scans and masked UI) · AC-10 met in tests · AC-11 owed (learner screens not watched) · AC-12 met in tests · AC-13 met in tests, live worker run owed
+- AC-1 met (console) · AC-2, AC-5, AC-13 met live and in tests · AC-3 and the 500 retry of AC-6 met in tests only · AC-4, AC-8, AC-10, AC-12 met in tests · AC-6 (200 and 404) and AC-7 met live · AC-9 met (scans, masked UI, clean payloads) · AC-11 met by diff and tests, no browser look
