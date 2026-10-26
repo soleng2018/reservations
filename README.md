@@ -6,50 +6,77 @@ Built with Next.js 16 (App Router), React 19, Kysely on its own Postgres contain
 
 ## Getting the webapp running
 
-Read this before you start: **everything here is dev, and Authentik is shared.** A worker you start on your machine changes real Authentik group membership, and test users you create there are real. Work through the steps in order.
+Read this before you start: **everything here is dev, and Authentik is shared.** A worker you start on your machine changes real Authentik group membership, and test users you create there are real.
+
+Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10.
+
+Placeholders in `<angle brackets>` are values only you know. Write them as plain text, without the brackets.
 
 ### 1. What you need
 
 | Need | Why |
 | --- | --- |
 | Node 24 or newer, and npm | `package.json` requires Node 24 or newer |
-| Docker with Compose v2 | The app's Postgres runs as the `db` container from this repo's `docker/compose.yaml` |
-| An Authentik admin account and its master token | One time setup of the sign in app; the app never uses the master token itself |
+| Docker with Compose v2 | The app's Postgres runs as the `db` container from `docker/compose.yaml` |
+| An Authentik admin account and its master token | One time setup of the sign in apps; the app never uses the master token itself |
 | A Cloudflare account with Zero Trust (team domain `<team>.cloudflareaccess.com`) | Turnstile on public forms, and lab VM access |
 | Optional: a Google account for the HOL mailbox and calendar | Booking emails and the shared "HOL bookings" calendar |
-| Docker, Traefik, and a Cloudflare Tunnel on the host (only to run the containers) | The app runs as containers; see [Running with Docker](#running-with-docker) |
+| Docker, Traefik, and a Cloudflare Tunnel on the host (only to run the containers) | See [Running with Docker](#running-with-docker) |
 
-Keep secrets in `~/secrets/`, one value per file, with mode `600`. The app reads each secret from the file that a `*_FILE` variable points to:
+1. Make the secrets folder. Keep every secret in `~/secrets/`, one value per file, with mode `600`. The app reads each secret from the file that a `*_FILE` variable points to. Run this in the terminal you will use for all the steps, because `umask` applies only to that shell:
 
-```bash
-mkdir -p ~/secrets && chmod 700 ~/secrets
-umask 077   # new files in this shell are created readable by you only
-```
+   ```bash
+   mkdir -p ~/secrets && chmod 700 ~/secrets
+   umask 077
+   ```
+
+2. Save your Authentik master token (the admin account's API token, from **Directory → Tokens and App passwords**). Skip this if `~/secrets/authentik_master_token` already exists and holds a working token. The command asks for the token at a hidden prompt, so it needs a real terminal:
+
+   ```bash
+   read -rs TOKEN && printf '%s' "$TOKEN" > ~/secrets/authentik_master_token && unset TOKEN
+   ```
 
 ### 2. Install
 
-```bash
-git clone git@github.com:soleng2018/reservations.git
-cd reservations
-npm install
-cp .env.example .env.local
-```
+1. Clone and install (skip the clone if you already have the repo):
 
-`.env.local` is read by `npm run dev`, `db:migrate`, `db:codegen`, `worker`, and Vitest. Never commit it.
+   ```bash
+   git clone git@github.com:soleng2018/reservations.git
+   cd reservations
+   npm install
+   ```
+
+2. Make your env file (skip it if `.env.local` already exists):
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+`.env.local` is read by `npm run dev`, `db:migrate`, `db:codegen`, `worker`, and Vitest. Never commit it. You fill it in at step 6.
 
 ### 3. Database
 
-The database is a pinned Postgres container (`db` in `docker/compose.yaml`), so a fresh clone needs no manual setup:
+The database is a pinned Postgres container (`db` in `docker/compose.yaml`), so a fresh clone needs no manual setup.
 
-```bash
-npm run db:up        # makes the two password files if missing, starts db, waits until healthy, runs db/bootstrap.sql
-```
+1. Start it:
 
-`db:up` keeps the password files in `SECRETS_DIR` (read from `docker/.env` if it exists, else `.secrets/` in the repo, which is gitignored). They are `postgres_password` (the container's superuser, used only by the container and the bootstrap) and `hol_app_password` (the app). Each is 32 random bytes as hex, mode `600`.
+   ```bash
+   npm run db:up
+   ```
 
-In `.env.local`, set `DATABASE_PASSWORD_FILE` to the `hol_app_password` file, and `DATABASE_NAME=reservations`. The other `DATABASE_*` defaults in `.env.example` match the container. The port is published on `127.0.0.1` only.
+   This makes the password files `postgres_password` (the container's superuser, used only by the container and the bootstrap) and `hol_app_password` (the app) if they are missing. Each is 32 random bytes as hex, mode `600`. It starts `db`, waits until it is healthy, and runs `db/bootstrap.sql`. The files go in `SECRETS_DIR` (read from `docker/.env` if it exists, else `.secrets/` in the repo, which is gitignored). The output should say `created .../postgres_password` and `created .../hol_app_password`.
 
-Useful commands:
+2. In `.env.local`, set `DATABASE_PASSWORD_FILE` to the full path of the `hol_app_password` file, and `DATABASE_NAME=reservations`. The other `DATABASE_*` defaults in `.env.example` match the container. The port is published on `127.0.0.1` only.
+
+3. Apply the migrations:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+   Running it again is safe, because migrations already applied are skipped. The Docker deploy runs it for you too.
+
+Other database commands:
 
 | Command | What it does |
 | --- | --- |
@@ -59,56 +86,93 @@ Useful commands:
 
 A second clone on the same host sets `COMPOSE_PROJECT_NAME` and its own `DB_HOST_PORT` (the host side of the port; `DATABASE_PORT` in `.env.local` must match it).
 
-Then apply the migrations:
-
-```bash
-npm run db:migrate
-```
-
-Running it again is safe, because migrations already applied are skipped. The database is probably up to date already.
-
 ### 4. App secrets
 
-**Session secret** (at least 32 characters):
+1. Make the session secret (at least 32 characters):
 
-```bash
-openssl rand -base64 48 > ~/secrets/auth_secret
-```
+   ```bash
+   openssl rand -base64 48 > ~/secrets/auth_secret
+   ```
 
-If one already exists, copy that file instead, because a new secret signs everyone out.
+   If one already exists, keep it, because a new secret signs everyone out.
 
-**Encryption keyring** (encrypts the API key secrets stored in the database):
+2. Make the encryption keyring (it encrypts the API key secrets stored in the database):
 
-```bash
-npm run --silent secrets:keygen > ~/secrets/hol_encryption_keys.json
-```
+   ```bash
+   npm run --silent secrets:keygen > ~/secrets/hol_encryption_keys.json
+   ```
 
-The JSON goes to the file, and the `APP_ENCRYPTION_ACTIVE_KEY_ID=...` line is printed to your terminal; copy it into `.env.local`. Back the file up.
+   The JSON goes to the file. The line `APP_ENCRYPTION_ACTIVE_KEY_ID=...` is printed to your terminal.
 
-> If a keyring already exists (the web, worker, and dev server read one file), **copy it, don't generate a new one.** Secrets saved under a key id that's missing from the file can't be decrypted. To rotate a key, merge the new entry into the existing JSON and never remove an old id.
+3. Copy that `APP_ENCRYPTION_ACTIVE_KEY_ID=...` line into `.env.local`, and later into `docker/.env` (step 9).
+4. Back up `~/secrets/hol_encryption_keys.json`.
+
+> If a keyring already exists (the web, worker, and dev server read one file), **keep it, don't generate a new one.** Secrets saved under a key id that's missing from the file can't be decrypted. To rotate a key, merge the new entry into the existing JSON and never remove an old id.
 
 Without the keyring the app still runs, but the API Keys page shows "not configured" and the worker can't decrypt the Cloudflare key.
 
+A new keyring cannot open secrets saved under the old one. After you delete the database or the keyring, re-add every API key in step 8. Keep the source files (the Cloudflare token, the Google OAuth client file, the Cloudflare account ID) in `~/secrets`, because the console never shows a saved key again.
+
 ### 5. Authentik
 
-`npm run authentik:setup` creates the `hol` sign in app, the `hol-labs` app for lab VMs, the `hol-admins` group, and the `hol-webapp-provisioning` account. It never changes Authentik objects that already exist. Run it without `--apply` first for a dry run that writes nothing:
+`npm run authentik:setup` creates the `hol` sign in app, the `hol-labs` app for lab VMs, the `hol-admins` group, and the `hol-webapp-provisioning` account. It never touches your testbed groups. It creates objects, and the only existing object it changes is the default brand's recovery flow (see item 3).
 
-```bash
-AUTHENTIK_URL=https://<your authentik> \
-AUTHENTIK_MASTER_TOKEN_FILE=~/secrets/authentik_master_token \
-APP_URLS=https://<prod host>,http://10.1.255.18:3000 \
-CLOUDFLARE_TEAM_DOMAIN=<team>.cloudflareaccess.com \
-npm run authentik:setup
-```
+1. Set the values the script needs (replace each placeholder: your Authentik address, every URL learners and admins open the app at, comma separated, and your Cloudflare team domain):
 
-When the plan looks right, run it again with `-- --apply --secret-out ~/secrets/authentik_client_secret --labs-secret-out ~/secrets/hol_labs_client_secret`. The script then:
+   ```bash
+   export AUTHENTIK_URL=https://<your authentik>
+   export AUTHENTIK_MASTER_TOKEN_FILE=$HOME/secrets/authentik_master_token
+   export APP_URLS=https://<prod host>,http://10.1.255.18:3000
+   export CLOUDFLARE_TEAM_DOMAIN=<team>.cloudflareaccess.com
+   ```
 
-- prints `AUTHENTIK_CLIENT_ID=...`, which you copy into `.env.local`;
-- writes the client secret to the file you named, which `AUTHENTIK_CLIENT_SECRET_FILE` points to;
-- prints the HOL Labs client id, which goes into Cloudflare's "Reservations HOL Labs" login method;
-- prints the steps for the provisioning token. Create that token in Authentik (Directory → Tokens and App passwords, user `hol-webapp-provisioning`, intent **API**, one year expiry), save it to `~/secrets/authentik_provisioning_token`, and point `AUTHENTIK_PROVISIONING_TOKEN_FILE` at it. The App password token Authentik makes with the account won't work (see "Replacing the provisioning account or token" below).
+2. Do a dry run. It writes nothing and prints the changes it would make:
 
-Add every admin to the `hol-admins` group and turn on MFA for them. Anyone signed in who isn't in that group is a learner.
+   ```bash
+   npm run authentik:setup
+   ```
+
+3. Read the plan. On a fresh Authentik (nothing from a previous install) every line says `would create`, and the dry run stops at `Learner isolation` with `missing in Authentik: provider Provider for HOL`. That is expected, because the dry run cannot plan the isolation policy until the provider exists. The plan also says `would set brand authentik-default recovery flow to hol-recovery`: that is the one existing Authentik object the script changes (the default brand's "forgot password" flow), and it is what makes the set password links work. On a rerun you should see only `ok` lines, including `ok      a sign in reaches the login flow` under "Sign in check". That check asks Authentik to start a sign in for the HOL app and changes nothing. If it prints `FAILED`, the script exits with an error, and sign in at the app will not work until it is fixed. Then apply, writing both client secrets to files:
+
+   ```bash
+   npm run authentik:setup -- --apply \
+     --secret-out ~/secrets/authentik_client_secret \
+     --labs-secret-out ~/secrets/hol_labs_client_secret
+   ```
+
+   The run can print `warn provider ... isolation does not cover it` for other apps' providers (for example the Nile Portal ones). That is only a notice; nothing is changed for them. The script prints `AUTHENTIK_CLIENT_ID=...` and the HOL Labs client id, and writes the two secret files. The HOL Labs secret is written only when this run made the HOL Labs provider; on a rerun the old file stays as it is. Without `--secret-out`, the secret is printed on the screen instead.
+
+4. Copy the printed `AUTHENTIK_CLIENT_ID=...` into `.env.local`, and later into `docker/.env` (step 9).
+5. Note the printed `HOL Labs client id`. You paste it into Cloudflare in the next item.
+6. In Cloudflare Zero Trust, open **Settings → Authentication → Login methods**. Edit the OIDC method that signs lab VM learners in through Authentik (here it is named "AWS Authentik IDP"), and set its **App ID** (Cloudflare's name for the client id) to the HOL Labs client id from item 5. Set its **Client secret** to the contents of the file:
+
+   ```bash
+   cat ~/secrets/hol_labs_client_secret
+   ```
+
+   Until you do, lab VM sign in fails. A login method that uses another Authentik app (here, "Nile Single Sign-On", which is `cloudflare-integration`) is not part of this app. Leave it alone.
+
+7. Make the provisioning token. The script never creates it, so this is always by hand:
+   1. In Authentik, open **Directory → Tokens and App passwords → Create**.
+   2. Set **Identifier** (required) to `hol-webapp-provisioning-<yyyymmdd>` with today's date, **User** to `hol-webapp-provisioning` (not yourself), **Intent** to **API**, and **Expiry** about a year out.
+   3. Save, then copy the key with the copy icon on its row. The row's Intent column must read "API Access".
+   4. Save it to a file:
+
+      ```bash
+      umask 077 && read -rs TOKEN && printf '%s' "$TOKEN" > ~/secrets/authentik_provisioning_token && unset TOKEN
+      chmod 600 ~/secrets/authentik_provisioning_token
+      ```
+
+   5. Check it. It must print `"username":"hol-webapp-provisioning"`:
+
+      ```bash
+      curl -s -H "Authorization: Bearer $(cat ~/secrets/authentik_provisioning_token)" \
+        $AUTHENTIK_URL/api/v3/core/users/me/ | grep -o '"username":"[^"]*"'
+      ```
+
+   Don't use the `service-account-hol-webapp-provisioning-password` token that Authentik makes along with the account. Its intent is **App password**, and the API rejects it with `403 Token invalid/expired`.
+
+8. In Authentik, open **Directory → Groups → hol-admins → Users → Add existing user**, and add every admin. Turn on MFA for them. Anyone signed in who isn't in that group is a learner. The first admin sign in at step 7 or 9 fails until this is done.
 
 #### Replacing the provisioning account or token
 
@@ -159,41 +223,99 @@ To put it back:
 
    The check must print `"username":"hol-webapp-provisioning"`. Any other name means the token belongs to the wrong user.
 
+#### If the provisioning token is compromised
+
+The token does not expire, so rotate it yourself if it leaks (a pasted log, a shared screen, a lost laptop) or when someone who knew it leaves. The old token keeps working until you delete it, so do the steps in this order:
+
+1. In Authentik, open **Directory → Tokens and App passwords → Create**. Set **Identifier** to `hol-webapp-provisioning-<yyyymmdd>` with today's date, **User** to `hol-webapp-provisioning` (not yourself), **Intent** to **API**, and leave **Expiring** off. Save, then copy the key with the copy icon on its row.
+2. Save it over the old file, then check it. The check must print `"username":"hol-webapp-provisioning"`:
+
+   ```bash
+   umask 077 && read -rs TOKEN && printf '%s' "$TOKEN" > ~/secrets/authentik_provisioning_token && unset TOKEN
+   chmod 600 ~/secrets/authentik_provisioning_token
+   curl -s -H "Authorization: Bearer $(cat ~/secrets/authentik_provisioning_token)" \
+     https://<your authentik>/api/v3/core/users/me/ | grep -o '"username":"[^"]*"'
+   ```
+
+3. Restart everything that reads the file, because containers read secrets only at start. Stop any `npm run dev` or `npm run worker` on your machine and start it again:
+
+   ```bash
+   docker compose -f docker/compose.yaml restart web worker
+   ```
+
+4. Delete the old token in Authentik (the row for the old identifier under **Directory → Tokens and App passwords**). This is the step that cuts off the attacker. Until it is done, the leaked token still works.
+5. Look for what the leaked token did. In Authentik, open **Events → Logs** and filter by the user `hol-webapp-provisioning`, from the date the token may have leaked:
+   - Users created or changed that you don't recognise: check **Directory → Users** for accounts in the path `hol/learners` that no booking explains, and delete them.
+   - Sessions deleted, or password reset links created, for people you know.
+   - Membership of the testbed groups and of `hol-admins`. The app refuses to add anyone to `hol-admins`, but the token itself is not limited that way, so check that only your admins are in it.
+6. Check the app's own record of group changes. It records the admin actions and group changes the app made, so a change in Authentik with no matching row here may not have come from the app:
+
+   ```bash
+   docker compose -f docker/compose.yaml exec -T db psql -U hol_app -d reservations \
+     -c "select created_at, action, summary from hol_app.audit_events order by created_at desc limit 50"
+   ```
+
+7. If the token was exposed together with other secrets (a copied `~/secrets` folder, a backup), rotate those too: the Authentik client secrets by running step 5 again after deleting the apps (see "Starting over from scratch"), the session secret (`auth_secret`, which signs everyone out), and the Cloudflare token.
+
 ### 6. Fill in `.env.local`
+
+1. Open `.env.local` in an editor and set each variable in this table. Use absolute paths in every `*_FILE` variable, because `~` isn't expanded inside `.env.local`.
 
 | Variable | Value |
 | --- | --- |
 | `APP_URL` | The exact URL your browser uses. For dev, that's `http://10.1.255.18:3000`, not localhost (see Troubleshooting) |
 | `ADMIN_ENTRY_PATH` | The admin sign in path, a single segment such as `/l0gin`. It's never linked from public pages |
-| `AUTHENTIK_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET_FILE`, `AUTHENTIK_PROVISIONING_TOKEN_FILE` | From step 5 |
+| `AUTHENTIK_URL` | Your Authentik address, the same as `AUTHENTIK_URL` in step 5 |
+| `AUTHENTIK_CLIENT_ID` | From step 5, item 4 |
+| `AUTHENTIK_CLIENT_SECRET_FILE` | `/home/<you>/secrets/authentik_client_secret` |
+| `AUTHENTIK_PROVISIONING_TOKEN_FILE` | `/home/<you>/secrets/authentik_provisioning_token` |
 | `AUTH_SECRET_FILE` | `/home/<you>/secrets/auth_secret` |
-| `APP_ENCRYPTION_KEYS_FILE`, `APP_ENCRYPTION_ACTIVE_KEY_ID` | From step 4 |
-| `DATABASE_PASSWORD_FILE` | From step 3 |
+| `APP_ENCRYPTION_KEYS_FILE` | `/home/<you>/secrets/hol_encryption_keys.json` |
+| `APP_ENCRYPTION_ACTIVE_KEY_ID` | From step 4, item 3 |
+| `DATABASE_PASSWORD_FILE` | `/home/<you>/secrets/hol_app_password` (step 3) |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Keep the Cloudflare test keys from `.env.example` for dev; use the real widget keys on a public deployment |
-| `TRUST_PROXY_HEADERS` | `false` in dev. `true` only behind the Cloudflare Tunnel |
-| `WORKER_ENABLED` | `false`, unless this machine runs the one worker (step 9) |
+| `TRUST_PROXY_HEADERS` | `false` in dev, which is also the default when the line is missing. `true` only behind the Cloudflare Tunnel (Compose sets it for `web`) |
+| `WORKER_ENABLED` | `false`, unless this machine runs the one worker (step 9). Missing means `false` too |
 
-Use absolute paths in every `*_FILE` variable. `~` isn't expanded inside `.env.local`.
+2. Check that every file the variables name exists and has mode `600`:
 
-### 7. Start it
+   ```bash
+   ls -l ~/secrets
+   ```
 
-```bash
-npm run dev
-```
+   Every secret file should show `-rw-------`. If one doesn't (files you copied in, such as `google.json`), run `chmod 600` on it. You should see `auth_secret`, `authentik_client_secret`, `authentik_provisioning_token`, `hol_app_password`, `hol_encryption_keys.json`, `hol_labs_client_secret`, and `postgres_password`.
 
-Open `http://10.1.255.18:3000` for the public site, and `http://10.1.255.18:3000/l0gin` (your `ADMIN_ENTRY_PATH`) to sign in as an admin. `npm run dev` never runs migrations or the worker.
+### 7. Start it (dev server)
 
-If your machine has a different LAN IP, use it in `APP_URL` and add it to `allowedDevOrigins` in [next.config.ts](next.config.ts). Otherwise the page loads but buttons do nothing, because Next blocks its dev scripts for hosts that aren't on that list.
+This step is optional. A production host that only runs the Docker containers skips it and goes to [Running with Docker](#running-with-docker), then does steps 8 to 10. Run it on a dev machine, or on a new host before the first deploy, to check that the app starts and that sign in and the database work.
+
+1. Start the dev server:
+
+   ```bash
+   npm run dev
+   ```
+
+2. Open `http://10.1.255.18:3000` for the public site, and `http://10.1.255.18:3000/l0gin` (your `ADMIN_ENTRY_PATH`) to sign in as an admin. `npm run dev` never runs migrations or the worker.
+
+If your machine has a different LAN IP, use it in `APP_URL` and in `APP_URLS` (step 5), and add it to `allowedDevOrigins` in [next.config.ts](next.config.ts). Otherwise the page loads but buttons do nothing, because Next blocks its dev scripts for hosts that aren't on that list.
 
 ### 8. Add the API keys in the admin console
 
-Go to **Admin → API Keys → Add API key**.
+The app must be running (step 7, or the Docker deploy) for this step.
+
+1. Sign in as an admin at `<APP_URL><ADMIN_ENTRY_PATH>`, for example `http://10.1.255.18:3000/l0gin`. You must be in the `hol-admins` group (step 5, item 8).
+2. Go to **Admin → API Keys → Add API key**.
+3. Add the Cloudflare key, then the Google key, with the values below.
 
 **Cloudflare** (lets the worker cut a learner's lab VM access when their booking ends; you can add only one):
 
 - Type: `CLOUDFLARE`
 - Base URL: `https://api.cloudflare.com/client/v4/accounts/<account id>`. Use the 32 character account ID shown in the address bar of the Cloudflare dashboard (`dash.cloudflare.com/<account id>/...`). It must be lowercase, with no trailing slash and nothing after the ID.
-- Key value: a Cloudflare API token with **Account → Access: Organizations, Identity Providers, and Groups → Edit** on that account.
+- Key value: a Cloudflare API token with **Account → Access: Organizations, Identity Providers, and Groups → Edit** on that account. The token and the account ID are in `~/secrets/cloudflare_access_revoke_token` and `~/secrets/cloudflare_account_id` if you saved them there:
+
+  ```bash
+  cat ~/secrets/cloudflare_account_id; echo; cat ~/secrets/cloudflare_access_revoke_token
+  ```
 
 Cloudflare checks the token when you save it. "Cloudflare didn't accept this token for this account." means a wrong token, missing permission, or wrong account ID.
 
@@ -221,7 +343,22 @@ Do this once in [Google Cloud](https://console.cloud.google.com), signed in as t
    - **Branding**: enter an app name and a support email.
    - **Audience**: choose External, then click **Publish app** so it shows *In production*. If you leave it in Testing, the sign in stops working after 7 days.
    - **Data access**: add the scopes `gmail.send`, `calendar.events`, `openid`, and `email`.
-3. **Clients** ([console.cloud.google.com/auth/clients](https://console.cloud.google.com/auth/clients)) → *Create client* → Application type **Desktop app** → create, then **download the JSON**. The file starts with `{"installed":`. A *Web application* client will not work.
+3. Make the client file (the `gmail_desktop` file in `~/secrets`). It holds the client id and the client secret of a Desktop app client:
+   1. Open **Clients** ([console.cloud.google.com/auth/clients](https://console.cloud.google.com/auth/clients)), with the right project selected in the top bar, and click **Create client**.
+   2. Set **Application type** to **Desktop app**, give it a name such as `HOL desktop`, and click **Create**. A *Web application* client will not work.
+   3. In the dialog that appears, click **Download JSON**. Google may show the client secret only now, so download it before you close the dialog. If you closed it, open the client from the list and use **Download JSON** there, or create a new client.
+   4. The file is named `client_secret_<numbers>.apps.googleusercontent.com.json` and starts with `{"installed":`. If it starts with `{"web":`, you made the wrong type.
+   5. Move it into the secrets folder and lock it down (replace the path with where your browser saved it):
+
+      ```bash
+      mv ~/Downloads/client_secret_*.json ~/secrets/gmail_desktop
+      chmod 600 ~/secrets/gmail_desktop
+      head -c 14 ~/secrets/gmail_desktop; echo
+      ```
+
+      The last command must print `{"installed":`.
+
+   The app asks you to choose this file in the console when you save the key. It reads it again on every save, and it does not keep the file, so keep your copy.
 4. In that Gmail account's Google Calendar, create a calendar named "HOL bookings", share it (read only) with the admins, and copy its Calendar ID.
 
 Then add the key in the app. From clicking **Sign in with Google** (step 4) to **Save**, you have 10 minutes:
@@ -236,7 +373,29 @@ Then add the key in the app. From clicking **Sign in with Google** (step 4) to *
    4. Google opens a page at `http://127.0.0.1:47613/?state=…&code=…` that won't load. That's expected. Copy the whole address from the address bar and paste it into **Google sign in address**.
    5. Click **Save**. Leave the client file chosen, because Save reads it again.
 
+The page at `http://127.0.0.1:47613/` fails to load on purpose. Google lets a Desktop app client redirect only to a loopback address, never to a real host name such as your app's domain, and nothing in the app listens on that port. The address in the bar still carries the one time code, which is why you paste it back. A public host name does not change this.
+
 The list then shows the key with "Google sign in" and the Gmail address as the sender. If Save says to sign in again, click **Sign in with Google** again and repeat from step 4. Each Google address works only once.
+
+#### Using a different Gmail account for Google sign in
+
+The account you sign in with at **Sign in with Google** is the sender of every email and the owner of the "HOL bookings" calendar. The OAuth client file (the Desktop app JSON) belongs to a Google Cloud project, and it does not have to belong to the same account. So you can send from any Gmail account in one of two ways.
+
+**A. Reuse the existing client file (the quick way).** This works when the project's **Audience** shows *In production* (see "Google sign in" above), because then any Google account can sign in with the same file.
+
+1. Sign in to [Google Calendar](https://calendar.google.com) as the new account. Create the calendar "HOL bookings", share it (read only) with the admins, and copy its **Calendar ID** (calendar settings → *Integrate calendar*). A calendar of the old account can't be used, because the app writes to the calendar of the account that signs in.
+2. In the app, open **Admin → API Keys → Add API key** (or **Edit** on the existing Google key), Type `GOOGLE`, Sign in method **Google sign in (personal Gmail, for testing)**.
+3. Choose the same Desktop app JSON, paste the new Calendar ID, and click **Sign in with Google**.
+4. Open the sign in link and sign in as the **new** account. Check the account name Google shows before you continue, because Google may offer the old account first. Then follow the same prompts as above (*Advanced* → *Go to … (unsafe)*, both permissions ticked, copy the address of the page that won't load, paste it, **Save**).
+5. If Google says the app is blocked or the account isn't allowed, the project's Audience is still *Testing*. Either click **Publish app** in *Google Auth Platform → Audience*, or add the new account under **Test users** (a Testing app stops working after 7 days).
+
+**B. Use a client file from the new account's own project.** Do the whole "Google sign in" setup above signed in as the new account (project, Gmail and Calendar APIs, Branding, Audience *In production*, Data access, a Desktop app client). Then follow A from step 1, choosing the new JSON.
+
+After you switch an account that already had bookings:
+
+- The old calendar keeps its events and gets no more updates. Copy existing bookings to the new calendar with `npm run calendar:backfill` (a dry run that prints a count), then `npm run calendar:backfill -- --apply`.
+- Emails already sent keep the old sender as their organizer. A learner whose phone saved an old invite keeps it on the old calendar.
+- Remove the app's access in the old account: *Google Account* → *Security* → *Third party apps and services*.
 
 #### Service account (Google Workspace, for production)
 
@@ -258,17 +417,27 @@ The exact error messages are in [spec 0013](docs/specs/0013-email-delivery-booki
 
 ### 9. The background worker
 
-The worker sends email, syncs the calendar, sweeps expired holds, and revokes lab access. It exits unless `WORKER_ENABLED=true`.
+The worker sends email, syncs the calendar, sweeps expired holds, and revokes lab access. It exits unless `WORKER_ENABLED=true`. If you run the Docker containers, the `worker` container is the one worker and you skip the command below.
 
-```bash
-WORKER_ENABLED=true npm run worker
-```
+1. Check that no other worker is running:
 
-**Because Authentik is shared, a worker started on your machine changes real group membership.** Only one may run at a time, so start it only after checking that no other worker is running. See [server/worker/AGENTS.md](server/worker/AGENTS.md).
+   ```bash
+   docker ps --filter name=reservations-worker
+   ```
 
-The worker also runs in the `reservations-worker-1` container (see [Running with Docker](#running-with-docker)). While that container runs, it holds the worker lock, and `npm run worker` on your machine prints "another worker holds the lock" and exits. Check with `docker ps --filter name=reservations-worker`.
+2. Only if that printed no container, start one on this machine:
+
+   ```bash
+   WORKER_ENABLED=true npm run worker
+   ```
+
+**Because Authentik is shared, a worker started on your machine changes real group membership.** Only one may run at a time. See [server/worker/AGENTS.md](server/worker/AGENTS.md).
+
+While the `reservations-worker-1` container runs, it holds the worker lock, and `npm run worker` on your machine prints "another worker holds the lock" and exits.
 
 ### 10. Check your setup
+
+Run the checks:
 
 ```bash
 npm run lint && npm run typecheck
@@ -276,12 +445,15 @@ npm test            # DB tests run inside a rolled back transaction, so nothing 
 npm run test:e2e    # Playwright against the dev server; needs ~/secrets/hol-test-*.pw
 ```
 
+The database tests run against the live database inside a transaction that is always rolled back, so your real testbeds and bookings are never changed (a sample value that collides with a real row is tolerated). `npm run test:e2e` is optional: it signs in through the real Authentik, so it needs the dev server running and the test accounts to exist, with their passwords in `~/secrets/hol-test-*.pw` and `hol-test-admin` in `hol-admins`. A fresh install has none of these, so skip it until you make them.
+
 ### Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
 | The page loads but clicks do nothing | Your host isn't in `allowedDevOrigins` in `next.config.ts` (step 7) |
 | Sign in fails with `state_mismatch` | `APP_URL` doesn't match the URL in your browser. Make them identical |
+| Sign in lands on "Sign in unavailable" with `error=invalid_request` and `The request is otherwise malformed` in the address | Authentik refuses the authorize request because the "Provider for HOL" has no grant types (`grant_types` is empty). Run `npm run authentik:setup` (dry run). It shows `FAILED  Authentik refused the request: invalid_request` under "Sign in check" and a `change  Provider for HOL.grant_types` line. Run it again with `-- --apply` (step 5), then check that the dry run says `ok` for both. |
 | A 403 from the Authentik proxy during sign in | The browser is on `localhost`. The proxy refuses requests that mention localhost, so use the LAN IP |
 | `Enter https://api.cloudflare.com/client/v4/accounts/<account id>.` | The Cloudflare base URL isn't in exactly that shape (step 8) |
 | `Choose the OAuth client file.` after Sign in with Google | No client file was chosen. Pick the Desktop app JSON first; the field must show its name (step 8, Google sign in) |
@@ -294,6 +466,45 @@ npm run test:e2e    # Playwright against the dev server; needs ~/secrets/hol-tes
 | Booking emails never arrive | The worker isn't running (step 9), no `GOOGLE` key exists, or a test learner has no Dev inbox set. The learner's page in the console lists each email's status |
 | API Keys page says not configured | `APP_ENCRYPTION_KEYS_FILE` is unreadable, or `APP_ENCRYPTION_ACTIVE_KEY_ID` isn't in the keyring |
 | `npm run dev` fails at start on a `DATABASE_*` or auth variable | A required value is missing or a `*_FILE` path is wrong; the error names the variable |
+
+### Starting over from scratch
+
+Use this to wipe the app and install it again with the steps above. The Authentik admin account, the master token, the testbed groups, and any Authentik app the setup script did not make are never part of it.
+
+1. Back up the database and the secrets:
+
+   ```bash
+   mkdir -p ~/backups && umask 077
+   docker compose -f docker/compose.yaml exec -T db \
+     pg_dump -U hol_app -d reservations -n hol_app -n hol_auth -Fc > ~/backups/before-wipe.dump
+   cp -a ~/secrets ~/backups/secrets-before-wipe
+   ```
+
+2. Remove what the app made in Authentik. The app never deletes these, so use the Authentik admin UI. Delete in this order, so nothing points at a missing object:
+   1. The binding of the `hol-learner-isolation` policy on the default authorization flows, and the `hol-labs-access` binding on `hol-labs`; then both policies.
+   2. The applications `hol` and `hol-labs`, then the providers "Provider for HOL" and "HOL Labs".
+   3. The flows `hol-authorization`, `hol-lab-authorization`, and `hol-recovery` (and `hol-invalidation` if it exists), then the stages `hol-recovery-password`, `hol-recovery-write`, `hol-recovery-login` (and `hol-invalidation-logout`).
+   4. The group `hol-admins`, then the service account `hol-webapp-provisioning` with its tokens and role.
+   5. The learner users the app made: path `hol/learners`, attribute `hol_learner` set to true. Never delete anyone else.
+
+   Leave the testbed groups (the ones marked `hol_testbed_group`) alone.
+3. Remove the containers, the database volume, the network, and the images. Nothing else on the host is touched:
+
+   ```bash
+   docker compose -f docker/compose.yaml down -v --remove-orphans
+   docker images reservations --format '{{.Repository}}:{{.Tag}}' | xargs -r docker rmi
+   ```
+
+4. Remove the generated secrets. Keep `authentik_master_token` and the files for your Cloudflare and Google keys:
+
+   ```bash
+   cd ~/secrets
+   rm -f postgres_password hol_app_password auth_secret hol_encryption_keys.json \
+     authentik_client_secret hol_labs_client_secret authentik_provisioning_token
+   cd -
+   ```
+
+5. Install again, in this order: steps 2 to 6 of "Getting the webapp running" (this replaces the old `AUTHENTIK_CLIENT_ID` and `APP_ENCRYPTION_ACTIVE_KEY_ID` in `.env.local` and `docker/.env`), then [Running with Docker](#running-with-docker), then step 8 to re-add the API keys. Add your admins to the new `hol-admins` group before you sign in.
 
 ## Testbed groups
 
@@ -361,12 +572,24 @@ Compose mounts these files from `SECRETS_DIR` (default `.secrets/` in the repo) 
 
 `db` gets only `postgres_password`, and `migrate` only `hol_app_password`. The Authentik master token is never mounted.
 
-### 3. Fill in `docker/.env`
+Before you deploy, all six files must exist, or Compose refuses to start. Check:
 
 ```bash
-cp docker/.env.example docker/.env
-chmod 600 docker/.env
+ls ~/secrets/postgres_password ~/secrets/hol_app_password ~/secrets/auth_secret \
+  ~/secrets/hol_encryption_keys.json ~/secrets/authentik_client_secret \
+  ~/secrets/authentik_provisioning_token
 ```
+
+### 3. Fill in `docker/.env`
+
+1. Make the file (skip this if `docker/.env` already exists):
+
+   ```bash
+   cp docker/.env.example docker/.env
+   chmod 600 docker/.env
+   ```
+
+2. Open it in an editor and set the variables below.
 
 `docker/.env` is gitignored and optional for the database alone (`db:up` works without it). Compose reads it for the `${...}` values in `docker/compose.yaml` and also passes it to every container:
 
@@ -385,10 +608,13 @@ Compose itself sets the database host, every `*_FILE` path, `TZ=UTC`, `TRUST_PRO
 
 ### 4. Deploy
 
-```bash
-scripts/deploy.sh          # migrate, web, and worker
-scripts/deploy.sh web      # migrate and web only, with no worker
-```
+1. Check that no other worker is running (for example `npm run worker` on a dev machine). The first worker to start holds the lock; a second one exits.
+2. Deploy, with one of these:
+
+   ```bash
+   scripts/deploy.sh          # migrate, web, and worker
+   scripts/deploy.sh web      # migrate and web only, with no worker
+   ```
 
 The script:
 
@@ -398,9 +624,7 @@ The script:
 
 The first build takes a few minutes. The build reads no env or secrets, so it can run anywhere.
 
-**Before you start `worker`, make sure no other worker is running** (for example `npm run worker` on a dev machine). The first worker to start holds the lock; a second one exits.
-
-Check the result:
+3. Check the result:
 
 ```bash
 docker compose -f docker/compose.yaml ps            # web shows (healthy)
@@ -409,7 +633,7 @@ docker logs reservations-migrate-1                  # applied: ... or nothing to
 docker logs reservations-worker-1                   # worker: started
 ```
 
-Then sign in at `https://<APP_HOST><ADMIN_ENTRY_PATH>` as an admin.
+4. Sign in at `https://<APP_HOST><ADMIN_ENTRY_PATH>` as an admin, then do step 8 (API keys) of "Getting the webapp running".
 
 ### 5. Day to day
 
