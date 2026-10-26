@@ -122,6 +122,6 @@ Build approach: Tracer Bullet. First prove one real thread (the database rule an
 
 ## Follow-up
 
-- [ ] Deploy: the one deploy carries migration 0016; the owner applies it to the shared database (nothing is applied before then)
+- [x] Deploy: the one deploy carried migration 0016, applied to the shared database 2026-10-26; redeployed from main at b9148a5 the same day
 - [ ] The cleanup automation should trigger on the cancel and reschedule events as well as on `ends_at`, since an early cancel or a moved Current booking frees the testbed at once (owner side)
 - [ ] If a different gap per lab type is ever wanted, revisit Option 4 in a new spec
