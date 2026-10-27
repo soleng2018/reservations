@@ -60,3 +60,13 @@ alter table hol_app.audit_events add constraint audit_events_target_type_check
     'testbed_type', 'testbed', 'api_key', 'user', 'booking', 'authentik_group',
     'portal_reset_step', 'portal_reset_settings'
   ));
+
+create trigger portal_reset_settings_set_updated_at
+  before update on hol_app.portal_reset_settings
+  for each row execute function hol_app.set_updated_at();
+create trigger portal_reset_steps_set_updated_at
+  before update on hol_app.portal_reset_steps
+  for each row execute function hol_app.set_updated_at();
+
+alter table hol_app.portal_reset_settings enable row level security;
+alter table hol_app.portal_reset_steps enable row level security;
