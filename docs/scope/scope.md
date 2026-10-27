@@ -60,7 +60,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 22 | Cleanup gap between labs | Slice 6 | done |
 | 23 | Cleanup hook for labs that end early | Slice 6 | done |
 | 24 | Nile Portal reset when a lab ends | Slice 6 | planned |
-| 25 | Admin: Nile Portal Reset page | Slice 6 | planned |
+| 25 | Admin: Nile Portal Reset page | Slice 6 | in-progress |
 
 ## Foundations
 
@@ -433,12 +433,25 @@ Follow up from features 22 and 23. After every lab, whether it ends at its booke
 > - Reset list so far: all SSIDs except one (the portal gives that one no delete option), all integrations, all Wired Access Management, Segments, DHCP, RADIUS, and more. The owner will send the rest of the list later.
 > - Five workshops, N = 1 to 5, each with its own portal admin `admin@nileworkshop-N.com`. The password is in `~/secrets/nileportal.pw` (to confirm it is the same for all five). Only workshop 1 (`nileworkshop-1.com`, portal `u1.nile-global.cloud`) is a testbed in the app today.
 > - Proven on workshop 1 (2026-10-26): sign in goes through Authentik and gives the portal an `x-id-token`; the portal API lists SSIDs with `GET /api/v1/settings/ssids` and deleted a test SSID with `DELETE /api/v1/settings/ssids/:id` (204). The page's own code names its routes, so every other resource type needs its list and delete routes found the same way.
+> - Owner decision (2026-10-26, portal login): the engine signs in as `admin@<testbed domain>` (for workshop N that is `admin@nileworkshop-N.com`), so adding a testbed needs no extra field, and it checks that the domain matches the testbed before anything is deleted. The password is one shared password read from a file on disk (today `~/secrets/nileportal.pw`), not stored in the database or the console. For `/architect`: name the env var for the file path (read only through `server/env.ts`, mounted through `SECRETS_DIR` in `docker/compose.yaml`), keep it out of every log, payload, error, and audit row, and settle what happens if the file is missing (fail the run and tell the abort address). Still to confirm with the owner: the password really is the same for all five workshops; if one differs, a per testbed override is needed. How the sign in works without a browser is still open (question 6).
 > - Open questions for the owner: (1) the full reset list and its order, since some items may depend on others (for example segments used by SSIDs); (2) which SSID is the protected one and how to recognise it; (3) delete by "everything except" or by a name rule; (4) portal addresses and passwords for workshops 2 to 5; (5) the reset must finish inside the 30 minute gap: how long it takes today per workshop, and what happens if it overruns (alert, hold the next lab); (6) how the receiver gets the token (a headless browser sign in, or the sign in steps without a browser) and where it runs (a new container behind Traefik was the leading idea); (7) what happens when a call fails halfway (retry, partial reset, alert); (8) a dry run mode that lists what it would delete without deleting; (9) a safety check that the testbed's domain matches the portal tenant before anything is deleted; (10) whether the app or the receiver maps a testbed to its portal admin account.
 
-### 25. Admin: Nile Portal Reset page · needs a decision · Full
+### 25. Admin: Nile Portal Reset page · in-progress · Full
 Feature 24 needs to know which portal calls to make and in what order, so the owner keeps that list in the console. One admin page, Nile Portal Reset, holds an email field and one ordered table. The email is where the app writes when a reset is aborted or did not go through. Each table row has a drag handle (move the row), its order number (1, 2, 3 and so on, renumbered after a move), the feature name (for example SSID, Segment, DHCP), and the API call for it. The table starts loaded from a doc in the repo (the starting list of APIs, in order), so a fresh install already has the full reset list; after that the admin can add rows, change rows, and change the order from the page, and those changes are kept in the database, not overwritten by the doc on a later deploy. The page opens read only. To change anything, the admin clicks Edit and confirms in a pop up; only then do the drag handles, add, edit, and remove work, so nobody moves a row by accident. Leaving edit mode puts the page back to read only. This table is also the list of every API needed to clean the Nile Portal, in the order the reset runs them.
 **Done when:** a fresh install shows the starting list from the repo doc in its order, and a later deploy does not reset an admin's changes; the page opens read only with no drag handles active, and rows cannot be moved until the admin clicks Edit and confirms the pop up (cancelling the pop up changes nothing); an admin saves an email address, adds a row with a feature name and an API, drags rows into a new order and sees the numbers update, reloads and finds the same order, and every save, add, edit, move, and delete writes an audit row; a bad email or an empty API is refused with a field error; the page is admin only. It deletes nothing in a portal by itself.
-- [ ] Design it (spec): `/architect nile portal reset page`
+- [x] Design it (spec): `/architect nile portal reset page`
+- [ ] Build it: `/develop admin: nile portal reset page` (waits for the owner's full reset list, spec Follow-up)
+  - [ ] The starting list file and its schema, the migration, and the seed step (AC-1, 2, 17)
+  - [ ] The tracer thread: read functions and the read only page behind `requireAdmin()` (AC-3, 4, 10, 15, 16)
+  - [ ] Input rules, the diff, and Save with audit rows and the Audit Log read side (AC-7, 9, 11, 12)
+  - [ ] Edit mode, the draft, and dragging by mouse, touch, and keyboard (AC-5, 6, 8)
+  - [ ] The starting list gaps control, then tests and the no portal scan (AC-13, 14)
+  - [ ] README: update the "Nile Portal Reset setup (planned)" section to match what shipped (drop the planned tag, exact names), and add the new steps to the Docker setup
+- [ ] Verify it: `/check verify admin: nile portal reset page`
+- [ ] Test it: `/test admin: nile portal reset page`
+- [ ] Review it (fresh model): `/check review admin: nile portal reset page`
+- [ ] Document it: `/document admin: nile portal reset page`
+spec [0022](../specs/0022-nile-portal-reset-page.md) · code in `server/portal-reset/`, `app/admin/nile-portal-reset/`, `db/migrations/0018_portal_reset.sql`, `db/seed/`
 > Notes for `/architect`: the owner asked for "a page listing all the APIs, ordered" and "a Nile Portal Reset page with the email and the drag table"; they are one page (decided 2026-10-26). Owner will supply the starting list for the repo doc (feature 24 already holds the first known entry: SSIDs, `GET` and `DELETE /api/v1/settings/ssids`); `/architect` decides the doc format, how it loads on install (and what happens if the doc later gains new entries), and whether a Reset to starting list button is wanted. Open: what an API entry holds (method, path, how to list and how to delete), whether one saved list serves all five workshops, and how a wrong order is caught before it runs (for example a dry run that only reads). Keep the drag handle usable with the keyboard.
 
 ## Deferred
