@@ -10,7 +10,7 @@ import { isPortalPath } from "./portal-path";
 
 const MAX_PARTS = 12;
 const MAX_WAIT_SECONDS = 60;
-const MAX_DEFINITION_CHARS = 20_000;
+const MAX_DEFINITION_BYTES = 20_000;
 const MAX_PAGES = 5;
 const MAX_BODY_DEPTH = 8;
 const SECRET_WORDS = [
@@ -494,6 +494,21 @@ function checkListPlaceholders(
 const pickedKeys = (p: Part): ReadonlySet<string> =>
   p.kind === "read" ? new Set(Object.keys(p.pick)) : new Set();
 
+// The size Postgres checks is `octet_length(definition::text)`, and jsonb
+// text has a space after every `:` and `,`, so measure that form, in bytes.
+export function jsonbTextBytes(value: unknown): number {
+  const text = (v: unknown): string =>
+    Array.isArray(v)
+      ? `[${v.map(text).join(", ")}]`
+      : typeof v === "object" && v !== null
+        ? `{${Object.entries(v)
+            .filter(([, item]) => item !== undefined)
+            .map(([k, item]) => `${JSON.stringify(k)}: ${text(item)}`)
+            .join(", ")}}`
+        : (JSON.stringify(v) ?? "null");
+  return new TextEncoder().encode(text(value)).length;
+}
+
 const stepDefinition = z
   .strictObject({
     parts: z.array(part).min(1).max(MAX_PARTS),
@@ -533,7 +548,7 @@ const stepDefinition = z
         path: ["parts"],
       });
     }
-    if (JSON.stringify(def).length > MAX_DEFINITION_CHARS) {
+    if (jsonbTextBytes(def) > MAX_DEFINITION_BYTES) {
       ctx.addIssue({
         code: "custom",
         message: "A definition is 20 000 characters at most.",

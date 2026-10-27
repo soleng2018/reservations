@@ -199,6 +199,8 @@ export const TARGET_TYPE_LABEL = {
   user: "User",
   booking: "Booking",
   authentik_group: "Access group",
+  portal_reset_step: "Reset step",
+  portal_reset_settings: "Nile Portal Reset settings",
 } as const satisfies Record<AuditTargetType, string>;
 
 export const AUDIT_LOG_PATH = "/admin/audit-log";
@@ -266,6 +268,7 @@ const UUID_TARGETS: ReadonlySet<AuditTargetType> = new Set([
   "testbed",
   "api_key",
   "booking",
+  "portal_reset_step",
 ]);
 const SPECIAL_USER = /^(?:authentik:\d{1,18}|unknown)$/;
 const GROUP_ID = /^[A-Za-z0-9-]{1,64}$/;

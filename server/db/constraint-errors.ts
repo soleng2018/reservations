@@ -14,6 +14,7 @@ export type ConstraintError =
   | "cloudflare_exists"
   | "google_exists"
   | "cleanup_exists"
+  | "duplicate_step"
   | "in_use";
 
 // Constraint names are a contract with db/migrations: renaming one there is a
@@ -32,6 +33,10 @@ const byConstraint: Readonly<Record<string, ConstraintError>> = {
   api_keys_one_cloudflare_uq: "cloudflare_exists",
   api_keys_one_google_uq: "google_exists",
   api_keys_one_cleanup_uq: "cleanup_exists",
+  // Spec 0022: backstops behind the Save checks (a name used twice, a
+  // starting list entry added twice).
+  portal_reset_steps_feature_name_lower_uq: "duplicate_name",
+  portal_reset_steps_seed_key_uq: "duplicate_step",
 };
 
 const PgError = z.object({

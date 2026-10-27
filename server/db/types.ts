@@ -158,6 +158,29 @@ export interface LearnerDomainLogins {
   username: string;
 }
 
+export interface PortalResetSettings {
+  abort_email: string | null;
+  id: Generated<boolean>;
+  mode: Generated<string>;
+  mode_changed_at: Timestamp | null;
+  seeded_at: Timestamp | null;
+  updated_at: Generated<Timestamp>;
+  updated_by: string | null;
+  version: Generated<number>;
+}
+
+export interface PortalResetSteps {
+  created_at: Generated<Timestamp>;
+  definition: Json;
+  enabled: Generated<boolean>;
+  feature_name: string;
+  id: Generated<string>;
+  note: string | null;
+  position: number;
+  seed_key: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface RateLimits {
   bucket_key: string;
   count: number;
@@ -245,6 +268,8 @@ export interface DB {
   "hol_auth.verification": HolAuthVerification;
   jobs: Jobs;
   learner_domain_logins: LearnerDomainLogins;
+  portal_reset_settings: PortalResetSettings;
+  portal_reset_steps: PortalResetSteps;
   rate_limits: RateLimits;
   set_password_links: SetPasswordLinks;
   testbed_clients: TestbedClients;
