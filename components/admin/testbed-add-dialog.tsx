@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactElement } from "react";
+import { useReducer, useRef, useState, type ReactElement } from "react";
 import { CircleAlertIcon } from "lucide-react";
 import {
   FormDialog,
@@ -10,15 +10,14 @@ import { TestbedFields } from "@/components/admin/testbed-fields";
 import type { SelectOption } from "@/components/form-select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  CHOICES_CLOSED,
+  choicesReducer,
+  groupNoticeKey,
+  type Loaded,
+} from "@/lib/group-choices-state";
 import type { Result } from "@/lib/result";
 import { TESTBED_MESSAGES, type GroupChoice } from "@/lib/testbeds";
-
-type Loaded =
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly choices: readonly GroupChoice[] }
-  | { readonly kind: "unavailable" };
-
-const LOADING: Loaded = { kind: "loading" };
 
 // Spec 0017 AC-18: the add dialog reads the group list when it opens, shows a
 // loading state with Save off, and drops the list once the dialog has closed.
@@ -36,27 +35,20 @@ export function TestbedAddDialog({
   readonly load: () => Promise<Result<readonly GroupChoice[], "unavailable">>;
   readonly action: AdminFormAction;
 }) {
-  const [loaded, setLoaded] = useState<Loaded>(LOADING);
+  const [{ loaded }, dispatch] = useReducer(choicesReducer, CHOICES_CLOSED);
   // AC-22: Save stays off until the chosen group has a domain.
   const [groupDomain, setGroupDomain] = useState<string | null>(null);
-  // Only the latest open's answer counts.
-  const latest = useRef(0);
+  // Each open gets a new id; the reducer keeps only the latest open's answer.
+  const opens = useRef(0);
 
   const onOpen = () => {
-    latest.current += 1;
-    const request = latest.current;
-    setLoaded(LOADING);
+    opens.current += 1;
+    const id = opens.current;
+    dispatch({ type: "open", id });
     setGroupDomain(null);
     load().then(
-      (r) => {
-        if (request !== latest.current) return;
-        setLoaded(
-          r.ok ? { kind: "ready", choices: r.value } : { kind: "unavailable" },
-        );
-      },
-      () => {
-        if (request === latest.current) setLoaded({ kind: "unavailable" });
-      },
+      (result) => dispatch({ type: "answer", id, result }),
+      () => dispatch({ type: "answer", id, result: null }),
     );
   };
 
@@ -67,8 +59,7 @@ export function TestbedAddDialog({
       action={action}
       onOpen={onOpen}
       onClosed={() => {
-        latest.current += 1;
-        setLoaded(LOADING);
+        dispatch({ type: "closed" });
         setGroupDomain(null);
       }}
       canSave={
@@ -86,6 +77,11 @@ export function TestbedAddDialog({
     </FormDialog>
   );
 }
+
+const noticeText = (choices: readonly GroupChoice[]): string | undefined => {
+  const key = groupNoticeKey(choices);
+  return key === undefined ? undefined : TESTBED_MESSAGES[key];
+};
 
 function AddBody({
   loaded,
@@ -118,13 +114,7 @@ function AddBody({
           idps={idps}
           groupChoices={loaded.choices}
           onGroupDomain={onGroupDomain}
-          groupNotice={
-            loaded.choices.length === 0
-              ? TESTBED_MESSAGES.groupChoicesEmpty
-              : loaded.choices.every((c) => c.domain === null)
-                ? TESTBED_MESSAGES.groupChoicesNoDomain
-                : undefined
-          }
+          groupNotice={noticeText(loaded.choices)}
         />
       );
     case "unavailable":

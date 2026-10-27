@@ -23,7 +23,10 @@ test("add dialog offers marked groups in a select", async ({
   ).toHaveCount(0);
   await group.click();
   const options = page.getByRole("option");
-  const names = await options.allInnerTexts();
+  // Compare the names alone: a "(no domain set)" suffix can change the order.
+  const names = (await options.allInnerTexts()).map((t) =>
+    t.replace(/ \(no domain set\)$/, ""),
+  );
   expect(names.length).toBeGreaterThan(0);
   expect(names).toEqual(
     [...names].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),

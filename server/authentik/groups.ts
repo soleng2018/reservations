@@ -45,6 +45,10 @@ const MEMBERS_PAGE = 100;
 // filter still finds the exact name in code.
 const LOOKUP_PAGE = 100;
 
+// Spec 0017 AC-17: the attribute the owner may add to a marked group, a
+// domain such as `nileworkshop-1.com`, to prefill the add form's Domain.
+export const TESTBED_GROUP_DOMAIN_ATTRIBUTE = "hol_testbed_domain";
+
 // Spec 0017 AC-17, AC-21: the one parse of a group's domain attribute, shared
 // by the add form's choices and the create lookup. Missing, not a string, or
 // not a domain gives null.
@@ -150,10 +154,6 @@ export const findTestbedGroup = (
     return allowed.ok ? ok(toTestbedGroup(match)) : allowed;
   });
 
-// Spec 0017 AC-17: the attribute the owner may add to a marked group, a
-// domain such as `nileworkshop-1.com`, to prefill the add form's Domain.
-export const TESTBED_GROUP_DOMAIN_ATTRIBUTE = "hol_testbed_domain";
-
 const CHOICE_PAGE = 100;
 const CHOICE_MAX_PAGES = 5;
 
@@ -166,19 +166,17 @@ export type TestbedGroupChoice = {
 };
 
 // Spec 0017 AC-17: the group's domain, parsed like a typed one. Missing, not a
-// string, or not a domain gives null; a bad value is warned about by group
-// name only, never by value.
-export function toGroupChoice(g: Group): TestbedGroupChoice {
-  const domain = parseGroupDomain(g);
-  if (
-    domain === null &&
-    g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE] !== undefined
-  )
-    console.warn(
-      `authentik: group ${g.name} has an invalid ${TESTBED_GROUP_DOMAIN_ATTRIBUTE}`,
-    );
-  return { pk: g.pk, name: g.name, domain };
-}
+// string, or not a domain gives null.
+export const toGroupChoice = (g: Group): TestbedGroupChoice => ({
+  pk: g.pk,
+  name: g.name,
+  domain: parseGroupDomain(g),
+});
+
+// A group that carries the attribute but with a value that fails the parse.
+const hasInvalidDomain = (g: Group): boolean =>
+  g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE] !== undefined &&
+  parseGroupDomain(g) === null;
 
 // Spec 0017 AC-15: the marked groups the add form offers, sorted by name
 // ignoring case. One paged read, at most 5 pages. A group is kept only when
@@ -205,19 +203,31 @@ export const listTestbedGroupChoices = (
       if (!res.ok) return res;
       const all = [...acc, ...res.value.results];
       const next = res.value.pagination.next;
+      if (next > n && n >= CHOICE_MAX_PAGES)
+        console.warn(
+          `authentik: marked group list stopped at ${CHOICE_MAX_PAGES} pages, more groups exist`,
+        );
       return next > n && n < CHOICE_MAX_PAGES ? page(next, all) : ok(all);
     };
     const read = await page(1, []);
     if (!read.ok) return err("unavailable");
-    const count = (name: string) =>
-      read.value.filter((g) => g.name === name).length;
+    const counts = read.value.reduce(
+      (m, g) => m.set(g.name, (m.get(g.name) ?? 0) + 1),
+      new Map<string, number>(),
+    );
+    const kept = read.value.filter(
+      (g) =>
+        counts.get(g.name) === 1 &&
+        checkGroupWrite(toGroupTarget(g), "add", admins.value).ok,
+    );
+    // One line per read, by group name only, never by value (AC-17).
+    const invalid = kept.filter(hasInvalidDomain).map((g) => g.name);
+    if (invalid.length > 0)
+      console.warn(
+        `authentik: groups with an invalid ${TESTBED_GROUP_DOMAIN_ATTRIBUTE}: ${invalid.join(", ")}`,
+      );
     return ok(
-      read.value
-        .filter(
-          (g) =>
-            count(g.name) === 1 &&
-            checkGroupWrite(toGroupTarget(g), "add", admins.value).ok,
-        )
+      kept
         .map(toGroupChoice)
         .toSorted((a, b) =>
           a.name.toLowerCase().localeCompare(b.name.toLowerCase()),

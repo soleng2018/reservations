@@ -338,12 +338,18 @@ describe("listTestbedGroupChoices (spec 0017 AC-15)", () => {
       Array.from({ length: n }, (_, i) =>
         markedGroup(`p${i}`, `G${String(i).padStart(4, "0")}Admin`),
       );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect((await names(fakeAuthentik([], { groups: many(150) }))).length).toBe(
       151,
     );
+    expect(warn).not.toHaveBeenCalled();
     expect((await names(fakeAuthentik([], { groups: many(600) }))).length).toBe(
       500,
     );
+    // Reaching the cap with more pages left is logged once.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("5 pages"));
+    warn.mockRestore();
   });
 
   it("is unavailable when Authentik is down or answers with a body it cannot read", async () => {
@@ -383,6 +389,25 @@ describe("a group's domain (spec 0017 AC-17)", () => {
 
   it("parses the attribute like a typed domain", async () => {
     expect(await domainOf("NileWorkshop-1.COM")).toBe("nileworkshop-1.com");
+  });
+
+  it("warns once per read, naming every bad group and no value", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const bad = (pk: string, name: string, v: unknown) => ({
+      ...markedGroup(pk, name),
+      attributes: { hol_testbed_group: true, hol_testbed_domain: v },
+    });
+    const ak = fakeAuthentik([], {
+      groups: [bad("x", "OneAdmin", "nile"), bad("y", "TwoAdmin", 7)],
+    });
+    const r = await listTestbedGroupChoices(ak.api);
+    expect(r.ok).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain("OneAdmin");
+    expect(line).toContain("TwoAdmin");
+    expect(line).not.toContain("nile,");
+    warn.mockRestore();
   });
 
   it.each([undefined, 7, "", "nile"])(
