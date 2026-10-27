@@ -22,6 +22,8 @@ export const TESTBED_MESSAGES = {
     "Couldn't load the Authentik groups. Close this and try again in a moment.",
   groupChoicesEmpty:
     "No unused marked group is available. Ask the owner to mark or add one.",
+  groupChoicesNoDomain:
+    "None of the available groups has a domain yet. Ask the owner to set hol_testbed_domain on one.",
 } as const;
 
 export const TESTBED_NAME_HINT =

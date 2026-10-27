@@ -121,7 +121,9 @@ function AddBody({
           groupNotice={
             loaded.choices.length === 0
               ? TESTBED_MESSAGES.groupChoicesEmpty
-              : undefined
+              : loaded.choices.every((c) => c.domain === null)
+                ? TESTBED_MESSAGES.groupChoicesNoDomain
+                : undefined
           }
         />
       );
