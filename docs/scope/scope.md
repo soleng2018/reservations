@@ -451,9 +451,9 @@ Feature 24 needs to know which portal calls to make and in what order, so the ow
 **Done when:** a fresh install shows the starting list from the repo file in its order with mode off, and a later deploy does not reset an admin's changes; the page opens read only with no drag handles active, and rows cannot be moved until the admin clicks Edit and confirms the pop up (cancelling the pop up changes nothing); an admin saves an email address and a mode, adds a row, edits its steps, drags rows into a new order and sees the numbers update, reloads and finds the same order, and every save, add, edit, move, mode change, and delete writes an audit row (with the full before and after of a changed step); a bad email, a path outside `/api/`, a path on the deny list, or a step that does not parse is refused with a field error at the right place; the page is admin only. It deletes nothing in a portal by itself.
 - [x] Design it (spec): `/architect nile portal reset page` (revised 2026-10-27 after the research: new step model, deny list, guards, mode; accepted by the owner 2026-10-27)
 - [ ] Build it: `/develop admin: nile portal reset page` (the starting list is now written from the tested research file, so the build no longer waits for the owner)
-  - [ ] The step language, the deny list and guards files, and the starting list rewritten to it (AC-9, 17 to 21, 24, 25)
-  - [ ] The migration, the seed step, and the tracer thread: read functions and the read only page behind `requireAdmin()` (AC-1 to 4, 10, 15, 16)
-  - [ ] Save with the pure diff, audit rows, and the Audit Log read side (AC-7, 9, 11, 12)
+  - [x] The step language, the deny list and guards files, and the starting list rewritten to it (AC-9, 17 to 21, 24, 25)
+  - [x] The migration, the seed step, and the tracer thread: read functions and the read only page behind `requireAdmin()` (AC-1 to 4, 10, 15, 16)
+  - [x] Save with the pure diff, audit rows, and the Audit Log read side (AC-7, 9, 11, 12)
   - [ ] Edit mode, the draft, the JSON row editor, the mode confirm, and dragging by mouse, touch, and keyboard (AC-5, 6, 8, 22, 23)
   - [ ] The starting list gaps control, then tests and the no portal scan (AC-13, 14, 26)
   - [ ] README: update the "Nile Portal Reset setup (planned)" section to match what shipped (drop the planned tag, exact names), and add the new steps to the Docker setup
