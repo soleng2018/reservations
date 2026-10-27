@@ -1,0 +1,8 @@
+{
+  "prefixes": [
+    "/api/*/idps",
+    "/api/*/users",
+    "/global-settings/identity",
+    "/network-setup/users"
+  ]
+}

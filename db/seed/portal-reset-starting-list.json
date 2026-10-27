@@ -1,0 +1,671 @@
+{
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "key": "integrations",
+      "featureName": "Integrations",
+      "note": "Webhooks, SIEMs (all vendors share one route), email subscriptions, and DNS servers. Splunk, Snowflake, and Generic HTTP SIEMs are assumed to share the SIEM route and were not tested.",
+      "pages": ["/global-settings/integrations"],
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/subscriptions/webhooks/config?size=2000",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v1/subscriptions/webhooks/config/{id}"
+          }
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/siems?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v1/siems/{id}"
+          }
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/subscriptions/email?size=2000",
+            "itemsAt": "content",
+            "idField": "id"
+          },
+          "delete": {
+            "path": "/api/v1/subscriptions/email/{id}"
+          }
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/dhcp/ddns/ddns-servers?page=0&size=500",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v1/dhcp/ddns/ddns-servers/{id}"
+          }
+        },
+        {
+          "kind": "read",
+          "as": "webhooksAfter",
+          "method": "GET",
+          "path": "/api/v1/subscriptions/webhooks/config?size=2000",
+          "pick": {
+            "first": "content[0].id"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "webhooksAfter",
+          "key": "first",
+          "op": "missing"
+        },
+        {
+          "kind": "read",
+          "as": "siemsAfter",
+          "method": "GET",
+          "path": "/api/v1/siems?size=2000",
+          "pick": {
+            "first": "data.content[0].id"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "siemsAfter",
+          "key": "first",
+          "op": "missing"
+        },
+        {
+          "kind": "read",
+          "as": "emailAfter",
+          "method": "GET",
+          "path": "/api/v1/subscriptions/email?size=2000",
+          "pick": {
+            "first": "content[0].id"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "emailAfter",
+          "key": "first",
+          "op": "missing"
+        },
+        {
+          "kind": "read",
+          "as": "dnsAfter",
+          "method": "GET",
+          "path": "/api/v1/dhcp/ddns/ddns-servers?page=0&size=500",
+          "pick": {
+            "first": "data.content[0].id"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "dnsAfter",
+          "key": "first",
+          "op": "missing"
+        }
+      ]
+    },
+    {
+      "key": "ssids",
+      "featureName": "SSIDs",
+      "note": "The protected guest service SSID (ssid.popTunnelUsed true) is also held by the guards file.",
+      "pages": ["/network-setup/wireless"],
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/ssids?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "path": "/api/v1/settings/ssids/{id}"
+          },
+          "skipWhen": [
+            {
+              "field": "ssid.popTunnelUsed",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "guest-service-auth-geo-control",
+      "featureName": "Guest Service Auth and Geo Control",
+      "note": "From OFF the switch goes true, waits 10 seconds, then false; from ON it goes false only. The portal page ignores this click, so the API is used.",
+      "parts": [
+        {
+          "kind": "read",
+          "as": "state",
+          "method": "GET",
+          "path": "/api/v1/guestpop/advance",
+          "pick": {
+            "id": "[0].id",
+            "tenantId": "[0].tenantId",
+            "on": "[0].advanceSettingsEnabled"
+          }
+        },
+        {
+          "kind": "call",
+          "method": "PUT",
+          "path": "/api/v1/guestpop/advance/{read.state.id}",
+          "body": {
+            "id": "{read.state.id}",
+            "tenantId": "{read.state.tenantId}",
+            "advanceSettingsEnabled": true
+          },
+          "when": [
+            {
+              "read": "state",
+              "key": "on",
+              "op": "eq",
+              "value": false
+            }
+          ]
+        },
+        {
+          "kind": "wait",
+          "seconds": 10,
+          "when": [
+            {
+              "read": "state",
+              "key": "on",
+              "op": "eq",
+              "value": false
+            }
+          ]
+        },
+        {
+          "kind": "call",
+          "method": "PUT",
+          "path": "/api/v1/guestpop/advance/{read.state.id}",
+          "body": {
+            "id": "{read.state.id}",
+            "tenantId": "{read.state.tenantId}",
+            "advanceSettingsEnabled": false
+          }
+        },
+        {
+          "kind": "read",
+          "as": "after",
+          "method": "GET",
+          "path": "/api/v1/guestpop/advance",
+          "pick": {
+            "on": "[0].advanceSettingsEnabled"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "after",
+          "key": "on",
+          "op": "eq",
+          "value": false
+        }
+      ]
+    },
+    {
+      "key": "wired-access-management",
+      "featureName": "Wired Access Management and Wired SSO",
+      "note": "When Wired SSO is on: every entry except ALL, then the SSO config, then ALL. When it is off, every entry in one call. A deleted device can reappear as Waiting for Approval, so a leftover is allowed.",
+      "pages": ["/network-setup/access-management/wired"],
+      "parts": [
+        {
+          "kind": "read",
+          "as": "sso",
+          "method": "GET",
+          "path": "/api/v1/settings/sso-segment",
+          "pick": {
+            "pre": "ssoSegment.preTransactionSegment",
+            "post": "ssoSegment.postTransactionSegment"
+          }
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/client-configs?size=2000",
+            "itemsAt": "$",
+            "idField": "id",
+            "unwrap": "clientConfig"
+          },
+          "delete": {
+            "path": "/api/v1/client-configs",
+            "batch": true,
+            "body": {
+              "ids": "{ids}"
+            }
+          },
+          "skipWhen": [
+            {
+              "field": "ruleType",
+              "op": "eq",
+              "value": "ALL"
+            }
+          ],
+          "allowLeftover": true,
+          "when": [
+            {
+              "read": "sso",
+              "key": "pre",
+              "op": "exists"
+            },
+            {
+              "read": "sso",
+              "key": "post",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "kind": "call",
+          "method": "DELETE",
+          "path": "/api/v1/settings/sso-segment",
+          "when": [
+            {
+              "read": "sso",
+              "key": "pre",
+              "op": "exists"
+            },
+            {
+              "read": "sso",
+              "key": "post",
+              "op": "exists"
+            }
+          ]
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/client-configs?size=2000",
+            "itemsAt": "$",
+            "idField": "id",
+            "unwrap": "clientConfig"
+          },
+          "delete": {
+            "path": "/api/v1/client-configs",
+            "batch": true,
+            "body": {
+              "ids": "{ids}"
+            }
+          },
+          "allowLeftover": true
+        },
+        {
+          "kind": "read",
+          "as": "after",
+          "method": "GET",
+          "path": "/api/v1/settings/sso-segment",
+          "pick": {
+            "pre": "ssoSegment.preTransactionSegment"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "after",
+          "key": "pre",
+          "op": "missing"
+        }
+      ]
+    },
+    {
+      "key": "policies",
+      "featureName": "Policies (inside Policy Sets)",
+      "note": "System policies (policyAttribute.isDefault true) are skipped here and held by the guards file.",
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v3/policy/policysets",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name",
+            "nested": {
+              "at": "policies",
+              "parentIdField": "id"
+            }
+          },
+          "delete": {
+            "path": "/api/v3/policy/policysets/{parentId}/rules/{id}",
+            "body": {
+              "id": "{id}",
+              "policySetId": "{parentId}"
+            }
+          },
+          "skipWhen": [
+            {
+              "field": "policyAttribute.isDefault",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "service-profiles",
+      "featureName": "Service Profiles (admin defined)",
+      "enabled": false,
+      "note": "Disabled until there is evidence: the delete call and the system marker were never seen (Workshop 4 held no admin profile). The route and the items location are guessed.",
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v3/policy/service-profiles",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v3/policy/service-profiles/{id}"
+          }
+        }
+      ]
+    },
+    {
+      "key": "policy-groups",
+      "featureName": "Policy Groups",
+      "note": "User and device groups first, then App groups. The portal refuses the six system App groups with 400, which is expected.",
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v3/policy/groups?size=2000",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v3/policy/groups/{id}"
+          },
+          "skipWhen": [
+            {
+              "field": "groupType",
+              "op": "eq",
+              "value": "App"
+            }
+          ]
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v3/policy/groups?size=2000",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v3/policy/groups/{id}"
+          },
+          "onlyWhen": [
+            {
+              "field": "groupType",
+              "op": "eq",
+              "value": "App"
+            }
+          ],
+          "expectRefusals": [
+            {
+              "status": 400,
+              "messageContains": "Cannot delete, Group belongs to a Policy"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "segments",
+      "featureName": "Segments",
+      "note": "No body is needed: the API takes the id in the path alone.",
+      "pages": ["/network-setup/segments"],
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/segments?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "path": "/api/v1/settings/segments/{id}"
+          }
+        }
+      ]
+    },
+    {
+      "key": "authentication-admin-radius-and-guest-portals",
+      "featureName": "Authentication: RADIUS servers and Guest Portals",
+      "note": "Admin defined RADIUS servers and Guest Portals. Nile RADIUS (cloudRadius true) stays and is held by the guards file.",
+      "pages": ["/network-setup/authentication"],
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/radius?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "path": "/api/v1/settings/radius/{id}"
+          },
+          "skipWhen": [
+            {
+              "field": "cloudRadius",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/portalconfig",
+            "itemsAt": "$",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "path": "/api/v1/portalconfig/{id}"
+          }
+        }
+      ]
+    },
+    {
+      "key": "nile-radius-policies",
+      "featureName": "Nile RADIUS: policies",
+      "note": "Delete every policy except the Default Network Policy, then make sure that one is REJECT.",
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/cloudradius/policysets",
+            "itemsAt": "$",
+            "idField": "id",
+            "labelField": "name",
+            "nested": {
+              "at": "policies",
+              "parentIdField": "id"
+            }
+          },
+          "delete": {
+            "path": "/api/v1/cloudradius/policysets/{parentId}/policies/{id}"
+          },
+          "skipWhen": [
+            {
+              "field": "isDefault",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "kind": "update_record",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/cloudradius/policysets",
+            "itemsAt": "$",
+            "idField": "id",
+            "labelField": "name",
+            "nested": {
+              "at": "policies",
+              "parentIdField": "id"
+            }
+          },
+          "match": [
+            {
+              "field": "isDefault",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "field": "authResult",
+              "op": "ne",
+              "value": "REJECT"
+            }
+          ],
+          "set": {
+            "at": "authResult",
+            "value": "REJECT"
+          },
+          "put": {
+            "path": "/api/v1/cloudradius/policysets/{parentId}/policies/{id}"
+          }
+        }
+      ]
+    },
+    {
+      "key": "nile-radius-certificates",
+      "featureName": "Nile RADIUS: certificates",
+      "note": "One call clears all the certificate material. A 404 means there is none. The PEAP configuration delete is not known yet, so it is not in this step.",
+      "parts": [
+        {
+          "kind": "call",
+          "method": "DELETE",
+          "path": "/api/v1/cloudradius/config/demo/keys",
+          "okStatus": [200, 404]
+        },
+        {
+          "kind": "read",
+          "as": "config",
+          "method": "GET",
+          "path": "/api/v1/cloudradius/config",
+          "pick": {
+            "usable": "usable",
+            "tlsComplete": "eapTLSConfig.complete"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "config",
+          "key": "usable",
+          "op": "eq",
+          "value": false
+        },
+        {
+          "kind": "expect",
+          "read": "config",
+          "key": "tlsComplete",
+          "op": "eq",
+          "value": false
+        }
+      ]
+    },
+    {
+      "key": "dhcp",
+      "featureName": "DHCP: servers and Nile DHCP scopes",
+      "note": "Admin defined servers are deleted. The Nile DHCP record stays and its scopes are removed by one PUT with an empty subnet list.",
+      "pages": ["/network-setup/dhcp"],
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/dhcp-clients?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "path": "/api/v1/settings/dhcp-clients/{id}"
+          },
+          "skipWhen": [
+            {
+              "field": "dhcpClient.cloudDHCP",
+              "op": "eq",
+              "value": true
+            }
+          ]
+        },
+        {
+          "kind": "update_record",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/dhcp-clients?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "match": [
+            {
+              "field": "dhcpClient.cloudDHCP",
+              "op": "eq",
+              "value": true
+            },
+            {
+              "field": "dhcpClient.servers[0].subnets",
+              "op": "nonEmpty"
+            }
+          ],
+          "set": {
+            "at": "dhcpClient.servers[0].subnets",
+            "value": []
+          },
+          "put": {
+            "path": "/api/v1/settings/dhcp-clients/{id}"
+          }
+        }
+      ]
+    },
+    {
+      "key": "guest-portal-branding",
+      "featureName": "Guest Portal branding: restore to default",
+      "note": "Always restores, because a reset cannot know whether a learner used it. The request body is not known yet, so it ships with none.",
+      "parts": [
+        {
+          "kind": "call",
+          "method": "DELETE",
+          "path": "/api/v1/cloud-profile/value"
+        }
+      ]
+    }
+  ]
+}

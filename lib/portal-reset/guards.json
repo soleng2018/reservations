@@ -1,0 +1,60 @@
+{
+  "guards": [
+    {
+      "key": "protected-ssid",
+      "line": "SSIDs where ssid.popTunnelUsed is true are never deleted.",
+      "listPath": "/api/v1/settings/ssids",
+      "itemsAt": "data.content",
+      "idField": "id",
+      "keepWhen": [
+        { "field": "ssid.popTunnelUsed", "op": "eq", "value": true }
+      ],
+      "deleteRoutePrefix": "/api/v1/settings/ssids",
+      "expectKept": "exactlyOne"
+    },
+    {
+      "key": "system-policies",
+      "line": "Policies where policyAttribute.isDefault is true (system policies) are never deleted.",
+      "listPath": "/api/v3/policy/policysets",
+      "itemsAt": "content",
+      "nested": { "at": "policies", "parentIdField": "id" },
+      "idField": "id",
+      "keepWhen": [
+        { "field": "policyAttribute.isDefault", "op": "eq", "value": true }
+      ],
+      "deleteRoutePrefix": "/api/v3/policy/policysets"
+    },
+    {
+      "key": "nile-radius",
+      "line": "The RADIUS server where cloudRadius is true (Nile RADIUS) is never deleted.",
+      "listPath": "/api/v1/settings/radius",
+      "itemsAt": "data.content",
+      "idField": "id",
+      "keepWhen": [{ "field": "cloudRadius", "op": "eq", "value": true }],
+      "deleteRoutePrefix": "/api/v1/settings/radius",
+      "expectKept": "exactlyOne"
+    },
+    {
+      "key": "nile-radius-policies",
+      "line": "The Default Network Policy of Nile RADIUS (isDefault is true) is never deleted.",
+      "listPath": "/api/v1/cloudradius/policysets",
+      "itemsAt": "$",
+      "nested": { "at": "policies", "parentIdField": "id" },
+      "idField": "id",
+      "keepWhen": [{ "field": "isDefault", "op": "eq", "value": true }],
+      "deleteRoutePrefix": "/api/v1/cloudradius/policysets"
+    },
+    {
+      "key": "nile-dhcp",
+      "line": "The DHCP server where dhcpClient.cloudDHCP is true (Nile DHCP) is never deleted.",
+      "listPath": "/api/v1/settings/dhcp-clients",
+      "itemsAt": "data.content",
+      "idField": "id",
+      "keepWhen": [
+        { "field": "dhcpClient.cloudDHCP", "op": "eq", "value": true }
+      ],
+      "deleteRoutePrefix": "/api/v1/settings/dhcp-clients",
+      "expectKept": "exactlyOne"
+    }
+  ]
+}
