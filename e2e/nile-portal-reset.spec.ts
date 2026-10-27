@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { test } from "./admin-session";
 import { haveSecrets } from "./authentik";
 import { expectNoSeriousViolations } from "./axe";
@@ -81,4 +81,212 @@ test("has no serious accessibility violations", async ({ adminPage: page }) => {
   await page.goto("/admin/nile-portal-reset");
   await expect(page.getByRole("list", { name: /Reset steps/ })).toBeVisible();
   await expectNoSeriousViolations(page);
+});
+
+// Spec 0022 tasks 7 to 9: edit mode, drag by keyboard, Save. The database is
+// shared with the running app, so the one test that saves puts the order back
+// and saves again (mode and email are never touched).
+const stepNames = (page: Page) =>
+  page
+    .getByRole("list", { name: /Reset steps/ })
+    .locator("> li")
+    .evaluateAll((items) =>
+      items.map(
+        (li) =>
+          li.querySelector("[data-testid=step-number]")?.nextElementSibling
+            ?.firstElementChild?.textContent ?? "",
+      ),
+    );
+
+const startEditing = async (page: Page) => {
+  await page.goto("/admin/nile-portal-reset");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
+};
+
+// dnd-kit attaches its key listener a tick after the lift, so each key waits
+// for the sign that the one before it was taken.
+const keyboardMove = async (page: Page, name: string, key: string) => {
+  const handle = page.getByRole("button", {
+    name: new RegExp(`^Reorder ${name},`),
+  });
+  await handle.focus();
+  await page.keyboard.press("Space");
+  await expect(handle).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press(key);
+  await expect(
+    page.locator("[aria-live]").filter({ hasText: /moved to position/ }),
+  ).toBeAttached();
+  await page.waitForTimeout(150);
+  await page.keyboard.press("Space");
+  await expect(
+    page.locator("[aria-live]").filter({ hasText: /dropped at position/ }),
+  ).toBeAttached();
+  // Focus stays on the handle after a drop (spec 0022 UX surface).
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^Reorder ${name},`) }),
+  ).toBeFocused();
+};
+
+// covers: AC-5
+test("Cancel on the Edit confirm changes nothing; Confirm shows the edit controls", async ({
+  adminPage: page,
+}) => {
+  await page.goto("/admin/nile-portal-reset");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Cancel" })
+    .click();
+  await expect(page.getByRole("alertdialog")).toBeHidden();
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+
+  await startEditing(page);
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(13);
+  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Discard" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(13);
+  await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(13);
+  await expectNoSeriousViolations(page);
+  await page.getByRole("button", { name: "Discard" }).click();
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+});
+
+// covers: AC-8, AC-6
+test("a row moves by keyboard, is announced, renumbers, and Escape cancels", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  const before = await stepNames(page);
+  expect(before[1]).toBe("SSIDs");
+
+  const handle = page.getByRole("button", { name: /^Reorder SSIDs,/ });
+  await expect(handle).toHaveAccessibleName("Reorder SSIDs, position 2 of 13");
+  await handle.focus();
+  await page.keyboard.press("Space");
+  // The lift is announced, then at once as over its own place.
+  await expect(handle).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page
+      .locator("[aria-live]")
+      .filter({ hasText: "SSIDs moved to position 2 of 13." }),
+  ).toBeAttached();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    page
+      .locator("[aria-live]")
+      .filter({ hasText: "SSIDs moved to position 3 of 13." }),
+  ).toBeAttached();
+  await page.keyboard.press("Escape");
+  expect(await stepNames(page)).toEqual(before);
+
+  await keyboardMove(page, "SSIDs", "ArrowDown");
+  const after = await stepNames(page);
+  expect(after[2]).toBe("SSIDs");
+  expect(after[1]).toBe(before[2]);
+  const numbers = await page.getByTestId("step-number").allInnerTexts();
+  expect(numbers.map((n) => n.replace("Step", "").trim())).toEqual(
+    Array.from({ length: 13 }, (_, i) => String(i + 1)),
+  );
+
+  // A changed draft asks before it is thrown away.
+  await page.getByRole("button", { name: "Discard" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Discard" })
+    .click();
+  expect(await stepNames(page)).toEqual(before);
+});
+
+// covers: AC-13
+test("the starting list control shows how many entries are missing", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  const control = page.getByRole("button", { name: /^Add from starting list/ });
+  await expect(control).toHaveText("Add from starting list (0)");
+  await expect(control).toBeDisabled();
+});
+
+// covers: AC-7, AC-12
+test("a moved row is saved, shows after a reload, and is put back", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  const original = await stepNames(page);
+  try {
+    await keyboardMove(page, "SSIDs", "ArrowDown");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+    await page.reload();
+    const moved = await stepNames(page);
+    expect(moved[2]).toBe("SSIDs");
+  } finally {
+    await startEditing(page);
+    const now = await stepNames(page);
+    if (now.join("|") !== original.join("|")) {
+      await keyboardMove(page, "SSIDs", "ArrowUp");
+      await page.getByRole("button", { name: "Save" }).click();
+      await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+    } else {
+      await page.getByRole("button", { name: "Discard" }).click();
+    }
+  }
+  await page.reload();
+  expect(await stepNames(page)).toEqual(original);
+});
+
+// covers: AC-6
+test("a row drags by its handle with the mouse and the numbers follow", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  const before = await stepNames(page);
+  const handle = page.getByRole("button", { name: /^Reorder SSIDs,/ });
+  await handle.scrollIntoViewIfNeeded();
+  const from = await handle.boundingBox();
+  const to = await page
+    .getByRole("button", { name: /^Reorder Guest Service Auth/ })
+    .boundingBox();
+  if (from === null || to === null) throw new Error("handles not on screen");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 5, from.y + 40, { steps: 5 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2 + 10, {
+    steps: 20,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await stepNames(page)).indexOf("SSIDs"))
+    .toBe(before.indexOf("SSIDs") + 1);
+  const after = await stepNames(page);
+  expect([...after].sort()).toEqual([...before].sort());
+  await expect(page.getByTestId("step-number").first()).toHaveText(/1$/);
+  await page.getByRole("button", { name: "Discard" }).click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Discard" })
+    .click();
+});
+
+// covers: AC-15
+test("edit mode at 390px keeps the handles and does not scroll sideways", async ({
+  adminPage: page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await startEditing(page);
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(13);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+  await page.screenshot({
+    path: "test-results/nile-portal-reset-edit-narrow.png",
+    fullPage: true,
+  });
 });

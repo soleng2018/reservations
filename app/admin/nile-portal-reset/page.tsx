@@ -4,9 +4,11 @@ import { PortalResetEditor } from "@/components/admin/portal-reset-editor";
 import { AUDIT_LOG_PATH } from "@/lib/audit-log";
 import { formatDateTime } from "@/lib/format-time";
 import type { EditorStep } from "@/lib/portal-reset/draft";
+import { startingChoices } from "@/lib/portal-reset/starting-choices";
 import { rowView } from "@/lib/portal-reset/view";
 import { requireAdmin } from "@/server/auth/require";
 import { db } from "@/server/db";
+import { startingList } from "@/server/portal-reset/starting-list";
 import { readResetPage } from "@/server/portal-reset/steps";
 
 export const metadata: Metadata = { title: "Nile Portal Reset" };
@@ -31,6 +33,15 @@ export default async function NilePortalResetPage() {
   const rows = list.steps.map((read) =>
     read.ok ? rowView(read.step, read.step.definition) : rowView(read, null),
   );
+  // The starting entries not in the table, matched by seed_key (AC-13). A row
+  // that was removed and saved lost its key, so it is offered again (AC-26).
+  const inTable = new Set(
+    list.steps.flatMap((read) => {
+      const key = read.ok ? read.step.seedKey : read.seedKey;
+      return key === null ? [] : [key];
+    }),
+  );
+  const starting = startingChoices(startingList(), [...inTable]);
   const lastSaved =
     list.updatedByName === null
       ? null
@@ -44,6 +55,7 @@ export default async function NilePortalResetPage() {
       lastSaved={lastSaved}
       steps={steps}
       rows={rows}
+      starting={starting}
       historyHref={`${AUDIT_LOG_PATH}?area=portal_reset`}
       save={savePortalResetAction}
     />

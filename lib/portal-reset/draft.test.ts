@@ -3,8 +3,11 @@ import {
   appendEntry,
   checkEntry,
   definitionText,
+  entryFromChoice,
   entryView,
   isDirty,
+  moveEntry,
+  openChoices,
   parseDefinitionText,
   removeEntry,
   replaceEntry,
@@ -12,6 +15,7 @@ import {
   startDraft,
   type DraftEntry,
   type Saved,
+  type StartingChoice,
 } from "./draft";
 import { SaveRequest } from "./save-input";
 
@@ -218,5 +222,87 @@ describe("checkEntry", () => {
       ok: false,
       error: { definition: "This is not valid JSON." },
     });
+  });
+});
+
+describe("moveEntry", () => {
+  it("moves a row and numbers the views 1 to N in the new order", () => {
+    const grown = appendEntry(start, added);
+    const moved = moveEntry(grown, 2, 0);
+    expect(moved.steps.map((s) => s.featureName)).toEqual([
+      "Three",
+      "One",
+      "Two",
+    ]);
+    expect(
+      moved.steps.map(entryView).map((v) => [v.position, v.featureName]),
+    ).toEqual([
+      [1, "Three"],
+      [2, "One"],
+      [3, "Two"],
+    ]);
+    expect(grown.steps.map((s) => s.featureName)).toEqual([
+      "One",
+      "Two",
+      "Three",
+    ]);
+  });
+
+  it("makes the draft dirty, and a move back makes it clean again", () => {
+    const moved = moveEntry(start, 0, 1);
+    expect(isDirty(start, moved)).toBe(true);
+    expect(isDirty(start, moveEntry(moved, 1, 0))).toBe(false);
+  });
+
+  it("sends the new order to Save", () => {
+    const input = saveInput(moveEntry(start, 1, 0));
+    expect(input.steps.map((s) => s.featureName)).toEqual(["Two", "One"]);
+  });
+});
+
+describe("starting list choices", () => {
+  const choice = (key: string, featureName: string): StartingChoice => ({
+    key,
+    featureName,
+    enabled: false,
+    note: "tested",
+    definition: wait(4),
+    description: ["Wait 4 seconds."],
+  });
+  const choices = [choice("ssids", "SSIDs"), choice("one", "one")];
+
+  it("offers every choice while none is in the draft, flagging a taken name", () => {
+    const open = openChoices(choices, start);
+    expect(open.map((o) => o.choice.key)).toEqual(["ssids", "one"]);
+    expect(open.map((o) => o.nameTaken)).toEqual([false, true]);
+  });
+
+  it("hides a choice once it is in the draft by its key", () => {
+    const entry = entryFromChoice(choices[0], "new-1");
+    const open = openChoices(choices, appendEntry(start, entry));
+    expect(open.map((o) => o.choice.key)).toEqual(["one"]);
+  });
+
+  it("adds a row that keeps the entry's fields and its key, with no id", () => {
+    const entry = entryFromChoice(choices[0], "new-1");
+    expect(entry).toMatchObject({
+      id: null,
+      featureName: "SSIDs",
+      enabled: false,
+      note: "tested",
+      seedKey: "ssids",
+    });
+    const input = saveInput(appendEntry(start, entry));
+    expect(input.steps[2]).toMatchObject({ seedKey: "ssids" });
+    expect("id" in input.steps[2]).toBe(false);
+    expect(
+      SaveRequest.safeParse({ ...input, expectedVersion: 1 }).success,
+    ).toBe(true);
+  });
+
+  it("never sends a seed key for a kept row", () => {
+    const kept = { ...start.steps[0], seedKey: "one" };
+    const input = saveInput({ ...start, steps: [kept, start.steps[1]] });
+    expect("seedKey" in input.steps[0]).toBe(false);
   });
 });

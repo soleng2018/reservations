@@ -454,8 +454,8 @@ Feature 24 needs to know which portal calls to make and in what order, so the ow
   - [x] The step language, the deny list and guards files, and the starting list rewritten to it (AC-9, 17 to 21, 24, 25)
   - [x] The migration, the seed step, and the tracer thread: read functions and the read only page behind `requireAdmin()` (AC-1 to 4, 10, 15, 16)
   - [x] Save with the pure diff, audit rows, and the Audit Log read side (AC-7, 9, 11, 12)
-  - [ ] Edit mode, the draft, the JSON row editor, the mode confirm, and dragging by mouse, touch, and keyboard (AC-5, 6, 8, 22, 23)
-  - [ ] The starting list gaps control, then tests and the no portal scan (AC-13, 14, 26)
+  - [x] Edit mode, the draft, the JSON row editor, the mode confirm, and dragging by mouse, touch, and keyboard (AC-5, 6, 8, 22, 23)
+  - [x] The starting list gaps control, then tests and the no portal scan (AC-13, 14, 26)
   - [ ] README: update the "Nile Portal Reset setup (planned)" section to match what shipped (drop the planned tag, exact names), and add the new steps to the Docker setup
 - [ ] Verify it: `/check verify admin: nile portal reset page`
 - [ ] Test it: `/test admin: nile portal reset page`

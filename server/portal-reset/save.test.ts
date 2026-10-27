@@ -65,12 +65,16 @@ const send = (
     adminId,
   );
 
+// Only the rows this test's own transaction wrote: `now()` is the start of the
+// transaction, so rows other runs committed (a Save from the e2e flow, which
+// the append only log keeps) are not counted.
 const audits = async (trx: Transaction<DB>) =>
   trx
     .selectFrom("audit_events")
     .selectAll()
     .where("action", "like", "portal_reset.%")
     .where("action", "<>", "portal_reset.seeded")
+    .where("created_at", "=", sql<Date>`now()`)
     .execute();
 
 const positions = async (trx: Transaction<DB>) =>

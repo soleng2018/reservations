@@ -21,6 +21,7 @@ import {
   PortalResetSettings,
   PortalResetSettingsFields,
 } from "@/components/admin/portal-reset-settings";
+import { PortalResetStartingList } from "@/components/admin/portal-reset-starting-list";
 import { PortalResetSteps } from "@/components/admin/portal-reset-steps";
 import { notifySuccess } from "@/components/notify";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -29,8 +30,11 @@ import { Spinner } from "@/components/ui/spinner";
 import type { PortalResetMode } from "@/lib/db-enums";
 import {
   appendEntry,
+  entryFromChoice,
   entryView,
   isDirty,
+  moveEntry,
+  openChoices,
   removeEntry,
   replaceEntry,
   saveInput,
@@ -39,6 +43,7 @@ import {
   type DraftEntry,
   type EditorStep,
   type EntryFields,
+  type StartingChoice,
 } from "@/lib/portal-reset/draft";
 import { MODE_HELP } from "@/lib/portal-reset/mode";
 import type { FieldErrors } from "@/lib/form-errors";
@@ -56,6 +61,8 @@ type Props = {
   readonly steps: readonly EditorStep[];
   // The same list, as the read only table shows it.
   readonly rows: readonly ResetRowView[];
+  // The starting list entries that are not in the table (AC-13).
+  readonly starting: readonly StartingChoice[];
   readonly historyHref: string;
   readonly save: Save;
 };
@@ -150,6 +157,7 @@ const ROW_ERROR = /^steps\.(\d+)\.(.*)$/;
 function Editing({
   session,
   lastSaved,
+  starting,
   historyHref,
   save,
   onExit,
@@ -252,6 +260,11 @@ function Editing({
     }
   };
 
+  const addFromStarting = (choice: StartingChoice) => {
+    added.current += 1;
+    change(appendEntry(draft, entryFromChoice(choice, `new-${added.current}`)));
+  };
+
   return (
     <>
       <PageHeader
@@ -311,7 +324,12 @@ function Editing({
               : change({ ...draft, mode })
           }
         />
-        <div className="flex justify-end">
+        <div className="flex flex-wrap justify-end gap-2">
+          <PortalResetStartingList
+            open={openChoices(starting, draft)}
+            disabled={pending}
+            onAdd={addFromStarting}
+          />
           <PortalResetRowDialog
             trigger={
               <Button variant="outline" disabled={pending}>
@@ -328,6 +346,10 @@ function Editing({
           rows={views}
           emptyDescription="A list needs at least one step. Add one to be able to save."
           problems={(row) => rowErrors(rowIndex(row))}
+          reorder={{
+            disabled: pending,
+            onMove: (from, to) => change(moveEntry(draft, from, to)),
+          }}
           actions={(row) => {
             const entry = entryFor(row);
             if (entry === null) return null;

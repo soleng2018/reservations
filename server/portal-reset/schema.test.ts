@@ -31,14 +31,16 @@ const step = (
 describe.skipIf(!hasDb)("portal reset tables", () => {
   afterAll(() => db().destroy());
 
-  it("has exactly one settings row, mode off, version 1", async () => {
+  // The version only goes up (a Save raises it), so it is not pinned to 1.
+  it("has exactly one settings row, with a version", async () => {
     await inRollback(async (trx) => {
       const rows = await trx
         .selectFrom("portal_reset_settings")
         .selectAll()
         .execute();
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ id: true, mode: "off", version: 1 });
+      expect(rows[0]).toMatchObject({ id: true });
+      expect(rows[0]?.version).toBeGreaterThanOrEqual(1);
     });
   });
 

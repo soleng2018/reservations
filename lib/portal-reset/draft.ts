@@ -2,6 +2,7 @@ import type { PortalResetMode } from "@/lib/db-enums";
 import { fieldErrors, type FieldErrors } from "@/lib/form-errors";
 import { err, ok, type Result } from "@/lib/result";
 import { nameKey, stableStringify } from "./normalize";
+import { moveItem } from "./reorder";
 import { StepFields } from "./save-input";
 import { StepDefinition } from "./step-schema";
 import { rowView, type ResetRowView } from "./view";
@@ -31,6 +32,8 @@ export type DraftEntry = {
   readonly enabled: boolean;
   readonly note: string | null;
   readonly definition: unknown;
+  // The starting list entry a new row was added from (spec 0022 AC-13).
+  readonly seedKey?: string;
 };
 
 export type Draft = {
@@ -67,6 +70,56 @@ export const removeEntry = (draft: Draft, clientKey: string): Draft => ({
   steps: draft.steps.filter((s) => s.clientKey !== clientKey),
 });
 
+// Move the row at `from` to `to`. The numbers on screen come from the array
+// index, so they renumber 1 to N at once (AC-6).
+export const moveEntry = (draft: Draft, from: number, to: number): Draft => ({
+  ...draft,
+  steps: moveItem(draft.steps, from, to),
+});
+
+// A starting list entry the page offers (spec 0022 AC-13), as the server
+// hands it over: the entry, and its plain words description.
+export type StartingChoice = {
+  readonly key: string;
+  readonly featureName: string;
+  readonly enabled: boolean;
+  readonly note: string | null;
+  readonly definition: unknown;
+  readonly description: readonly string[];
+};
+
+// The offered entries that are not already in the draft by `seed_key`, each
+// with whether another row already uses its name (a Save would refuse that).
+export const openChoices = (
+  choices: readonly StartingChoice[],
+  draft: Draft,
+): readonly {
+  readonly choice: StartingChoice;
+  readonly nameTaken: boolean;
+}[] =>
+  choices
+    .filter((c) => !draft.steps.some((s) => s.seedKey === c.key))
+    .map((choice) => ({
+      choice,
+      nameTaken: draft.steps.some(
+        (s) => nameKey(s.featureName) === nameKey(choice.featureName),
+      ),
+    }));
+
+// A starting list entry as a new row at the end of the draft.
+export const entryFromChoice = (
+  choice: StartingChoice,
+  clientKey: string,
+): DraftEntry => ({
+  clientKey,
+  id: null,
+  featureName: choice.featureName,
+  enabled: choice.enabled,
+  note: choice.note,
+  definition: choice.definition,
+  seedKey: choice.key,
+});
+
 // What Save receives, minus the version the page adds. Order numbers are not
 // sent: the server sets them from the array index.
 export const saveInput = (draft: Draft) => ({
@@ -74,6 +127,7 @@ export const saveInput = (draft: Draft) => ({
   mode: draft.mode,
   steps: draft.steps.map((s) => ({
     ...(s.id === null ? {} : { id: s.id }),
+    ...(s.id === null && s.seedKey !== undefined ? { seedKey: s.seedKey } : {}),
     featureName: s.featureName,
     enabled: s.enabled,
     note: s.note,
