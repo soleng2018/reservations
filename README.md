@@ -8,7 +8,7 @@ Built with Next.js 16 (App Router), React 19, Kysely on its own Postgres contain
 
 Read this before you start: **everything here is dev, and Authentik is shared.** A worker you start on your machine changes real Authentik group membership, and test users you create there are real.
 
-Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10.
+Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10. Once the Nile Portal Reset features ship, also do [Nile Portal Reset setup](#nile-portal-reset-setup-planned) before any learner books a lab.
 
 Placeholders in `<angle brackets>` are values only you know. Write them as plain text, without the brackets.
 
@@ -532,6 +532,21 @@ Go to **Admin → Testbeds → Add testbed**.
 The app checks the group when you save. Under the Name field you will see one of these: "No Authentik group with this name exists.", "That group isn't set up for testbeds. It needs the hol_testbed_group marker.", or "Another testbed already uses that group." If Authentik cannot be reached, the form says so, and nothing is saved.
 
 When a testbed is deleted, the group is left alone. The worker only records that the app is done with it (an audit entry named "Authentik group released").
+
+## Nile Portal Reset setup (planned)
+
+**Status: not built yet.** This section describes the setup that features 24 and 25 will need ([spec 0022](docs/specs/0022-nile-portal-reset-page.md) for the admin page; the reset engine itself is still to be designed). Nothing here is needed to run the app today. When those features ship, this section is the checklist to finish before any learner books a lab, and it will be updated with the exact names.
+
+After every lab, the app resets that workshop's Nile Portal by signing in as its admin and deleting what the learner made. It needs three things set up first:
+
+1. **The portal password file.** The reset signs in as `admin@<testbed domain>` (for workshop N, `admin@nileworkshop-N.com`), with one shared password kept in a file, never in the database. In dev that file is `~/secrets/nileportal.pw`. Make it the same way as the other secrets (one value, mode `600`). In Docker, put the file in `SECRETS_DIR` too, and it will be mounted into the containers like the six files in [Secret files](#2-secret-files). The variable that points at it will be named when the engine is built. If the file is missing, the reset will fail and tell the abort address, so check it exists before you deploy.
+
+2. **Testbed domains.** The username comes from each testbed's domain, so every testbed that gets a reset needs its domain set (see [Testbed groups](#testbed-groups)). The domain must match the portal tenant, or the reset refuses to run.
+
+3. **The Nile Portal Reset page.** Sign in to the admin console and open **Nile Portal Reset**, then:
+   - Check the list of portal calls. A fresh install already holds the starting list from the repo, so you only review it. The order matters: a thing must come after everything that uses it.
+   - Click **Edit**, confirm the pop up, type the **abort email** (where an aborted or failed reset is reported), and press **Save**. Until this is saved, the page warns that aborted resets will not be emailed.
+   - Later deploys never overwrite your list or email. Only an admin changes them, and every change is in the Audit Log.
 
 ## Running with Docker
 
