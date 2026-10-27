@@ -13,6 +13,7 @@ import {
 } from "kysely/migration";
 import { createDb } from "@/server/db";
 import { dbEnv } from "@/server/env";
+import { seedPortalReset } from "@/server/portal-reset/seed";
 
 const dir = path.resolve(process.cwd(), "db/migrations");
 
@@ -41,7 +42,7 @@ const sqlFileProvider = (folder: string): MigrationProvider => ({
 });
 
 async function main(): Promise<number> {
-  const db = createDb<unknown>(dbEnv(), 1);
+  const db = createDb(dbEnv(), 1);
   try {
     const migrator = new Migrator({
       db,
@@ -58,6 +59,12 @@ async function main(): Promise<number> {
     if (error) {
       console.error("migration failed:", error);
       return 1;
+    }
+    // Data the app ships with, loaded once (spec 0022). A bad starting list
+    // file throws here, so the web container never starts on it.
+    const seed = await seedPortalReset(db);
+    if (seed.seeded) {
+      console.log(`seeded: ${seed.inserted.length} Nile Portal Reset steps`);
     }
     return 0;
   } finally {

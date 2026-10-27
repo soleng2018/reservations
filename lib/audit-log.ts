@@ -15,6 +15,7 @@ export const AuditArea = z.enum([
   "access_groups",
   "users",
   "bookings",
+  "portal_reset",
 ]);
 export type AuditArea = z.infer<typeof AuditArea>;
 
@@ -26,6 +27,7 @@ export const AUDIT_AREA_LABEL = {
   access_groups: "Access groups",
   users: "Users",
   bookings: "Bookings",
+  portal_reset: "Nile Portal Reset",
 } as const satisfies Record<AuditArea, string>;
 
 export type AuditActionInfo = {
@@ -115,6 +117,35 @@ export const AUDIT_ACTION_INFO = {
   "booking.refused_duplicate_email": {
     label: "Booking refused (duplicate email)",
     area: "bookings",
+  },
+  "portal_reset.seeded": {
+    label: "Reset list seeded",
+    area: "portal_reset",
+  },
+  "portal_reset.saved": { label: "Reset list saved", area: "portal_reset" },
+  "portal_reset.step_added": {
+    label: "Reset step added",
+    area: "portal_reset",
+  },
+  "portal_reset.step_updated": {
+    label: "Reset step updated",
+    area: "portal_reset",
+  },
+  "portal_reset.step_removed": {
+    label: "Reset step removed",
+    area: "portal_reset",
+  },
+  "portal_reset.steps_reordered": {
+    label: "Reset steps reordered",
+    area: "portal_reset",
+  },
+  "portal_reset.email_changed": {
+    label: "Reset abort email changed",
+    area: "portal_reset",
+  },
+  "portal_reset.mode_changed": {
+    label: "Reset mode changed",
+    area: "portal_reset",
   },
 } as const satisfies Record<AuditAction, AuditActionInfo>;
 

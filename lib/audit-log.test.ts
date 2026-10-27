@@ -102,6 +102,7 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "admin.sign_in_refused": "system",
   "set_password.resent": "system",
   "cleanup_hook.failed": "system",
+  "portal_reset.seeded": "system",
 };
 
 const root = path.resolve(__dirname, "..");
