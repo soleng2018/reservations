@@ -309,6 +309,16 @@ test("the add form marks a password without a username, and stops at 20 clients"
   await first.getByLabel("Client name").fill("Air 1");
   await first.getByLabel("Client URL").fill("https://air1.nile-test.invalid");
   await first.getByLabel("OS password", { exact: true }).fill("orphan pass");
+  // Save stays off until a group with a domain is chosen (spec 0017 AC-22).
+  // The client rules fail before any group lookup, so nothing is written.
+  await dialog
+    .getByRole("combobox", { name: "Group Name", exact: true })
+    .click();
+  await page
+    .getByRole("option")
+    .filter({ hasNotText: "(no domain set)" })
+    .first()
+    .click();
   await dialog.getByRole("button", { name: "Save" }).click();
 
   const username = first.getByLabel("OS username");
