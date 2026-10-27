@@ -404,6 +404,12 @@ const metadataName = (metadata: unknown): string | undefined => {
   return parsed.success ? parsed.data.name : undefined;
 };
 
+// A string `featureName` in an entry's metadata (a removed reset step).
+const metadataFeatureName = (metadata: unknown): string | undefined => {
+  const parsed = z.object({ featureName: z.string() }).safeParse(metadata);
+  return parsed.success ? parsed.data.featureName : undefined;
+};
+
 // AC-7: target names in one batched read per type, after the page loads its
 // rows. Ids are checked with z.uuid() before they reach SQL, so target_id is
 // never cast; anything with no row gets a fallback label.
@@ -422,47 +428,56 @@ export async function resolveTargets(
       refs.filter((r) => r.type === "authentik_group").map((r) => r.id),
     ),
   ];
-  const [types, testbeds, keys, users, bookings, groups] = await Promise.all([
-    namedRows(conn, "testbed_types", idsOf("testbed_type")),
-    inList(idsOf("testbed"), (ids) =>
-      conn
-        .selectFrom("testbeds")
-        .select(["id", "name", "group_name", "deleted_at"])
-        .where("id", "in", ids)
-        .execute(),
-    ),
-    namedRows(conn, "api_keys", idsOf("api_key")),
-    inList(idsOf("user"), (ids) =>
-      conn
-        .selectFrom("users")
-        .select(["id", "name", "email", "role"])
-        .where("id", "in", ids)
-        .execute(),
-    ),
-    inList(idsOf("booking"), (ids) =>
-      conn
-        .selectFrom("bookings as b")
-        .innerJoin("users as u", "u.id", "b.user_id")
-        .innerJoin("testbeds as t", "t.id", "b.testbed_id")
-        .select([
-          "b.id",
-          "b.starts_at",
-          "u.name as learner",
-          "t.name as testbed",
-          "t.deleted_at",
-        ])
-        .where("b.id", "in", ids)
-        .execute(),
-    ),
-    inList(groupPks, (pks) =>
-      conn
-        .selectFrom("testbeds")
-        .select(["authentik_group_pk", "group_name"])
-        // A uuid column, but a target_id may be any text: compare as text.
-        .where(sql<string>`authentik_group_pk::text`, "in", pks)
-        .execute(),
-    ),
-  ]);
+  const [types, testbeds, keys, users, bookings, groups, resetSteps] =
+    await Promise.all([
+      namedRows(conn, "testbed_types", idsOf("testbed_type")),
+      inList(idsOf("testbed"), (ids) =>
+        conn
+          .selectFrom("testbeds")
+          .select(["id", "name", "group_name", "deleted_at"])
+          .where("id", "in", ids)
+          .execute(),
+      ),
+      namedRows(conn, "api_keys", idsOf("api_key")),
+      inList(idsOf("user"), (ids) =>
+        conn
+          .selectFrom("users")
+          .select(["id", "name", "email", "role"])
+          .where("id", "in", ids)
+          .execute(),
+      ),
+      inList(idsOf("booking"), (ids) =>
+        conn
+          .selectFrom("bookings as b")
+          .innerJoin("users as u", "u.id", "b.user_id")
+          .innerJoin("testbeds as t", "t.id", "b.testbed_id")
+          .select([
+            "b.id",
+            "b.starts_at",
+            "u.name as learner",
+            "t.name as testbed",
+            "t.deleted_at",
+          ])
+          .where("b.id", "in", ids)
+          .execute(),
+      ),
+      inList(groupPks, (pks) =>
+        conn
+          .selectFrom("testbeds")
+          .select(["authentik_group_pk", "group_name"])
+          // A uuid column, but a target_id may be any text: compare as text.
+          .where(sql<string>`authentik_group_pk::text`, "in", pks)
+          .execute(),
+      ),
+      // Spec 0022: a reset step, named by its live row.
+      inList(idsOf("portal_reset_step"), (ids) =>
+        conn
+          .selectFrom("portal_reset_steps")
+          .select(["id", "feature_name"])
+          .where("id", "in", ids)
+          .execute(),
+      ),
+    ]);
 
   const labels = new Map<string, TargetLabel>();
   const put = (type: AuditTargetType, id: string, label: TargetLabel) =>
@@ -513,6 +528,10 @@ export async function resolveTargets(
       );
   });
 
+  resetSteps.forEach((r) =>
+    put("portal_reset_step", r.id, named(`Reset step ${r.feature_name}`)),
+  );
+
   refs.forEach((r) => {
     const key = targetKey(r.type, r.id);
     if (labels.has(key)) return;
@@ -521,7 +540,14 @@ export async function resolveTargets(
       labels.set(key, named(`Authentik user ${pk}`));
     else if (r.type === "user" && r.id === "unknown")
       labels.set(key, named("Unknown"));
-    else if (r.type === "authentik_group") {
+    else if (r.type === "portal_reset_settings")
+      labels.set(key, named("Nile Portal Reset settings"));
+    else if (r.type === "portal_reset_step") {
+      // A removed step keeps its name in the audit row's metadata.
+      const name = metadataFeatureName(r.metadata);
+      if (name !== undefined)
+        labels.set(key, named(`Reset step ${name}`, true));
+    } else if (r.type === "authentik_group") {
       const name = metadataName(r.metadata);
       if (name !== undefined) labels.set(key, named(`${name} access group`));
     }

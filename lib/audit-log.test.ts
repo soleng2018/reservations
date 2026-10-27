@@ -211,6 +211,11 @@ describe("parseTarget", () => {
     ["user:unknown", { type: "user", id: "unknown" }],
     ["authentik_group:" + ID, { type: "authentik_group", id: ID }],
     ["authentik_group:pod-abc-1", { type: "authentik_group", id: "pod-abc-1" }],
+    ["portal_reset_step:" + ID, { type: "portal_reset_step", id: ID }],
+    [
+      "portal_reset_settings:settings",
+      { type: "portal_reset_settings", id: "settings" },
+    ],
   ])("reads %s", (raw, want) => {
     expect(parseTarget(raw)).toEqual(want);
   });
@@ -223,6 +228,8 @@ describe("parseTarget", () => {
     ["bad special user", "user:authentik:x"],
     ["group with a slash", "authentik_group:a/b"],
     ["group too long", "authentik_group:" + "a".repeat(65)],
+    ["non uuid reset step", "portal_reset_step:abc"],
+    ["reset settings with another id", "portal_reset_settings:other"],
   ])("drops a target with %s", (_, raw) => {
     expect(parseTarget(raw)).toBeUndefined();
   });

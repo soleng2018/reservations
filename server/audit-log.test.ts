@@ -160,6 +160,53 @@ describe.skipIf(!hasDb)("listAuditEvents", () => {
     }));
 });
 
+describe.skipIf(!hasDb)("resolveTargets, reset targets (spec 0022)", () => {
+  it("names a live step, a removed step from its metadata, and the settings", () =>
+    inRollback(async (trx) => {
+      const live = await trx
+        .insertInto("portal_reset_steps")
+        .values({
+          position: 99,
+          feature_name: "Live step",
+          definition: JSON.stringify({ parts: [{ kind: "wait", seconds: 1 }] }),
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const gone = crypto.randomUUID();
+      const unknown = crypto.randomUUID();
+      const labels = await resolveTargets(
+        trx,
+        [
+          { type: "portal_reset_step", id: live.id },
+          {
+            type: "portal_reset_step",
+            id: gone,
+            metadata: { featureName: "Old step" },
+          },
+          { type: "portal_reset_step", id: unknown },
+          { type: "portal_reset_settings", id: "settings" },
+        ],
+        "UTC",
+      );
+      const label = (type: string, id: string) =>
+        labels.get(targetKey(type, id));
+      expect(label("portal_reset_step", live.id)).toEqual({
+        label: "Reset step Live step",
+        deleted: false,
+        found: true,
+      });
+      expect(label("portal_reset_step", gone)).toEqual({
+        label: "Reset step Old step",
+        deleted: true,
+        found: true,
+      });
+      expect(label("portal_reset_step", unknown)?.found).toBe(false);
+      expect(label("portal_reset_settings", "settings")?.label).toBe(
+        "Nile Portal Reset settings",
+      );
+    }));
+});
+
 describe.skipIf(!hasDb)("resolveTargets", () => {
   // covers: AC-7, every target kind and its fallbacks
   it("labels each target kind, with Deleted and not found fallbacks", () =>

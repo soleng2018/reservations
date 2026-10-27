@@ -315,7 +315,9 @@ export function parseTarget(raw: string): AuditTarget | undefined {
     ? isUuid(id)
     : type.data === "user"
       ? isUuid(id) || SPECIAL_USER.test(id)
-      : GROUP_ID.test(id);
+      : type.data === "portal_reset_settings"
+        ? id === "settings"
+        : GROUP_ID.test(id);
   return fits ? { type: type.data, id } : undefined;
 }
 
