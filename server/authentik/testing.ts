@@ -47,12 +47,24 @@ export const fakeGroup = (
   ...over,
 });
 
-// A group the owner's script made and marked for testbeds (spec 0017).
+// A group the owner's script made and marked for testbeds (spec 0017). A
+// `domain` adds the `hol_testbed_domain` attribute (AC-17); any other
+// attribute value goes through `fakeGroup`.
 export const markedGroup = (
   pk: string,
   name: string,
   over: Partial<Pick<FakeGroup, "is_superuser" | "parents" | "roles">> = {},
-): FakeGroup => fakeGroup(pk, name, { hol_testbed_group: true }, over);
+  domain?: string,
+): FakeGroup =>
+  fakeGroup(
+    pk,
+    name,
+    {
+      hol_testbed_group: true,
+      ...(domain === undefined ? {} : { hol_testbed_domain: domain }),
+    },
+    over,
+  );
 
 // The pk the fake gives the first user it creates; the next gets one more.
 export const FAKE_NEW_PK = 900_100;

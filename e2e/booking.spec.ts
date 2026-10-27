@@ -75,16 +75,15 @@ test.describe.serial("booking", () => {
 
     await page.getByRole("link", { name: "Testbeds", exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/testbeds$/);
-    await makeTestbedGroup(testbedName, true);
+    await makeTestbedGroup(
+      testbedName,
+      true,
+      `dev-e2e-${id}.nile-test.invalid`,
+    );
     await page.getByRole("button", { name: "Add testbed" }).click();
     const testbedDialog = page.getByRole("dialog", { name: "Add testbed" });
     await testbedDialog.getByLabel("Name", { exact: true }).fill(friendlyName);
-    await testbedDialog
-      .getByLabel("Group Name", { exact: true })
-      .fill(testbedName);
-    await testbedDialog
-      .getByLabel("Domain", { exact: true })
-      .fill(`dev-e2e-${id}.nile-test.invalid`);
+    await choose(page, "Group Name", testbedName);
     await choose(page, "Testbed type", typeName);
     await testbedDialog
       .getByLabel("Nile Portal URL")

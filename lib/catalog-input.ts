@@ -94,7 +94,6 @@ export const GroupName = z
 export const TestbedInput = z.object({
   name: CatalogName,
   groupName: GroupName,
-  domain: DomainInput,
   testbedTypeId: z.uuid("Choose a type."),
   // Empty (the None option) or missing means no IDP.
   idpApiKeyId: z.preprocess(
@@ -109,6 +108,8 @@ export const TestbedInput = z.object({
 });
 export type TestbedInput = z.infer<typeof TestbedInput>;
 
+// Spec 0017 AC-20: no `domain` key either way. The domain comes from the
+// group on the server, so a forged `domain` field is dropped here.
 // Spec 0018 AC-4: an edit changes the Name but never reads a posted group
 // name, so a forged `groupName` field is dropped here.
 export const TestbedUpdateInput = TestbedInput.omit({ groupName: true });

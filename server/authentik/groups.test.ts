@@ -26,9 +26,30 @@ describe("findTestbedGroup (spec 0017 AC-3)", () => {
     const ak = fakeAuthentik([]);
     expect(await findTestbedGroup(ak.api, NAME)).toEqual({
       ok: true,
-      value: { pk: TESTBED_GROUP.pk, name: NAME },
+      value: { pk: TESTBED_GROUP.pk, name: NAME, domain: null },
     });
     expect(ak.writes).toEqual([]);
+  });
+
+  // covers: spec 0017 AC-21
+  it.each([
+    ["a valid domain", " NileWorkshop-1.COM ", "nileworkshop-1.com"],
+    ["no attribute", undefined, null],
+    ["a number", 42, null],
+    ["an empty string", "", null],
+    ["a bad shape", "nile", null],
+  ] as const)("reads the domain from a group with %s", async (_, raw, want) => {
+    const attributes =
+      raw === undefined
+        ? { hol_testbed_group: true }
+        : { hol_testbed_group: true, hol_testbed_domain: raw };
+    const ak = fakeAuthentik([], {
+      groups: [fakeGroup("d-uuid", "DomainGroup", attributes)],
+    });
+    expect(await findTestbedGroup(ak.api, "DomainGroup")).toEqual({
+      ok: true,
+      value: { pk: "d-uuid", name: "DomainGroup", domain: want },
+    });
   });
 
   it("matches the name exactly, and case sensitively", async () => {
@@ -146,7 +167,7 @@ describe("readTestbedGroup", () => {
     const ak = fakeAuthentik([]);
     expect(await readTestbedGroup(ak.api, TESTBED_GROUP.pk)).toEqual({
       ok: true,
-      value: { pk: TESTBED_GROUP.pk, name: NAME },
+      value: { pk: TESTBED_GROUP.pk, name: NAME, domain: null },
     });
     expect(await readTestbedGroup(ak.api, "gone-uuid")).toEqual({
       ok: false,

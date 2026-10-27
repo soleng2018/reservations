@@ -30,6 +30,9 @@ export type MembershipError = GroupRefusal | UserRefusal | AuthentikFailure;
 export type TestbedGroup = {
   readonly pk: string;
   readonly name: string;
+  // Spec 0017 AC-21: the group's `hol_testbed_domain`, parsed; null when
+  // missing or not a valid domain.
+  readonly domain: string | null;
 };
 
 export type GroupMember = {
@@ -42,9 +45,20 @@ const MEMBERS_PAGE = 100;
 // filter still finds the exact name in code.
 const LOOKUP_PAGE = 100;
 
+// Spec 0017 AC-17, AC-21: the one parse of a group's domain attribute, shared
+// by the add form's choices and the create lookup. Missing, not a string, or
+// not a domain gives null.
+export const parseGroupDomain = (g: Group): string | null => {
+  const parsed = DomainInput.safeParse(
+    g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE],
+  );
+  return parsed.success ? parsed.data : null;
+};
+
 const toTestbedGroup = (g: Group): TestbedGroup => ({
   pk: g.pk,
   name: g.name,
+  domain: parseGroupDomain(g),
 });
 
 const toMember = (u: User): GroupMember => ({
@@ -155,17 +169,15 @@ export type TestbedGroupChoice = {
 // string, or not a domain gives null; a bad value is warned about by group
 // name only, never by value.
 export function toGroupChoice(g: Group): TestbedGroupChoice {
-  const raw = g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE];
-  const parsed = DomainInput.safeParse(raw);
-  if (!parsed.success && raw !== undefined)
+  const domain = parseGroupDomain(g);
+  if (
+    domain === null &&
+    g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE] !== undefined
+  )
     console.warn(
       `authentik: group ${g.name} has an invalid ${TESTBED_GROUP_DOMAIN_ATTRIBUTE}`,
     );
-  return {
-    pk: g.pk,
-    name: g.name,
-    domain: parsed.success ? parsed.data : null,
-  };
+  return { pk: g.pk, name: g.name, domain };
 }
 
 // Spec 0017 AC-15: the marked groups the add form offers, sorted by name

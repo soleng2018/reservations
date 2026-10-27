@@ -30,3 +30,21 @@ _Steps derived from spec 0017 acceptance criteria. `/check verify` runs these; `
 
 ## Acceptance-criteria coverage
 - AC-1 … Domain steps 1 to 3 · AC-2 … steps 6 to 8 · AC-3 … steps 4, 5, 7, 9 · AC-4 … step 13 and the scan command · AC-5 … steps 1, 10 · AC-6 … step 11 · AC-7 … steps 11, 12 · AC-8 … step 5 · AC-9 … step 14 · AC-10 … steps 15 to 17 · AC-11 … the codegen command · AC-12 … the setup, e2e, and Authentik fact commands · AC-13 … step 18
+
+## Amendment 2026-10-26: Domain read only (updated 2026-10-27)
+_These replace the older steps that type or edit a Domain (UI steps 1 to 3, 6, and 11 above). Not yet run live._
+
+### UI / manual
+- [ ] Open Add testbed → Domain is a read only box with the placeholder "Choose a group first" and the hint "Taken from the group. It can't be changed."; choose a group that has a domain → the box shows it; Save stays off until a group with a domain is chosen        → AC-20, AC-22
+- [ ] Open the Group Name list with one marked group that has no `hol_testbed_domain` → it is listed as "<name> (no domain set)" and cannot be chosen        → AC-22
+- [ ] Add a testbed on a group with domain `NileWorkshop-1.COM` set by hand → it saves and the list and edit dialog show `nileworkshop-1.com`; post a forged `domain` with the form → the stored value is still the group's        → AC-21 · Value sourcing (domain)
+- [ ] Remove `hol_testbed_domain` from the group after the list loaded, then Save → "That group has no valid domain. Ask the owner to set hol_testbed_domain on it." under Group Name, no row and no audit row        → AC-21, AC-22
+- [ ] Add a testbed on a group whose domain a live testbed already holds → "Another testbed already uses this group's domain." under Group Name; with Authentik unreachable the Authentik message shows instead        → AC-21, AC-2
+- [ ] Open Edit → Domain is read only with the same hint and shows the stored value; save with a live Upcoming or Current reservation → it saves, and the domain is unchanged; the Audit Log never lists `domain`        → AC-20, AC-23
+
+### Commands
+- [ ] `npx vitest run server/catalog/testbeds.test.ts server/authentik/groups.test.ts app/admin/actions.test.ts lib/catalog-input.test.ts lib/testbeds.test.ts` → pass        → AC-20, AC-21, AC-22, AC-23
+- [ ] `npm run test:e2e -- e2e/testbed-group-dropdown.spec.ts e2e/testbeds.spec.ts e2e/booking.spec.ts` once the hol-test fixtures exist → pass        → AC-20, AC-22, AC-23
+
+### Acceptance-criteria coverage
+- AC-20 … UI steps 1, 6 · AC-21 … steps 3 to 5 · AC-22 … steps 1, 2, 4 · AC-23 … step 6

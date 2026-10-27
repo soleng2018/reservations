@@ -37,6 +37,8 @@ export function TestbedAddDialog({
   readonly action: AdminFormAction;
 }) {
   const [loaded, setLoaded] = useState<Loaded>(LOADING);
+  // AC-22: Save stays off until the chosen group has a domain.
+  const [groupDomain, setGroupDomain] = useState<string | null>(null);
   // Only the latest open's answer counts.
   const latest = useRef(0);
 
@@ -44,6 +46,7 @@ export function TestbedAddDialog({
     latest.current += 1;
     const request = latest.current;
     setLoaded(LOADING);
+    setGroupDomain(null);
     load().then(
       (r) => {
         if (request !== latest.current) return;
@@ -66,10 +69,20 @@ export function TestbedAddDialog({
       onClosed={() => {
         latest.current += 1;
         setLoaded(LOADING);
+        setGroupDomain(null);
       }}
-      canSave={loaded.kind === "ready" && loaded.choices.length > 0}
+      canSave={
+        loaded.kind === "ready" &&
+        loaded.choices.length > 0 &&
+        groupDomain !== null
+      }
     >
-      <AddBody loaded={loaded} types={types} idps={idps} />
+      <AddBody
+        loaded={loaded}
+        types={types}
+        idps={idps}
+        onGroupDomain={setGroupDomain}
+      />
     </FormDialog>
   );
 }
@@ -78,10 +91,12 @@ function AddBody({
   loaded,
   types,
   idps,
+  onGroupDomain,
 }: {
   readonly loaded: Loaded;
   readonly types: readonly SelectOption[];
   readonly idps: readonly SelectOption[];
+  readonly onGroupDomain: (domain: string | null) => void;
 }) {
   switch (loaded.kind) {
     case "loading":
@@ -102,6 +117,7 @@ function AddBody({
           types={types}
           idps={idps}
           groupChoices={loaded.choices}
+          onGroupDomain={onGroupDomain}
           groupNotice={
             loaded.choices.length === 0
               ? TESTBED_MESSAGES.groupChoicesEmpty

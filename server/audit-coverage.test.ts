@@ -199,7 +199,6 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
       const input: TestbedInput = {
         name: `Friendly ${tag}`,
         groupName: name,
-        domain: `lab-${tag}.example.test`,
         testbedTypeId: type.id,
         idpApiKeyId: null,
         portalUrl: "https://portal.example.test",
@@ -215,7 +214,9 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
         ],
       };
       const groupPk = crypto.randomUUID();
-      const ak = fakeAuthentik([], { groups: [markedGroup(groupPk, name)] });
+      const ak = fakeAuthentik([], {
+        groups: [markedGroup(groupPk, name, {}, `lab-${tag}.example.test`)],
+      });
       const created = await createTestbed(ak.api, asConn(trx), input, admin.id);
       if (!created.ok) throw new Error(JSON.stringify(created.error));
       const id = created.value.id;
@@ -228,7 +229,7 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
           await updateTestbed(
             asConn(trx),
             id,
-            { ...input, domain: `moved-${tag}.example.test` },
+            { ...input, name: `Moved ${tag}` },
             admin.id,
           )
         ).ok,

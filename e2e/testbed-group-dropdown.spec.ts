@@ -28,10 +28,11 @@ test("add dialog offers marked groups in a select", async ({
   expect(names).toEqual(
     [...names].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
   );
-  await options.first().click();
+  // Spec 0017 AC-20: Domain is read only, and empty before a choice.
   const domain = dialog.getByRole("textbox", { name: "Domain" });
-  await domain.fill("typed.example.com");
-  await group.click();
-  await options.nth(1).click();
-  await expect(domain).toHaveValue("typed.example.com");
+  await expect(domain).toHaveAttribute("readonly", "");
+  await expect(domain).toHaveValue("");
+  const enabled = options.filter({ hasNotText: "(no domain set)" });
+  await enabled.first().click();
+  await expect(domain).not.toHaveValue("");
 });

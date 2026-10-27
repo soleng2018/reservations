@@ -57,12 +57,14 @@ const friendly = `Friendly Lab ${tag}`;
 const renamedTo = `Renamed Lab ${tag}`;
 const plainName = `dev-e2e-plain-${tag}`;
 const labDomain = `dev-e2e-${tag}.nile-test.invalid`;
-const movedDomain = `dev-e2e-${tag}-v2.nile-test.invalid`;
+const bareName = `dev-e2e-bare-${tag}`;
 const groupPks: string[] = [];
 
 test.beforeAll(async () => {
-  groupPks.push(await makeTestbedGroup(labName, true));
+  groupPks.push(await makeTestbedGroup(labName, true, labDomain));
   groupPks.push(await makeTestbedGroup(plainName, false));
+  // Marked, but the owner has not given it a domain yet (spec 0017 AC-22).
+  groupPks.push(await makeTestbedGroup(bareName, true));
 });
 
 test.afterAll(async ({ browser }) => {
@@ -106,13 +108,18 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   await page.getByRole("button", { name: "Add testbed" }).click();
   const dialog = page.getByRole("dialog", { name: "Add testbed" });
   await expect(
-    dialog.getByText(
-      "Must be the exact name of an Authentik group the owner has set up for this lab.",
-    ),
+    dialog.getByText("What learners see in emails, invites, and on screens."),
   ).toBeVisible();
   await dialog.getByLabel("Name", { exact: true }).fill(friendly);
-  await dialog.getByLabel("Group Name", { exact: true }).fill(labName);
-  await dialog.getByLabel("Domain", { exact: true }).fill(labDomain);
+  // Spec 0017 AC-20: Domain is read only and follows the chosen group.
+  const domainBox = dialog.getByLabel("Domain", { exact: true });
+  await expect(domainBox).toHaveAttribute("readonly", "");
+  await expect(domainBox).toHaveValue("");
+  await choose(page, dialog, "Group Name", labName);
+  await expect(domainBox).toHaveValue(labDomain);
+  await expect(
+    dialog.getByText("Taken from the group. It can't be changed."),
+  ).toBeVisible();
   await choose(page, dialog, "Testbed type", typeName);
   await expect(
     dialog.getByRole("combobox", { name: "IDP", exact: true }),
@@ -197,8 +204,11 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(editPassword).toHaveAttribute("type", "text");
 
-  // Spec 0017 AC-6: no reservation, so the domain can change.
-  await edit.getByLabel("Domain", { exact: true }).fill(movedDomain);
+  // Spec 0017 AC-20, AC-23: Domain is read only on edit too.
+  await expect(edit.getByLabel("Domain", { exact: true })).toHaveAttribute(
+    "readonly",
+    "",
+  );
   await editPassword.fill("second pass");
   await nameField.fill(renamedTo);
   await edit.getByRole("button", { name: "Remove client 2" }).click();
@@ -208,12 +218,12 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   const renamed = rowOf(page, renamedTo);
   await expect(renamed).toContainText(labName);
   await expect(renamed).toContainText("1 client");
-  await expect(renamed).toContainText(movedDomain);
+  await expect(renamed).toContainText(labDomain);
 
   // Reopening loads the saved values.
   await renamed.getByRole("button", { name: `Edit ${renamedTo}` }).click();
   await expect(edit.getByLabel("Domain", { exact: true })).toHaveValue(
-    movedDomain,
+    labDomain,
   );
   await expect(
     edit
@@ -236,9 +246,9 @@ test("an admin adds a testbed with a domain, an IDP and clients, edits it, and d
   await expect(rowOf(page, renamedTo)).toHaveCount(0);
 });
 
-// covers: spec 0017 AC-2, AC-3 (the add form checks the name and the group;
-// nothing is written)
-test("the add form refuses a name that is no usable Authentik group", async ({
+// covers: spec 0017 AC-15, AC-22 (the add form offers only marked groups and
+// blocks one with no domain; nothing is written)
+test("the add form offers no unmarked group and blocks one with no domain", async ({
   adminPage: page,
 }) => {
   await page.goto("/admin/testbeds");
@@ -254,29 +264,26 @@ test("the add form refuses a name that is no usable Authentik group", async ({
     .getByLabel("Nile Portal URL")
     .fill("https://portal.nile-test.invalid");
   await dialog.getByLabel("LMS URL").fill("https://lms.nile-test.invalid");
-  await dialog
-    .getByLabel("Domain", { exact: true })
-    .fill(`dev-e2e-${id()}.nile-test.invalid`);
 
   await dialog
     .getByLabel("Name", { exact: true })
     .fill(`Plain friendly ${id()}`);
-  const name = dialog.getByLabel("Group Name", { exact: true });
   const save = dialog.getByRole("button", { name: "Save" });
+  await expect(save).toBeDisabled();
 
-  await name.fill(`dev-e2e-nothing-${id()}`);
-  await save.click();
-  await expect(
-    dialog.getByText("No Authentik group with this group name exists."),
-  ).toBeVisible();
-
-  await name.fill(plainName);
-  await save.click();
-  await expect(
-    dialog.getByText(
-      "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
-    ),
-  ).toBeVisible();
+  // The select lists only marked groups: an unmarked one is not offered, and
+  // a marked group with no domain is listed but cannot be chosen (AC-22).
+  await dialog
+    .getByRole("combobox", { name: "Group Name", exact: true })
+    .click();
+  await expect(page.getByRole("option", { name: plainName })).toHaveCount(0);
+  const bare = page.getByRole("option", {
+    name: `${bareName} (no domain set)`,
+  });
+  await expect(bare).toBeVisible();
+  await expect(bare).toHaveAttribute("aria-disabled", "true");
+  await page.keyboard.press("Escape");
+  await expect(save).toBeDisabled();
 
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await page.reload();
@@ -292,9 +299,6 @@ test("the add form marks a password without a username, and stops at 20 clients"
   const dialog = page.getByRole("dialog", { name: "Add testbed" });
   const name = `dev-e2e-refused-${id()}`;
   await dialog.getByLabel("Name", { exact: true }).fill(name);
-  await dialog
-    .getByLabel("Domain", { exact: true })
-    .fill(`dev-e2e-${id()}.nile-test.invalid`);
   await dialog
     .getByLabel("Nile Portal URL")
     .fill("https://portal.nile-test.invalid");

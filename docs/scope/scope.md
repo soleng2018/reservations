@@ -352,6 +352,7 @@ spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 - [x] Build it: `/develop testbed group dropdown and domain prefill` (owner step first, optional: add the domain attribute to the marked groups) code in `server/authentik/groups.ts`, `components/admin/testbed-add-dialog.tsx`, `e2e/testbed-group-dropdown.spec.ts` (Playwright passed 2026-10-27)
   - [x] Group choices read: the filtered, paged Authentik list, the unique name rule, the domain attribute parse, hide used groups, fake Authentik filter (AC-15, 16, 17, 19)
   - [x] Add dialog: `loadTestbedGroupChoices`, the client add dialog with loading, unavailable, and empty states, the select and domain fill, hints, Playwright (AC-13, 14, 17, 18, 19)
+  - [x] Domain from the group (spec 0017 task 10): `parseGroupDomain`, `TestbedGroup.domain`, create reads the domain from the group (`group_no_domain`), no `domain` in the inputs or the edit, no domain lock, the read only Domain box and disabled no domain options, tests (AC-1, 2, 20 to 23); Playwright updated but not run, the hol-test fixtures are gone
 - [ ] Verify it: `/check verify testbed group dropdown and domain prefill`
 - [ ] Test it: `/test testbed group dropdown and domain prefill`
 

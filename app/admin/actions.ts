@@ -785,7 +785,6 @@ const testbedFields = (form: FormData) => {
   const osUsernames = texts(form, "clientOsUsername");
   const osPasswords = texts(form, "clientOsPassword");
   return {
-    domain: text(form, "domain"),
     testbedTypeId: text(form, "testbedTypeId"),
     idpApiKeyId: text(form, "idpApiKeyId"),
     portalUrl: text(form, "portalUrl"),
@@ -811,11 +810,7 @@ const testbedError = {
   },
   duplicateDomain: {
     kind: "error",
-    fields: { domain: TESTBED_MESSAGES.duplicateDomain },
-  },
-  domainLocked: {
-    kind: "error",
-    fields: { domain: TESTBED_MESSAGES.domainLocked },
+    fields: { groupName: TESTBED_MESSAGES.duplicateDomain },
   },
   typeGone: {
     kind: "error",
@@ -833,6 +828,10 @@ const testbedError = {
     kind: "error",
     fields: { groupName: TESTBED_MESSAGES.groupNotTestbed },
   },
+  groupNoDomain: {
+    kind: "error",
+    fields: { groupName: TESTBED_MESSAGES.groupNoDomain },
+  },
   groupInUse: {
     kind: "error",
     fields: { groupName: TESTBED_MESSAGES.groupInUse },
@@ -845,7 +844,8 @@ const testbedError = {
   gone: { kind: "error", message: TESTBED_MESSAGES.gone, fields: {} },
 } as const satisfies Record<string, AdminFormState>;
 
-// Spec 0004 AC-2, spec 0007 AC-2, spec 0017 AC-1 to AC-3.
+// Spec 0004 AC-2, spec 0007 AC-2, spec 0017 AC-1 to AC-3, AC-21. A posted
+// `domain` is never read: it comes from the group.
 export async function createTestbedAction(
   _prev: AdminFormState,
   form: FormData,
@@ -876,6 +876,8 @@ export async function createTestbedAction(
         return testbedError.groupNotFound;
       case "group_not_testbed_group":
         return testbedError.groupNotTestbed;
+      case "group_no_domain":
+        return testbedError.groupNoDomain;
       case "group_in_use":
         return testbedError.groupInUse;
       case "authentik_unavailable":
@@ -943,12 +945,8 @@ export async function updateTestbedAction(
         return testbedError.typeGone;
       case "idp_not_found":
         return testbedError.idpGone;
-      case "domain_locked":
-        return testbedError.domainLocked;
       case "duplicate_name":
         return testbedError.duplicateName;
-      case "duplicate_domain":
-        return testbedError.duplicateDomain;
       default: {
         const never: never = updated.error;
         return never;

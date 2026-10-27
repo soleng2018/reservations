@@ -17,7 +17,6 @@ const client = {
 
 const before: TestbedValues = {
   name: "Wireless Lab 1",
-  domain: "nile.global",
   testbedTypeId: "6f1c2f9e-0000-4000-8000-000000000001",
   idpApiKeyId: null,
   portalUrl: "https://portal.example.test",
@@ -65,12 +64,10 @@ describe("testbedEditChange (AC-3, AC-5)", () => {
     );
   });
 
-  it("lists a changed domain without an access change (spec 0017 AC-7)", () => {
-    expect(
-      testbedEditChange(before, { ...before, domain: "rw.nile.global" }),
-    ).toEqual({
+  it("lists a changed name without an access change", () => {
+    expect(testbedEditChange(before, { ...before, name: "Lab 2" })).toEqual({
       clientsChanged: false,
-      metadata: { domain: { from: "nile.global", to: "rw.nile.global" } },
+      metadata: { name: { from: "Wireless Lab 1", to: "Lab 2" } },
     });
   });
 
@@ -124,19 +121,19 @@ describe("testbedEditChange (AC-3, AC-5)", () => {
     });
   });
 
-  it("puts a domain change, an LMS change, and a client change in one metadata", () => {
+  it("puts a name change, an LMS change, and a client change in one metadata", () => {
     const lmsUrl = "https://lms2.example.test";
     expect(
       testbedEditChange(before, {
         ...before,
-        domain: "rw.nile.global",
+        name: "Lab 2",
         lmsUrl,
         clients: [],
       }),
     ).toEqual({
       clientsChanged: true,
       metadata: {
-        domain: { from: "nile.global", to: "rw.nile.global" },
+        name: { from: "Wireless Lab 1", to: "Lab 2" },
         lmsUrl: { from: before.lmsUrl, to: lmsUrl },
         clients: { from: 1, to: 0 },
         accessChanged: true,
