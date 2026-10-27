@@ -153,6 +153,7 @@ const {
   createTestbedTypeAction,
   deleteTestbedTypeAction,
   loadTestbedForEdit,
+  loadTestbedGroupChoices,
   updateTestbedAction,
   updateTestbedTypeAction,
 } = await import("./actions");
@@ -182,16 +183,17 @@ const uniqueDomain = () =>
   `lab-${crypto.randomUUID().slice(0, 8)}.example.test`;
 
 // `groupName` is the Authentik group; `name` is what learners see.
+// A posted `domain` is never read (spec 0017 AC-20); pass one to prove it.
 const testbedForm = (
   groupName: string,
   typeId: string,
-  domain: string = uniqueDomain(),
+  domain?: string,
   name: string = `Friendly ${crypto.randomUUID().slice(0, 8)}`,
 ) => {
   const f = new FormData();
   f.set("name", name);
   f.set("groupName", groupName);
-  f.set("domain", domain);
+  if (domain !== undefined) f.set("domain", domain);
   f.set("testbedTypeId", typeId);
   f.set("portalUrl", "https://portal.example.test");
   f.set("lmsUrl", "https://lms.example.test");
@@ -304,8 +306,8 @@ describe.skipIf(!hasDb)("admin create actions require an admin (AC-13)", () => {
       });
     }));
 
-  // covers: spec 0017 AC-1
-  it("asks for a valid domain with field errors, before any lookup", () =>
+  // covers: spec 0017 AC-20, no domain is asked for or posted
+  it("asks for no domain, and ignores a posted one", () =>
     run(async (trx) => {
       const authId = await makeAuthUser(trx, 9004);
       await makeUser(trx, {
@@ -314,25 +316,21 @@ describe.skipIf(!hasDb)("admin create actions require an admin (AC-13)", () => {
         auth_user_id: authId,
       });
       ctx.authUserId = authId;
+      ctx.authentik = fakeAuthentik([]).api;
       const type = await makeType(trx);
-      const empty = testbedForm("Lab", type.id, "  ");
-      expect(await createTestbedAction(IDLE, empty)).toEqual({
+      const missing = {
         kind: "error",
-        fields: { domain: "Enter the domain." },
-      });
-      const missing = testbedForm("Lab", type.id);
-      missing.delete("domain");
-      expect(await createTestbedAction(IDLE, missing)).toEqual({
-        kind: "error",
-        fields: { domain: "Enter the domain." },
-      });
-      for (const bad of ["nile", "a..b.com", "nile.global.", "nile.c0m"])
+        fields: {
+          groupName: "No Authentik group with this group name exists.",
+        },
+      };
+      expect(
+        await createTestbedAction(IDLE, testbedForm("Lab", type.id)),
+      ).toEqual(missing);
+      for (const bad of ["", "nile", "a..b.com"])
         expect(
           await createTestbedAction(IDLE, testbedForm("Lab", type.id, bad)),
-        ).toEqual({
-          kind: "error",
-          fields: { domain: "Enter a domain name, like nile.global." },
-        });
+        ).toEqual(missing);
     }));
 });
 
@@ -1828,6 +1826,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       const created = testbedForm(`Blocked${crypto.randomUUID()}`, type.id);
 
       expect(await redirectOf(() => loadTestbedForEdit(testbed.id))).toBe(to);
+      expect(await redirectOf(() => loadTestbedGroupChoices())).toBe(to);
       expect(
         await redirectOf(() =>
           updateTestbedAction(
@@ -1852,18 +1851,58 @@ describe.skipIf(!hasDb)("testbed actions", () => {
 
   // covers: spec 0017 AC-3, AC-4, AC-7: create through the action
   describe("create", () => {
-    const labGroup = () => {
+    // The owner's group, carrying its `hol_testbed_domain`.
+    const labGroup = (domain: string = uniqueDomain()) => {
       const name = `NileLab${crypto.randomUUID().slice(0, 8)}Admin`;
-      return { name, group: markedGroup(crypto.randomUUID(), name) };
+      return {
+        name,
+        domain,
+        group: markedGroup(crypto.randomUUID(), name, {}, domain),
+      };
     };
+
+    // covers: spec 0017 AC-16, AC-18
+    it("lists unused marked groups without their pk, and hides a live testbed's group", () =>
+      as("admin", async (trx) => {
+        const { type } = await makeLab(trx);
+        const { name, domain, group } = labGroup();
+        ctx.authentik = fakeAuthentik([], { groups: [group] }).api;
+        const listed = async () => {
+          const r = await loadTestbedGroupChoices();
+          if (!r.ok) throw new Error(r.error);
+          return r.value;
+        };
+        expect(await listed()).toContainEqual({ name, domain });
+        expect(JSON.stringify(await listed())).not.toContain(group.pk);
+        await createTestbedAction(IDLE, testbedForm(name, type.id));
+        expect((await listed()).map((c) => c.name)).not.toContain(name);
+        await trx
+          .updateTable("testbeds")
+          .set({ deleted_at: new Date() })
+          .where("group_name", "=", name)
+          .execute();
+        expect((await listed()).map((c) => c.name)).toContain(name);
+      }));
+
+    it("answers unavailable when Authentik is down", () =>
+      as("admin", async () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        ctx.authentik = fakeAuthentik([], { down: true }).api;
+        expect(await loadTestbedGroupChoices()).toEqual({
+          ok: false,
+          error: "unavailable",
+        });
+        error.mockRestore();
+      }));
 
     it("creates a testbed on the owner's group", () =>
       as("admin", async (trx) => {
         const { type } = await makeLab(trx);
-        const { name, group } = labGroup();
+        const { name, domain, group } = labGroup();
         const ak = fakeAuthentik([], { groups: [group] });
         ctx.authentik = ak.api;
-        const form = testbedForm(name, type.id);
+        // The posted domain is ignored: the group's is stored (AC-21).
+        const form = testbedForm(name, type.id, "forged.example.test");
         expect(await createTestbedAction(IDLE, form)).toEqual({
           kind: "saved",
           message: `Created ${String(form.get("name"))}.`,
@@ -1876,7 +1915,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         expect(made).toEqual({
           name: form.get("name"),
           group_name: name,
-          domain: form.get("domain"),
+          domain,
           authentik_group_pk: group.pk,
         });
         expect(ak.writes).toEqual([]);
@@ -1885,7 +1924,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
     it("shows a taken name, group name, or domain as a field error, in that order", () =>
       as("admin", async (trx) => {
         const { type, testbed, domain } = await makeLab(trx);
-        const { name, group } = labGroup();
+        const { name, group } = labGroup(domain);
         ctx.authentik = fakeAuthentik([], { groups: [group] }).api;
         const create = (f: FormData) => createTestbedAction(IDLE, f);
         const takenName = {
@@ -1906,20 +1945,22 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         expect(
           await create(testbedForm(testbed.group_name.toUpperCase(), type.id)),
         ).toEqual(takenGroup);
-        expect(await create(testbedForm(name, type.id, domain))).toEqual({
+        expect(await create(testbedForm(name, type.id))).toEqual({
           kind: "error",
-          fields: { domain: "A testbed with this domain already exists." },
+          fields: {
+            groupName: "Another testbed already uses this group's domain.",
+          },
         });
         // All three taken: the name only. Name and group: the name.
         expect(
           await create(
-            testbedForm(testbed.group_name, type.id, domain, testbed.name),
+            testbedForm(testbed.group_name, type.id, undefined, testbed.name),
           ),
         ).toEqual(takenName);
         // Group name and domain taken: the group name.
-        expect(
-          await create(testbedForm(testbed.group_name, type.id, domain)),
-        ).toEqual(takenGroup);
+        expect(await create(testbedForm(testbed.group_name, type.id))).toEqual(
+          takenGroup,
+        );
       }));
 
     it("shows a missing, unmarked, or used group under the Group Name field", () =>
@@ -1927,9 +1968,14 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         const { type, testbed } = await makeLab(trx);
         const plain = labGroup();
         const used = labGroup();
+        const bare = labGroup();
         await makeTestbed(trx, type.id, { authentik_group_pk: used.group.pk });
         ctx.authentik = fakeAuthentik([], {
-          groups: [fakeGroup(plain.group.pk, plain.name), used.group],
+          groups: [
+            fakeGroup(plain.group.pk, plain.name),
+            used.group,
+            fakeGroup(bare.group.pk, bare.name, { hol_testbed_group: true }),
+          ],
         }).api;
         const refuse = async (name: string) =>
           createTestbedAction(IDLE, testbedForm(name, type.id));
@@ -1950,6 +1996,13 @@ describe.skipIf(!hasDb)("testbed actions", () => {
         expect(await refuse(used.name)).toEqual({
           kind: "error",
           fields: { groupName: "Another testbed already uses that group." },
+        });
+        expect(await refuse(bare.name)).toEqual({
+          kind: "error",
+          fields: {
+            groupName:
+              "That group has no valid domain. Ask the owner to set hol_testbed_domain on it.",
+          },
         });
         expect(testbed.id).toBeDefined();
       }));
@@ -2007,10 +2060,11 @@ describe.skipIf(!hasDb)("testbed actions", () => {
     as("admin", async (trx) => {
       const { type, testbed, domain } = await makeLab(trx);
       const moved = `moved-${crypto.randomUUID().slice(0, 8)}.example.test`;
+      // A posted domain is never read (AC-20, AC-23).
       expect(
         await updateTestbedAction(testbed.id, IDLE, editForm(type.id, moved)),
       ).toEqual({ kind: "saved", message: "Updated Edited lab." });
-      expect((await row(trx, testbed.id)).domain).toBe(moved);
+      expect((await row(trx, testbed.id)).domain).toBe(domain);
 
       const other = await makeTestbed(trx, type.id);
       expect(
@@ -2022,25 +2076,6 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       ).toEqual({
         kind: "error",
         fields: { name: "A testbed with this name already exists." },
-      });
-
-      const taken = await makeTestbed(trx, type.id);
-      expect(
-        await updateTestbedAction(
-          testbed.id,
-          IDLE,
-          editForm(type.id, taken.domain ?? ""),
-        ),
-      ).toEqual({
-        kind: "error",
-        fields: { domain: "A testbed with this domain already exists." },
-      });
-
-      expect(
-        await updateTestbedAction(testbed.id, IDLE, editForm(type.id, "nile")),
-      ).toEqual({
-        kind: "error",
-        fields: { domain: "Enter a domain name, like nile.global." },
       });
 
       const noUser = editForm(type.id, moved);
@@ -2096,8 +2131,8 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       });
     }));
 
-  // covers: spec 0017 AC-6
-  it("refuses a domain change while a reservation is live, on the domain field", () =>
+  // covers: spec 0017 AC-23, the domain lock is gone
+  it("saves an edit while a reservation is live, and the domain stays", () =>
     as("admin", async (trx) => {
       const { type, testbed, domain } = await makeLab(trx);
       const learner = await makeUser(trx);
@@ -2118,13 +2153,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
           IDLE,
           editForm(type.id, `moved-${domain}`),
         ),
-      ).toEqual({
-        kind: "error",
-        fields: {
-          domain:
-            "You can't change the domain while this testbed has Upcoming or Current reservations.",
-        },
-      });
+      ).toEqual({ kind: "saved", message: "Updated Edited lab." });
       expect((await row(trx, testbed.id)).domain).toBe(domain);
     }));
 
@@ -2149,7 +2178,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       };
       const name = `NileLab${crypto.randomUUID().slice(0, 8)}Admin`;
       ctx.authentik = fakeAuthentik([], {
-        groups: [markedGroup(crypto.randomUUID(), name)],
+        groups: [markedGroup(crypto.randomUUID(), name, {}, uniqueDomain())],
       }).api;
       const create = testbedForm(name, type.id);
       create.set("idpApiKeyId", key.id);

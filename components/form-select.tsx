@@ -10,7 +10,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type SelectOption = { readonly value: string; readonly label: string };
+export type SelectOption = {
+  readonly value: string;
+  readonly label: string;
+  readonly disabled?: boolean;
+};
 
 // A shadcn (Base UI) select that submits its value under `name`, so it works
 // in a plain <form>. Controlled when `value` is given. Inside a Field, the
@@ -22,6 +26,7 @@ export function FormSelect({
   value,
   defaultValue,
   onValueChange,
+  disabled,
   ...control
 }: FieldControlProps & {
   readonly name: string;
@@ -30,12 +35,14 @@ export function FormSelect({
   readonly value?: string | null;
   readonly defaultValue?: string;
   readonly onValueChange?: (value: string) => void;
+  readonly disabled?: boolean;
 }) {
   const items = [{ value: null, label: placeholder }, ...options];
   return (
     <Select
       name={name}
       items={items}
+      disabled={disabled}
       {...(value !== undefined
         ? { value }
         : { defaultValue: defaultValue ?? null })}
@@ -49,7 +56,7 @@ export function FormSelect({
       <SelectContent>
         <SelectGroup>
           {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
+            <SelectItem key={o.value} value={o.value} disabled={o.disabled}>
               {o.label}
             </SelectItem>
           ))}

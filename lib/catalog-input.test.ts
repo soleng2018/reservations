@@ -85,7 +85,6 @@ describe("TestbedInput (AC-2)", () => {
   const valid = {
     name: "Bench 1",
     groupName: "NileBench1Admin",
-    domain: "nile.global",
     testbedTypeId: TYPE_ID,
     portalUrl: "https://portal.example.test",
     lmsUrl: "https://lms.example.test",
@@ -491,25 +490,31 @@ describe("DomainInput (spec 0017 AC-1)", () => {
     expect(r.error?.issues).toHaveLength(1);
   });
 
-  it("is a required field error on domain in the testbed form", () => {
-    const e = errorsOf(
-      TestbedInput.safeParse({
-        name: "Bench 1",
-        groupName: "NileBench1Admin",
-        testbedTypeId: TYPE_ID,
-        portalUrl: "https://portal.example.test",
-        lmsUrl: "https://lms.example.test",
-        clients: [],
-      }),
-    );
-    expect(fieldErrors(e)).toEqual({ domain: "Enter the domain." });
+  it("has no domain field, and drops a posted one (spec 0017 AC-20)", () => {
+    const valid = {
+      name: "Bench 1",
+      groupName: "NileBench1Admin",
+      testbedTypeId: TYPE_ID,
+      portalUrl: "https://portal.example.test",
+      lmsUrl: "https://lms.example.test",
+      clients: [],
+    };
+    const create = TestbedInput.parse({
+      ...valid,
+      domain: "forged.example.test",
+    });
+    expect(create).not.toHaveProperty("domain");
+    const update = TestbedUpdateInput.parse({
+      ...valid,
+      domain: "forged.example.test",
+    });
+    expect(update).not.toHaveProperty("domain");
   });
 
   it("keeps the name and drops a posted group name from the update input (spec 0018 AC-4)", () => {
     const parsed = TestbedUpdateInput.parse({
       name: "Bench 1",
       groupName: "Forged",
-      domain: "nile.global",
       testbedTypeId: TYPE_ID,
       portalUrl: "https://portal.example.test",
       lmsUrl: "https://lms.example.test",

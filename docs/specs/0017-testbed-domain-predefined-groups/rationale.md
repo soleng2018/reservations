@@ -90,3 +90,43 @@ Each row is a call made while designing Option 3. Rows marked "engineer" were pu
 | Domain pattern | Strict: letters, digits, inner hyphens, last label letters only, no trailing dot | Accept anything with a dot | The domain will build usernames and emails in feature 20, so a loose value would travel far. The pattern is shared with the database check. |
 | Provisioning role | Unchanged in this spec | Remove `add_group` and `delete_group` now | A shared Authentik change the owner approves; the Playwright tests still use those rights. Listed as a follow up. |
 | Slug | Kept, immutable, names nothing in Authentik | Drop it | Dropping needs a migration and touches audit history for no gain now. |
+
+## Amendment 2026-10-26: pick the group, fill the domain
+
+**Context.** Admins typed the group name exactly. The scope amendment (2026-10-26) asked for a dropdown of the groups that carry the `hol_testbed_group` marker. A live read that day showed Authentik lists groups filtered by that attribute with the token the app already holds (15 marked groups: NileWorkshop1 to 5, each as Admin, Contractor, and Employee), so no new permission is needed. The domain cannot be read from Authentik today: the marked groups carry only the marker, and the provisioning token is refused (403) on the SAML provider list.
+
+| Decision | Chosen | Runner up | Why |
+|---|---|---|---|
+| Where the dropdown stops trusting | Convenience only; save runs the same lookup and marker check | Trust the posted choice | A list can be stale or forged, and the guard already sits at save. No new rule to keep in step. |
+| What the select posts | The group name, as `groupName` | The group pk | The create path, the unique name rules, and the refusal messages all key on the name. Posting a pk would change `TestbedInput`, `createTestbed`, and every test for no gain. |
+| Which groups are offered (owner, 2026-10-27, reversing 2026-10-26) | All marked groups, no naming rule | Marked groups whose name ends in `Admin` | The first call hid the 10 Contractor and Employee groups by name. On 2026-10-27 the owner unmarked those, so the marker alone now says which groups are testbed groups. One rule, in one place, and the list matches what the save accepts. |
+| Domain source | A string attribute `hol_testbed_domain` on the group, parsed with the existing `DomainInput` | Guess it from `NileWorkshopN`; read it from the SAML provider | A guess breaks the first time a name changes, and the token is refused on the provider list. An attribute is the owner's own data, read with a permission the app holds. |
+| A bad or missing domain attribute | The group is still offered; Domain is typed | Hide the group; block with an error | Nothing should block on an owner step that is optional. The format check and the unique domain rule at save still catch a wrong value. |
+| When the list is read | On dialog open, no cache | A 60 second cache | Matches `loadTestbedForEdit`. Always current, one call per open, no shared cache to invalidate. |
+| Unreachable Authentik | Alert, select disabled, Save off | Fall back to free text | A free text field would bring back the typo path and a second form to test. The old path failed at save with the same cause. |
+| Hiding used groups | Compare with live testbeds' group pks in the same call | Show all and refuse at save | Fewer dead choices; `testbeds_group_pk_uq` still decides. |
+| Domain fill rule | Fill until the admin types; never overwrite typed text | Always overwrite on choice | Overwriting would lose a deliberate edit. |
+| References | None | | Everything here comes from the repo and the live read recorded in the scope. |
+
+**Live check (2026-10-27).** With the provisioning token, the marker filter returned 5 groups (NileWorkshop1Admin to NileWorkshop5Admin). Each carries `hol_testbed_domain` (`nileworkshop-1.com` to `nileworkshop-5.com`), all valid under `DomainInput`. So the attribute is readable with the token the app holds, and the prefill has real data. The Contractor and Employee groups no longer carry the marker.
+
+## Amendment 2026-10-26: Domain read only, taken from the group
+
+**Why**: the first amendment let the group fill a Domain the admin could still type over. That leaves two sources of truth, and feature 20 needs the domain to match the tenant the group belongs to. The owner chose one source: the group's `hol_testbed_domain`, read by the server, locked on add and on edit.
+
+**How a group with no valid attribute is handled** (the open question):
+
+| Option | What happens | Verdict |
+|---|---|---|
+| A. Hide the group from the list | The admin never sees a group that cannot be used | Rejected. An admin who cannot find a group takes it for a used or unmarked one, and the empty list text lies. |
+| B. List it, let the admin type a Domain | Today's behaviour | Rejected. It keeps the second source the owner wants gone. |
+| C. List it disabled with "(no domain set)", and refuse again at save | The reason is visible; the server is still the gate | **Chosen** (AC-22). The save refusal `group_no_domain` covers a forged name or an attribute removed after the list loaded. |
+
+**Other calls inside the amendment**:
+- The server reads the domain, not the form. A hidden posted field would trust the browser, and the existing rule already ignores a forged `name` on edit.
+- The domain check moves after the Authentik lookup because the value now comes from it. The cost is that a taken domain with Authentik down shows the Authentik message. The name and group name prechecks keep their place before the call.
+- A taken domain is reported on `groupName`, since Domain is no longer a field the admin can fix.
+- Edit never calls Authentik and never copies a changed attribute onto a live testbed. Resyncing would change a domain under Upcoming or Current bookings, the thing AC-6 used to forbid. Not comparing old rows avoids a surprise break for testbeds saved with a typed domain.
+- `hol_testbed_domain` becomes a required owner step, not an optional one.
+
+**Alternative kept for later**: an owner triggered "refresh domain from group" action on edit, if drift between the attribute and the stored domain turns out to matter.

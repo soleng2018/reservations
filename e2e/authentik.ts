@@ -115,11 +115,18 @@ export async function provision(
 export async function makeTestbedGroup(
   name: string,
   marked = true,
+  // The `hol_testbed_domain` the add form reads (spec 0017 AC-17, AC-21).
+  domain?: string,
 ): Promise<string> {
   const created = z.object({ pk: z.string() }).parse(
     await provision("POST", "/core/groups/", {
       name,
-      attributes: marked ? { hol_testbed_group: true } : { hol_test: true },
+      attributes: marked
+        ? {
+            hol_testbed_group: true,
+            ...(domain === undefined ? {} : { hol_testbed_domain: domain }),
+          }
+        : { hol_test: true },
     }),
   );
   return created.pk;

@@ -7,17 +7,23 @@ import { changedFields } from "./changed-fields";
 export const TESTBED_MESSAGES = {
   duplicateName: "A testbed with this name already exists.",
   duplicateGroupName: "A testbed with this group name already exists.",
-  duplicateDomain: "A testbed with this domain already exists.",
-  domainLocked:
-    "You can't change the domain while this testbed has Upcoming or Current reservations.",
+  duplicateDomain: "Another testbed already uses this group's domain.",
   typeGone: "That type no longer exists.",
   idpGone: "That IDP key no longer exists.",
   gone: "This testbed no longer exists.",
   groupNotFound: "No Authentik group with this group name exists.",
   groupNotTestbed:
     "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
+  groupNoDomain:
+    "That group has no valid domain. Ask the owner to set hol_testbed_domain on it.",
   groupInUse: "Another testbed already uses that group.",
   authentikUnavailable: "Couldn't check the Authentik group, try again.",
+  groupChoicesUnavailable:
+    "Couldn't load the Authentik groups. Close this and try again in a moment.",
+  groupChoicesEmpty:
+    "No unused marked group is available. Ask the owner to mark or add one.",
+  groupChoicesNoDomain:
+    "None of the available groups has a domain yet. Ask the owner to set hol_testbed_domain on one.",
 } as const;
 
 export const TESTBED_NAME_HINT =
@@ -27,9 +33,23 @@ export const TESTBED_NAME_HINT =
 // then read only.
 export const TESTBED_GROUP_NAME_HINT = {
   create:
-    "Must be the exact name of an Authentik group the owner has set up for this lab.",
+    "Choose the Authentik group the owner has set up for this lab. Only groups not used by another testbed are listed.",
   edit: "The group name can't change. To use another group, delete this testbed and add a new one.",
 } as const;
+
+// Spec 0017 AC-20: the hint under the read only Domain box, add and edit.
+export const TESTBED_DOMAIN_HINT = "Taken from the group. It can't be changed.";
+
+// Spec 0017 AC-22: a group the owner has not given a domain is listed but
+// cannot be chosen.
+export const groupChoiceLabel = (c: GroupChoice) =>
+  c.domain === null ? `${c.name} (no domain set)` : c.name;
+
+// Spec 0017 AC-18: what the add dialog's select is built from. No pk.
+export type GroupChoice = {
+  readonly name: string;
+  readonly domain: string | null;
+};
 
 // What the edit dialog loads on open (AC-3): the only payload that carries a
 // client's OS login, one testbed at a time.
@@ -81,7 +101,6 @@ const TESTBED_FIELDS = [
   "idpApiKeyId",
   "portalUrl",
   "lmsUrl",
-  "domain",
 ] as const;
 
 export type TestbedEditChange = {

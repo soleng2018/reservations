@@ -47,12 +47,24 @@ export const fakeGroup = (
   ...over,
 });
 
-// A group the owner's script made and marked for testbeds (spec 0017).
+// A group the owner's script made and marked for testbeds (spec 0017). A
+// `domain` adds the `hol_testbed_domain` attribute (AC-17); any other
+// attribute value goes through `fakeGroup`.
 export const markedGroup = (
   pk: string,
   name: string,
   over: Partial<Pick<FakeGroup, "is_superuser" | "parents" | "roles">> = {},
-): FakeGroup => fakeGroup(pk, name, { hol_testbed_group: true }, over);
+  domain?: string,
+): FakeGroup =>
+  fakeGroup(
+    pk,
+    name,
+    {
+      hol_testbed_group: true,
+      ...(domain === undefined ? {} : { hol_testbed_domain: domain }),
+    },
+    over,
+  );
 
 // The pk the fake gives the first user it creates; the next gets one more.
 export const FAKE_NEW_PK = 900_100;
@@ -62,6 +74,14 @@ export const TESTBED_GROUP = markedGroup(
   "testbed-group-uuid",
   "NileWorkshop1Admin",
 );
+
+// Authentik's `attributes` filter: a JSON object whose every key must equal
+// the group's attribute.
+const hasAttributes = (g: FakeGroup, filter: string | null) =>
+  !filter ||
+  Object.entries(JSON.parse(filter) as Record<string, unknown>).every(
+    ([k, v]) => g.attributes[k] === v,
+  );
 
 export function fakeAuthentik(
   initial: readonly FakeUser[],
@@ -122,7 +142,11 @@ export function fakeAuthentik(
     if (method === "GET" && path === "/core/groups/")
       return json(
         page(
-          groups.filter((g) => !q.get("name") || g.name === q.get("name")),
+          groups.filter(
+            (g) =>
+              (!q.get("name") || g.name === q.get("name")) &&
+              hasAttributes(g, q.get("attributes")),
+          ),
           q,
         ),
       );

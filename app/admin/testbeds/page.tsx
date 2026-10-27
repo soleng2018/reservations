@@ -2,12 +2,11 @@ import type { Metadata } from "next";
 import { PlusIcon } from "lucide-react";
 import { DataTable } from "@/components/admin/data-table";
 import { DeleteFlow } from "@/components/admin/delete-flow";
-import { FormDialog } from "@/components/admin/form-dialog";
 import { HistoryLink } from "@/components/admin/history-link";
 import { PageBody } from "@/components/admin/page-body";
 import { PageHeader } from "@/components/admin/page-header";
+import { TestbedAddDialog } from "@/components/admin/testbed-add-dialog";
 import { TestbedEditDialog } from "@/components/admin/testbed-edit-dialog";
-import { TestbedFields } from "@/components/admin/testbed-fields";
 import { Button } from "@/components/ui/button";
 import { targetHistoryHref } from "@/lib/audit-log";
 import { clientCountLabel, testbedSearchText } from "@/lib/testbeds";
@@ -21,6 +20,7 @@ import {
   createTestbedAction,
   deleteTestbedAction,
   loadTestbedForEdit,
+  loadTestbedGroupChoices,
   updateTestbedAction,
 } from "../actions";
 
@@ -84,18 +84,18 @@ export default async function TestbedsPage() {
       <PageHeader
         section="testbeds"
         action={
-          <FormDialog
+          <TestbedAddDialog
             trigger={
               <Button>
                 <PlusIcon data-icon="inline-start" aria-hidden="true" />
                 Add testbed
               </Button>
             }
-            title="Add testbed"
+            types={typeOptions}
+            idps={idpOptions}
+            load={loadTestbedGroupChoices}
             action={createTestbedAction}
-          >
-            <TestbedFields types={typeOptions} idps={idpOptions} />
-          </FormDialog>
+          />
         }
       />
       <PageBody>

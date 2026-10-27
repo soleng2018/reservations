@@ -34,21 +34,39 @@ export const continueButton = (page: Page) =>
   page.getByRole("button", { name: "Continue" });
 
 // Step 2: the first day with a free start, then its `nth` free start.
-// Returns the start's ISO instant.
+// Returns the start's ISO instant. A start is only used when the half hour
+// after it is listed on the same day: late in the day the last start has none
+// (a 1 hour type spans two), so that day is skipped for the next free day.
 export async function pickStart(page: Page, nth = 0): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Choose a time" }),
   ).toBeVisible();
-  const day = page
-    .locator('[data-slot="calendar"] button[data-day]:not([disabled])')
-    .first();
-  await expect(day).toBeVisible({ timeout: 20_000 });
-  await day.click();
-  const radio = page.locator('input[name="startsAt"]:not([disabled])').nth(nth);
-  const iso = await radio.inputValue();
-  await page.locator(`label:has(input[value="${iso}"])`).click();
-  await expect(radio).toBeChecked();
-  return iso;
+  const days = page.locator(
+    '[data-slot="calendar"] button[data-day]:not([disabled])',
+  );
+  await expect(days.first()).toBeVisible({ timeout: 20_000 });
+  const values = (selector: string) =>
+    page
+      .locator(selector)
+      .evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
+  const count = await days.count();
+  for (let d = 0; d < count; d++) {
+    await days.nth(d).click();
+    const free = await values('input[name="startsAt"]:not([disabled])');
+    const listed = await values('input[name="startsAt"]');
+    const usable = free.filter((v) =>
+      listed.includes(
+        new Date(new Date(v).getTime() + 30 * 60_000).toISOString(),
+      ),
+    );
+    const iso = usable[nth];
+    if (iso === undefined) continue;
+    const radio = page.locator(`input[name="startsAt"][value="${iso}"]`);
+    await page.locator(`label:has(input[value="${iso}"])`).click();
+    await expect(radio).toBeChecked();
+    return iso;
+  }
+  throw new Error("no day has a free start with a half hour after it");
 }
 
 // Step 3: Cloudflare's test keys pass at once; wait for the token to land.
