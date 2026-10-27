@@ -47,6 +47,16 @@ const draftStep = z.strictObject({
 });
 export type DraftStep = z.output<typeof draftStep>;
 
+// The fields the row dialog edits (spec 0022 AC-23), checked with the same
+// rules Save uses so the dialog and Save never disagree.
+export const StepFields = draftStep.pick({
+  featureName: true,
+  enabled: true,
+  note: true,
+  definition: true,
+});
+export type StepFields = z.output<typeof StepFields>;
+
 export const SaveRequest = z
   .strictObject({
     expectedVersion: z.number().int().min(1),

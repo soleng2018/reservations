@@ -41,6 +41,11 @@ export type ResetStepRead =
       readonly id: string;
       readonly position: number;
       readonly featureName: string;
+      readonly enabled: boolean;
+      readonly note: string | null;
+      // The stored JSON as it is, so the admin page can show it for a fix.
+      // The engine only looks at `ok`.
+      readonly definition: unknown;
       readonly error: "invalid_definition";
     };
 
@@ -106,6 +111,9 @@ async function readSnapshot(trx: Transaction<DB>): Promise<ResetPage> {
             id: row.id,
             position: row.position,
             featureName: row.feature_name,
+            enabled: row.enabled,
+            note: row.note,
+            definition: row.definition,
             error: "invalid_definition",
           };
     }),

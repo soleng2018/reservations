@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { StartingList } from "@/lib/portal-reset/starting-list";
 import { rowView } from "@/lib/portal-reset/view";
 import raw from "@/db/seed/portal-reset-starting-list.json";
-import { PortalResetSettings } from "./portal-reset-settings";
+import {
+  PortalResetSettings,
+  PortalResetSettingsFields,
+} from "./portal-reset-settings";
 import { PortalResetSteps } from "./portal-reset-steps";
 
 const rows = StartingList.parse(raw).steps.map((s, i) =>
@@ -146,5 +149,68 @@ describe("PortalResetSettings", () => {
     expect(show({ abortEmail: "a@b.co" })).not.toMatch(
       /<(button|input|select)\b/,
     );
+  });
+});
+
+// AC-5, AC-10, AC-22: edit mode shows the controls the first view hides.
+describe("edit mode", () => {
+  it("adds a button column and lists the problems under a row", () => {
+    const edit = renderToStaticMarkup(
+      <PortalResetSteps
+        rows={rows.slice(0, 2)}
+        actions={(row) => <button type="button">Edit {row.featureName}</button>}
+        problems={(row) =>
+          row.position === 2 ? ["featureName: Enter a name."] : []
+        }
+      />,
+    );
+    expect(edit.match(/<button/g)).toHaveLength(2);
+    expect(edit).toContain("nav:grid-cols-[2rem_15rem_minmax(0,1fr)_auto]");
+    expect(edit).toContain("featureName: Enter a name.");
+    expect(edit.match(/aria-label="Problems in /g)).toHaveLength(1);
+  });
+
+  it("explains an empty draft in its own words", () => {
+    const empty = renderToStaticMarkup(
+      <PortalResetSteps rows={[]} emptyDescription="Add one to save." />,
+    );
+    expect(empty).toContain("Add one to save.");
+  });
+
+  const fields = (
+    props: Partial<Parameters<typeof PortalResetSettingsFields>[0]>,
+  ) =>
+    renderToStaticMarkup(
+      <PortalResetSettingsFields
+        abortEmail=""
+        mode="off"
+        lastSaved={null}
+        errors={{}}
+        disabled={false}
+        onEmail={() => undefined}
+        onMode={() => undefined}
+        {...props}
+      />,
+    );
+
+  it("shows the email field with the empty warning, and the mode", () => {
+    const html = fields({});
+    expect(html).toContain('type="email"');
+    expect(html).toContain("Aborted resets will not be emailed.");
+    expect(html).toContain("Resets do not run.");
+    expect(fields({ abortEmail: "ops@example.com" })).not.toContain(
+      "Aborted resets will not be emailed.",
+    );
+  });
+
+  it("shows a field error next to its field and freezes the fields", () => {
+    const html = fields({
+      abortEmail: "nope",
+      errors: { abortEmail: "Enter a valid email address." },
+      disabled: true,
+    });
+    expect(html).toContain("Enter a valid email address.");
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain("disabled");
   });
 });

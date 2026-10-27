@@ -74,6 +74,7 @@ export function FormDialog({
   onOpen,
   onClosed,
   canSave = true,
+  submitLabel = "Save",
   children,
 }: {
   readonly trigger: ReactElement;
@@ -82,6 +83,8 @@ export function FormDialog({
   readonly onOpen?: () => void;
   readonly onClosed?: () => void;
   readonly canSave?: boolean;
+  // The submit button's text, for a form that does not save to the server.
+  readonly submitLabel?: string;
   readonly children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -114,6 +117,7 @@ export function FormDialog({
           title={title}
           action={action}
           canSave={canSave}
+          submitLabel={submitLabel}
           pending={pending}
           startTransition={startTransition}
           asidePending={asidePending}
@@ -134,6 +138,7 @@ function FormBody({
   title,
   action,
   canSave,
+  submitLabel,
   pending,
   startTransition,
   asidePending,
@@ -144,6 +149,7 @@ function FormBody({
   readonly title: string;
   readonly action: AdminFormAction;
   readonly canSave: boolean;
+  readonly submitLabel: string;
   readonly pending: boolean;
   readonly startTransition: TransitionStartFunction;
   readonly asidePending: boolean;
@@ -250,7 +256,7 @@ function FormBody({
         </DialogClose>
         <Button type="submit" disabled={pending || asidePending || !canSave}>
           {pending ? <Spinner data-icon="inline-start" /> : null}
-          Save
+          {submitLabel}
         </Button>
       </div>
     </form>

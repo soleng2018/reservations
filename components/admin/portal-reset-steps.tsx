@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { ListChecksIcon, ShieldCheckIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -8,15 +9,23 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import type { ResetRowView } from "@/lib/portal-reset/view";
+import { cn } from "@/lib/utils";
 
 // The reset list as text (spec 0022 AC-4): order number, feature name, a
 // Disabled badge, what the step does in plain words, the guards that apply,
 // and the note. Below the nav breakpoint each row is a stacked card
-// (AC-15); from it, one ruled list in a single card.
+// (AC-15); from it, one ruled list in a single card. Edit mode adds a button
+// column (`actions`) and the problems a Save found in a row (`problems`).
 export function PortalResetSteps({
   rows,
+  actions,
+  problems,
+  emptyDescription = "The starting list is loaded the first time the app is deployed.",
 }: {
   readonly rows: readonly ResetRowView[];
+  readonly actions?: (row: ResetRowView) => ReactNode;
+  readonly problems?: (row: ResetRowView) => readonly string[];
+  readonly emptyDescription?: string;
 }) {
   if (rows.length === 0) {
     return (
@@ -26,9 +35,7 @@ export function PortalResetSteps({
             <ListChecksIcon aria-hidden="true" />
           </EmptyMedia>
           <EmptyTitle>No reset steps yet</EmptyTitle>
-          <EmptyDescription>
-            The starting list is loaded the first time the app is deployed.
-          </EmptyDescription>
+          <EmptyDescription>{emptyDescription}</EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
@@ -41,7 +48,12 @@ export function PortalResetSteps({
       {rows.map((row) => (
         <li
           key={row.id}
-          className="grid gap-x-5 gap-y-3 rounded-xl border bg-card px-5 py-4 shadow-xs nav:grid-cols-[2rem_15rem_minmax(0,1fr)] nav:rounded-none nav:border-0 nav:shadow-none"
+          className={cn(
+            "grid gap-x-5 gap-y-3 rounded-xl border bg-card px-5 py-4 shadow-xs nav:rounded-none nav:border-0 nav:shadow-none",
+            actions
+              ? "nav:grid-cols-[2rem_15rem_minmax(0,1fr)_auto]"
+              : "nav:grid-cols-[2rem_15rem_minmax(0,1fr)]",
+          )}
         >
           <div className="flex min-w-0 items-start gap-3 nav:contents">
             <span
@@ -90,7 +102,24 @@ export function PortalResetSteps({
                 <span>{line}</span>
               </p>
             ))}
+            {(problems?.(row) ?? []).length > 0 ? (
+              <ul
+                aria-label={`Problems in ${row.featureName}`}
+                className="flex flex-col gap-1 text-xs text-danger-strong"
+              >
+                {(problems?.(row) ?? []).map((line) => (
+                  <li key={line} className="break-words">
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
+          {actions ? (
+            <div className="flex items-start gap-2 nav:col-start-4 nav:row-start-1">
+              {actions(row)}
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>

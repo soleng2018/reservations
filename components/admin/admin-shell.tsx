@@ -2,18 +2,21 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
 import { LogOutIcon } from "lucide-react";
 import { signOut } from "@/app/auth/actions";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { ADMIN_NAV, activeSection } from "@/lib/admin-nav";
 import { cn } from "@/lib/utils";
@@ -25,6 +28,23 @@ type AdminNav = {
 };
 
 const AdminNavContext = createContext<AdminNav | null>(null);
+
+// A page with an unsaved draft says so here, and a click on any admin link
+// (the nav, or a link on the page) asks first (spec 0022: leaving with
+// changes). The browser's back button is the accepted gap.
+type LeaveGuard = {
+  readonly setDirty: (dirty: boolean) => void;
+  // For a link's onClick: holds the click back while a draft is open.
+  readonly intercept: (e: MouseEvent<HTMLElement>, href: string) => void;
+};
+
+const LeaveGuardContext = createContext<LeaveGuard | null>(null);
+
+export function useLeaveGuard(): LeaveGuard {
+  const guard = useContext(LeaveGuardContext);
+  if (!guard) throw new Error("useLeaveGuard outside AdminShell");
+  return guard;
+}
 
 // For PageHeader's menu button, which opens the mobile drawer.
 export function useAdminNav(): AdminNav {
@@ -42,6 +62,22 @@ const DESKTOP = "(min-width: 55rem)";
 export function AdminShell({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const router = useRouter();
+  const dirty = useRef(false);
+  const [leaving, setLeaving] = useState<string | null>(null);
+
+  const guard: LeaveGuard = {
+    setDirty: useCallback((next) => {
+      dirty.current = next;
+    }, []),
+    intercept: useCallback((e, href) => {
+      const plain =
+        e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
+      if (!dirty.current || !plain) return;
+      e.preventDefault();
+      setLeaving(href);
+    }, []),
+  };
 
   // A drawer left open while the window grows past the breakpoint closes.
   useEffect(() => {
@@ -55,23 +91,41 @@ export function AdminShell({ children }: { readonly children: ReactNode }) {
 
   return (
     <AdminNavContext value={{ open, setOpen, menuButton }}>
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-62 flex-col bg-sidebar px-4 py-5.5 [--focus-ring:var(--sidebar-ring)] nav:flex">
-        <NavPanel />
-      </aside>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="left"
-          showCloseButton={false}
-          finalFocus={menuButton}
-          className="gap-0 bg-sidebar px-4 py-5.5 text-sidebar-foreground [--focus-ring:var(--sidebar-ring)] data-[side=left]:w-62 data-[side=left]:border-sidebar-border data-[side=left]:sm:max-w-62"
-        >
-          <SheetTitle className="sr-only">Navigation</SheetTitle>
-          <NavPanel onNavigate={() => setOpen(false)} />
-        </SheetContent>
-      </Sheet>
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col nav:ml-62">
-        {children}
-      </div>
+      <LeaveGuardContext value={guard}>
+        <aside className="fixed inset-y-0 left-0 z-40 hidden w-62 flex-col bg-sidebar px-4 py-5.5 [--focus-ring:var(--sidebar-ring)] nav:flex">
+          <NavPanel />
+        </aside>
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetContent
+            side="left"
+            showCloseButton={false}
+            finalFocus={menuButton}
+            className="gap-0 bg-sidebar px-4 py-5.5 text-sidebar-foreground [--focus-ring:var(--sidebar-ring)] data-[side=left]:w-62 data-[side=left]:border-sidebar-border data-[side=left]:sm:max-w-62"
+          >
+            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <NavPanel onNavigate={() => setOpen(false)} />
+          </SheetContent>
+        </Sheet>
+        <div className="flex min-h-screen min-w-0 flex-1 flex-col nav:ml-62">
+          {children}
+        </div>
+        <ConfirmDialog
+          open={leaving !== null}
+          onOpenChange={(next) => {
+            if (!next) setLeaving(null);
+          }}
+          title="Leave without saving?"
+          description="You have changes that are not saved. If you leave, they are lost."
+          cancelLabel="Stay"
+          confirmLabel="Leave"
+          onConfirm={() => {
+            const href = leaving;
+            dirty.current = false;
+            setOpen(false);
+            if (href !== null) router.push(href);
+          }}
+        />
+      </LeaveGuardContext>
     </AdminNavContext>
   );
 }
@@ -81,6 +135,7 @@ const itemClass =
 
 function NavPanel({ onNavigate }: { readonly onNavigate?: () => void }) {
   const active = activeSection(usePathname());
+  const { intercept } = useLeaveGuard();
   return (
     <>
       <div className="flex items-center gap-2.25 px-2 pt-1.5 pb-6.5">
@@ -105,7 +160,10 @@ function NavPanel({ onNavigate }: { readonly onNavigate?: () => void }) {
                 <Link
                   href={item.href}
                   aria-current={current ? "page" : undefined}
-                  onClick={onNavigate}
+                  onClick={(e) => {
+                    intercept(e, item.href);
+                    if (!e.defaultPrevented) onNavigate?.();
+                  }}
                   className={cn(
                     itemClass,
                     current
