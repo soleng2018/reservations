@@ -32,7 +32,7 @@ _Steps derived from spec 0017 acceptance criteria. `/check verify` runs these; `
 - AC-1 … Domain steps 1 to 3 · AC-2 … steps 6 to 8 · AC-3 … steps 4, 5, 7, 9 · AC-4 … step 13 and the scan command · AC-5 … steps 1, 10 · AC-6 … step 11 · AC-7 … steps 11, 12 · AC-8 … step 5 · AC-9 … step 14 · AC-10 … steps 15 to 17 · AC-11 … the codegen command · AC-12 … the setup, e2e, and Authentik fact commands · AC-13 … step 18
 
 ## Amendment 2026-10-26: Domain read only (updated 2026-10-27)
-_These replace the older steps that type or edit a Domain (UI steps 1 to 3, 6, and 11 above), which are superseded and kept only as the 2026-10-24 record. Partly run on 2026-10-26 (the no valid domain refusal and the none has a domain message were run live against NileWorkshop2Admin to 5Admin, nothing written): the dropdown and testbeds Playwright specs and the vitest command passed; the other steps are not yet run live._
+_These replace the older steps that type or edit a Domain (UI steps 1 to 3, 6, and 11 above), which are superseded and kept only as the 2026-10-24 record. Partly run on 2026-10-26 (the no valid domain refusal and the none has a domain message were run live against NileWorkshop2Admin to 5Admin, nothing written; the Authentik unreachable alert was run with a dummy AUTHENTIK_URL): the dropdown and testbeds Playwright specs and the vitest command passed; the other steps are not yet run live._
 
 ### UI / manual
 - [ ] Open Add testbed → Domain is a read only box with the placeholder "Choose a group first" and the hint "Taken from the group. It can't be changed."; choose a group that has a domain → the box shows it; Save stays off until a group with a domain is chosen        → AC-20, AC-22
@@ -45,7 +45,7 @@ _These replace the older steps that type or edit a Domain (UI steps 1 to 3, 6, a
 - [ ] Open Add testbed → Group Name is a select ("Choose a group"), sorted by name ignoring case, with no free text group field; the hint reads "Choose the Authentik group the owner has set up for this lab. Only groups not used by another testbed are listed."        → AC-14, AC-19
 - [x] With every listed group lacking `hol_testbed_domain` → every option is disabled, and the text under the select reads "None of the available groups has a domain yet. Ask the owner to set hol_testbed_domain on one."; Save stays off        → AC-18, AC-22
 - [ ] A marked group already behind a live testbed is not in the list; delete that testbed and reopen the dialog → it is listed again        → AC-16
-- [ ] Open the dialog with Authentik unreachable → "Couldn't load the Authentik groups. Close this and try again in a moment." as an alert, with the select and Save off        → AC-18
+- [x] Open the dialog with Authentik unreachable → "Couldn't load the Authentik groups. Close this and try again in a moment." as an alert, with the select and Save off        → AC-18
 - [ ] Unmark, rename, or take a group after the list loaded, then Save → the AC-3 message and nothing is written        → AC-19
 
 ### Commands
