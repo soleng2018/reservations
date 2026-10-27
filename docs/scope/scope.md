@@ -336,7 +336,7 @@ Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creati
 - [x] Verify it: `/check verify testbed domain & predefined groups`
 - [x] Test it: `/test testbed domain & predefined groups`
 - [x] Review it (fresh model): `/check review testbed domain & predefined groups`
-- [ ] Document it: `/document testbed domain & predefined groups`
+- [x] Document it: `/document testbed domain & predefined groups` (changelog entry in `CHANGELOG.md`, 2026-10-26)
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
 
 > Amendment (2026-10-26): pick the group, don't type it. Inputs for `/architect`, who amends spec 0017.
