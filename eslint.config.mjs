@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "dist/**",
     "out/**",
     "build/**",
+    // Research prototypes that drive a live portal (docs/research/portal-scripts/README.md).
+    "docs/research/portal-scripts/**",
     "next-env.d.ts",
   ]),
 ]);
