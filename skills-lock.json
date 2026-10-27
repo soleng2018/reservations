@@ -157,6 +157,12 @@
       "skillPath": "skills/vitest/SKILL.md",
       "computedHash": "21af2b13d47d31f3094b61c0f41abc8d6a7eed0df3c9a4029ea671f6978b7209"
     },
+    "web-dnd-dnd-kit": {
+      "source": "agents-inc/skills",
+      "sourceType": "github",
+      "skillPath": "src/skills/web-dnd-dnd-kit/SKILL.md",
+      "computedHash": "1af4b437326af871def05917603505b11075f510a0ce4d2e452f1e41369c4011"
+    },
     "zod": {
       "source": "pproenca/dot-skills",
       "sourceType": "github",
