@@ -2,6 +2,7 @@ import {
   HistoryIcon,
   LayoutGridIcon,
   LockIcon,
+  RotateCcwIcon,
   RouterIcon,
   UsersIcon,
   type LucideIcon,
@@ -14,6 +15,7 @@ export const ADMIN_SECTIONS = [
   "testbed-types",
   "testbeds",
   "users",
+  "nile-portal-reset",
   "audit-log",
 ] as const;
 
@@ -56,6 +58,14 @@ export const ADMIN_NAV: readonly AdminNavItem[] = [
     label: "Users",
     subtitle: "Everyone with hands-on lab access.",
     icon: UsersIcon,
+  },
+  // Spec 0022: between Users and the Audit Log.
+  {
+    section: "nile-portal-reset",
+    href: "/admin/nile-portal-reset",
+    label: "Nile Portal Reset",
+    subtitle: "The portal calls a reset makes, in the order it runs them.",
+    icon: RotateCcwIcon,
   },
   // Spec 0016 AC-1: the read only log, last in the nav.
   {

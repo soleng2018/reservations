@@ -15,6 +15,7 @@ describe("ADMIN_NAV", () => {
       "Testbed Types",
       "Testbeds",
       "Users",
+      "Nile Portal Reset",
       "Audit Log",
     ]);
   });
@@ -44,6 +45,8 @@ describe("ADMIN_NAV", () => {
         "Lab difficulty levels and how long each reservation lasts.",
       testbeds: "The remote labs customers can reserve.",
       users: "Everyone with hands-on lab access.",
+      "nile-portal-reset":
+        "The portal calls a reset makes, in the order it runs them.",
       "audit-log":
         "Who changed what, from the console, the booking form, and the worker.",
     });
