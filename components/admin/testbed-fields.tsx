@@ -13,8 +13,10 @@ import {
   type TestbedClientInput,
 } from "@/lib/catalog-input";
 import {
+  TESTBED_DOMAIN_HINT_CREATE,
   TESTBED_GROUP_NAME_HINT,
   TESTBED_NAME_HINT,
+  type GroupChoice,
   type TestbedEditDefaults,
 } from "@/lib/testbeds";
 
@@ -31,18 +33,24 @@ type Row = { readonly key: number; readonly client?: TestbedClientInput };
 // Spec 0004 AC-2, spec 0007 AC-2, AC-3, spec 0017 AC-1, and spec 0018 AC-2,
 // inside the form modal: empty to add, the loaded testbed to edit. Defaults are
 // read once (the admin row edit rule). The Name is what learners see and stays
-// editable. The Group Name is the Authentik group's name: typed on add, then
-// shown read only on edit (and never posted). Saving a new testbed looks that
-// group up, so a failure there arrives under the Group Name field or as the
-// modal's form level message.
+// editable. The Group Name is the Authentik group's name: chosen from
+// `groupChoices` on add (spec 0017 AC-14), then shown read only on edit (and
+// never posted). Saving a new testbed looks that group up again, so a failure
+// there arrives under the Group Name field or as the modal's form level
+// message. Choosing a group fills Domain until the admin types in it
+// (AC-17).
 export function TestbedFields({
   types,
   idps,
   defaults: initialDefaults,
+  groupChoices,
+  groupNotice,
 }: {
   readonly types: readonly SelectOption[];
   readonly idps: readonly SelectOption[];
   readonly defaults?: TestbedEditDefaults;
+  readonly groupChoices?: readonly GroupChoice[];
+  readonly groupNotice?: string;
 }) {
   const [defaults] = useState(initialDefaults);
   // Stable keys for the client rows, so removing one keeps the others'
@@ -51,7 +59,16 @@ export function TestbedFields({
   const [rows, setRows] = useState<readonly Row[]>(() =>
     (defaults?.clients ?? []).map((client, key) => ({ key, client })),
   );
+  const [group, setGroup] = useState<string | null>(null);
+  const [domain, setDomain] = useState("");
+  // Once the admin types in Domain, a group choice never overwrites it.
+  const [typedDomain, setTypedDomain] = useState(false);
   const { fields } = useFormErrors();
+  const chooseGroup = (name: string) => {
+    setGroup(name);
+    if (typedDomain) return;
+    setDomain(groupChoices?.find((c) => c.name === name)?.domain ?? "");
+  };
   const full = rows.length >= MAX_TESTBED_CLIENTS;
   // AC-3: a saved key that is gone or no longer an IDP shows as None.
   const idp = idps.some((o) => o.value === defaults?.idpApiKeyId)
@@ -86,20 +103,26 @@ export function TestbedFields({
         <Field
           path="groupName"
           label="Group Name"
-          description={TESTBED_GROUP_NAME_HINT.create}
+          description={groupNotice ?? TESTBED_GROUP_NAME_HINT.create}
         >
-          <Input
+          <FormSelect
             name="groupName"
-            required
-            maxLength={200}
-            autoComplete="off"
-            spellCheck={false}
-            className="font-mono"
-            placeholder="e.g. NileWorkshop1Admin"
+            options={(groupChoices ?? []).map((c) => ({
+              value: c.name,
+              label: c.name,
+            }))}
+            placeholder="Choose a group"
+            value={group}
+            onValueChange={chooseGroup}
+            disabled={(groupChoices ?? []).length === 0}
           />
         </Field>
       )}
-      <Field path="domain" label="Domain">
+      <Field
+        path="domain"
+        label="Domain"
+        description={defaults ? undefined : TESTBED_DOMAIN_HINT_CREATE}
+      >
         <Input
           name="domain"
           required
@@ -110,7 +133,15 @@ export function TestbedFields({
           spellCheck={false}
           className="font-mono"
           placeholder="nile.global"
-          defaultValue={defaults?.domain}
+          {...(defaults
+            ? { defaultValue: defaults.domain }
+            : {
+                value: domain,
+                onChange: (e) => {
+                  setTypedDomain(true);
+                  setDomain(e.target.value);
+                },
+              })}
         />
       </Field>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

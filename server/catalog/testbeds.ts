@@ -92,6 +92,20 @@ const liveByGroup = (conn: Kysely<DB>, groupPk: string) =>
     .where("deleted_at", "is", null)
     .executeTakeFirst();
 
+// Spec 0017 AC-16: the Authentik group pk behind every live testbed.
+export async function liveTestbedGroupPks(
+  conn: Kysely<DB>,
+): Promise<ReadonlySet<string>> {
+  const rows = await conn
+    .selectFrom("testbeds")
+    .select("authentik_group_pk")
+    .where("deleted_at", "is", null)
+    .execute();
+  return new Set(
+    rows.flatMap((r) => (r.authentik_group_pk ? [r.authentik_group_pk] : [])),
+  );
+}
+
 // Spec 0018 AC-3: the name, then the group name, then the domain, all before
 // Authentik is called, so a taken one shows its message even when Authentik is
 // down.

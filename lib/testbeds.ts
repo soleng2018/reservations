@@ -18,6 +18,10 @@ export const TESTBED_MESSAGES = {
     "That group isn't set up for testbeds. It needs the hol_testbed_group marker.",
   groupInUse: "Another testbed already uses that group.",
   authentikUnavailable: "Couldn't check the Authentik group, try again.",
+  groupChoicesUnavailable:
+    "Couldn't load the Authentik groups. Close this and try again in a moment.",
+  groupChoicesEmpty:
+    "No unused marked group is available. Ask the owner to mark or add one.",
 } as const;
 
 export const TESTBED_NAME_HINT =
@@ -27,9 +31,18 @@ export const TESTBED_NAME_HINT =
 // then read only.
 export const TESTBED_GROUP_NAME_HINT = {
   create:
-    "Must be the exact name of an Authentik group the owner has set up for this lab.",
+    "Choose the Authentik group the owner has set up for this lab. Only groups not used by another testbed are listed.",
   edit: "The group name can't change. To use another group, delete this testbed and add a new one.",
 } as const;
+
+export const TESTBED_DOMAIN_HINT_CREATE =
+  "Filled in from the group when it has one. You can change it.";
+
+// Spec 0017 AC-18: what the add dialog's select is built from. No pk.
+export type GroupChoice = {
+  readonly name: string;
+  readonly domain: string | null;
+};
 
 // What the edit dialog loads on open (AC-3): the only payload that carries a
 // client's OS login, one testbed at a time.

@@ -90,3 +90,20 @@ Each row is a call made while designing Option 3. Rows marked "engineer" were pu
 | Domain pattern | Strict: letters, digits, inner hyphens, last label letters only, no trailing dot | Accept anything with a dot | The domain will build usernames and emails in feature 20, so a loose value would travel far. The pattern is shared with the database check. |
 | Provisioning role | Unchanged in this spec | Remove `add_group` and `delete_group` now | A shared Authentik change the owner approves; the Playwright tests still use those rights. Listed as a follow up. |
 | Slug | Kept, immutable, names nothing in Authentik | Drop it | Dropping needs a migration and touches audit history for no gain now. |
+
+## Amendment 2026-10-26: pick the group, fill the domain
+
+**Context.** Admins typed the group name exactly. The scope amendment (2026-10-26) asked for a dropdown of the groups that carry the `hol_testbed_group` marker. A live read that day showed Authentik lists groups filtered by that attribute with the token the app already holds (15 marked groups: NileWorkshop1 to 5, each as Admin, Contractor, and Employee), so no new permission is needed. The domain cannot be read from Authentik today: the marked groups carry only the marker, and the provisioning token is refused (403) on the SAML provider list.
+
+| Decision | Chosen | Runner up | Why |
+|---|---|---|---|
+| Where the dropdown stops trusting | Convenience only; save runs the same lookup and marker check | Trust the posted choice | A list can be stale or forged, and the guard already sits at save. No new rule to keep in step. |
+| What the select posts | The group name, as `groupName` | The group pk | The create path, the unique name rules, and the refusal messages all key on the name. Posting a pk would change `TestbedInput`, `createTestbed`, and every test for no gain. |
+| Which groups are offered (owner, 2026-10-26) | Marked groups whose name ends in `Admin` | All marked groups (recommended) | The owner's call: a testbed uses the Admin group, so the other 10 are noise. The cost is a naming rule that only the list uses; the save still accepts any marked group. |
+| Domain source | A string attribute `hol_testbed_domain` on the group, parsed with the existing `DomainInput` | Guess it from `NileWorkshopN`; read it from the SAML provider | A guess breaks the first time a name changes, and the token is refused on the provider list. An attribute is the owner's own data, read with a permission the app holds. |
+| A bad or missing domain attribute | The group is still offered; Domain is typed | Hide the group; block with an error | Nothing should block on an owner step that is optional. The format check and the unique domain rule at save still catch a wrong value. |
+| When the list is read | On dialog open, no cache | A 60 second cache | Matches `loadTestbedForEdit`. Always current, one call per open, no shared cache to invalidate. |
+| Unreachable Authentik | Alert, select disabled, Save off | Fall back to free text | A free text field would bring back the typo path and a second form to test. The old path failed at save with the same cause. |
+| Hiding used groups | Compare with live testbeds' group pks in the same call | Show all and refuse at save | Fewer dead choices; `testbeds_group_pk_uq` still decides. |
+| Domain fill rule | Fill until the admin types; never overwrite typed text | Always overwrite on choice | Overwriting would lose a deliberate edit. |
+| References | None | | Everything here comes from the repo and the live read recorded in the scope. |

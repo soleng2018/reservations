@@ -1,4 +1,5 @@
 import "server-only";
+import { DomainInput } from "@/lib/catalog-input";
 import { err, ok, type Result } from "@/lib/result";
 import {
   call,
@@ -13,6 +14,7 @@ import {
   guardGroupWrite,
   guardUserWrite,
   isTaggedLearner,
+  TESTBED_GROUP_MARKER,
   toGroupTarget,
   type GroupRefusal,
   type UserRefusal,
@@ -96,9 +98,9 @@ export async function removeFromTestbedGroup(
 // is Authentik misbehaving, not a bug here, so the lookup answers
 // `unavailable`. Checked by error name, not instanceof: `Response.json()` can
 // throw from another realm.
-async function unreadableIsUnavailable<T>(
-  run: () => Promise<Result<T, GroupRefusal | AuthentikFailure>>,
-): Promise<Result<T, GroupRefusal | AuthentikFailure>> {
+async function unreadableIsUnavailable<T, E extends string>(
+  run: () => Promise<Result<T, E | AuthentikFailure>>,
+): Promise<Result<T, E | AuthentikFailure>> {
   try {
     return await run();
   } catch (e) {
@@ -132,6 +134,86 @@ export const findTestbedGroup = (
     if (matches.length > 1) return err("not_testbed_group");
     const allowed = checkGroupWrite(toGroupTarget(match), "add", admins.value);
     return allowed.ok ? ok(toTestbedGroup(match)) : allowed;
+  });
+
+// Spec 0017 AC-17: the attribute the owner may add to a marked group, a
+// domain such as `nileworkshop-1.com`, to prefill the add form's Domain.
+export const TESTBED_GROUP_DOMAIN_ATTRIBUTE = "hol_testbed_domain";
+
+// Spec 0017 AC-15: the display filter on a group's name (case sensitive).
+const GROUP_CHOICE_SUFFIX = "Admin";
+const CHOICE_PAGE = 100;
+const CHOICE_MAX_PAGES = 5;
+
+// A group the add form may offer. The `pk` stays on the server: the caller
+// uses it to hide used groups, then drops it.
+export type TestbedGroupChoice = {
+  readonly pk: string;
+  readonly name: string;
+  readonly domain: string | null;
+};
+
+// Spec 0017 AC-17: the group's domain, parsed like a typed one. Missing, not a
+// string, or not a domain gives null; a bad value is warned about by group
+// name only, never by value.
+export function toGroupChoice(g: Group): TestbedGroupChoice {
+  const raw = g.attributes?.[TESTBED_GROUP_DOMAIN_ATTRIBUTE];
+  const parsed = DomainInput.safeParse(raw);
+  if (!parsed.success && raw !== undefined)
+    console.warn(
+      `authentik: group ${g.name} has an invalid ${TESTBED_GROUP_DOMAIN_ATTRIBUTE}`,
+    );
+  return {
+    pk: g.pk,
+    name: g.name,
+    domain: parsed.success ? parsed.data : null,
+  };
+}
+
+// Spec 0017 AC-15: the marked groups the add form offers, sorted by name
+// ignoring case. One paged read, at most 5 pages. A group is kept only when
+// it passes the same "add" check as the save, its name ends with `Admin`, and
+// no other group in the read carries its name (the save would refuse it).
+export const listTestbedGroupChoices = (
+  api: CoreApi,
+): Promise<Result<readonly TestbedGroupChoice[], AuthentikFailure>> =>
+  unreadableIsUnavailable<readonly TestbedGroupChoice[], never>(async () => {
+    const admins = await adminGroupUuid(api);
+    if (!admins.ok) return err("unavailable");
+    const page = async (
+      n: number,
+      acc: readonly Group[],
+    ): Promise<Result<readonly Group[], AuthentikFailure>> => {
+      const res = await call("groups.list marked", () =>
+        api.coreGroupsList({
+          attributes: JSON.stringify({ [TESTBED_GROUP_MARKER]: true }),
+          page: n,
+          pageSize: CHOICE_PAGE,
+          includeUsers: false,
+        }),
+      );
+      if (!res.ok) return res;
+      const all = [...acc, ...res.value.results];
+      const next = res.value.pagination.next;
+      return next > n && n < CHOICE_MAX_PAGES ? page(next, all) : ok(all);
+    };
+    const read = await page(1, []);
+    if (!read.ok) return err("unavailable");
+    const count = (name: string) =>
+      read.value.filter((g) => g.name === name).length;
+    return ok(
+      read.value
+        .filter(
+          (g) =>
+            g.name.endsWith(GROUP_CHOICE_SUFFIX) &&
+            count(g.name) === 1 &&
+            checkGroupWrite(toGroupTarget(g), "add", admins.value).ok,
+        )
+        .map(toGroupChoice)
+        .toSorted((a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+        ),
+    );
   });
 
 // One group by pk, without its members: its current name, or `not_found`.

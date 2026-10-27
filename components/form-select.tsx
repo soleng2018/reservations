@@ -22,6 +22,7 @@ export function FormSelect({
   value,
   defaultValue,
   onValueChange,
+  disabled,
   ...control
 }: FieldControlProps & {
   readonly name: string;
@@ -30,12 +31,14 @@ export function FormSelect({
   readonly value?: string | null;
   readonly defaultValue?: string;
   readonly onValueChange?: (value: string) => void;
+  readonly disabled?: boolean;
 }) {
   const items = [{ value: null, label: placeholder }, ...options];
   return (
     <Select
       name={name}
       items={items}
+      disabled={disabled}
       {...(value !== undefined
         ? { value }
         : { defaultValue: defaultValue ?? null })}

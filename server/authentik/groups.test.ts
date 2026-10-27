@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   addToTestbedGroup,
   findTestbedGroup,
+  listTestbedGroupChoices,
   readTestbedGroup,
   removeFromTestbedGroup,
   testbedGroupMembers,
@@ -271,4 +272,103 @@ describe("removeFromTestbedGroup (AC-4)", () => {
     });
     error.mockRestore();
   });
+});
+
+const names = async (ak: ReturnType<typeof fakeAuthentik>) => {
+  const r = await listTestbedGroupChoices(ak.api);
+  if (!r.ok) throw new Error(r.error);
+  return r.value.map((c) => c.name);
+};
+
+// covers: spec 0017 AC-15, AC-19
+describe("listTestbedGroupChoices (spec 0017 AC-15)", () => {
+  it("offers only marked, flat groups whose name ends with Admin, sorted ignoring case", async () => {
+    const ak = fakeAuthentik([], {
+      groups: [
+        markedGroup("b", "beta Admin"),
+        markedGroup("c", "NileWorkshop1Contractor"),
+        markedGroup("d", "NileWorkshop1Employee"),
+        markedGroup("e", "SuperAdmin", { is_superuser: true }),
+        markedGroup("f", "ChildAdmin", { parents: ["x"] }),
+        markedGroup("g", "RoleAdmin", { roles: ["r"] }),
+        fakeGroup("h", "UnmarkedAdmin"),
+        fakeGroup("i", "StringAdmin", { hol_testbed_group: "true" }),
+        markedGroup("j", "hol-admins"),
+      ],
+    });
+    expect(await names(ak)).toEqual(["beta Admin", "NileWorkshop1Admin"]);
+    expect(ak.writes).toEqual([]);
+  });
+
+  it("drops both groups that share one name", async () => {
+    const ak = fakeAuthentik([], {
+      groups: [markedGroup("a", "DupAdmin"), markedGroup("b", "DupAdmin")],
+    });
+    expect(await names(ak)).toEqual(["NileWorkshop1Admin"]);
+  });
+
+  it("reads a second page but stops after five", async () => {
+    const many = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        markedGroup(`p${i}`, `G${String(i).padStart(4, "0")}Admin`),
+      );
+    expect((await names(fakeAuthentik([], { groups: many(150) }))).length).toBe(
+      151,
+    );
+    expect((await names(fakeAuthentik([], { groups: many(600) }))).length).toBe(
+      500,
+    );
+  });
+
+  it("is unavailable when Authentik is down or answers with a body it cannot read", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(
+      await listTestbedGroupChoices(fakeAuthentik([], { down: true }).api),
+    ).toEqual({ ok: false, error: "unavailable" });
+    const garbled = fakeAuthentik([], {
+      reply: (m, p) =>
+        m === "GET" && p === "/core/groups/"
+          ? new Response("<html>", { status: 200 })
+          : undefined,
+    });
+    expect(await listTestbedGroupChoices(garbled.api)).toEqual({
+      ok: false,
+      error: "unavailable",
+    });
+    error.mockRestore();
+  });
+});
+
+// covers: spec 0017 AC-17
+describe("a group's domain (spec 0017 AC-17)", () => {
+  const domainOf = async (value: unknown) => {
+    const ak = fakeAuthentik([], {
+      groups: [
+        fakeGroup("d", "DomAdmin", {
+          hol_testbed_group: true,
+          ...(value === undefined ? {} : { hol_testbed_domain: value }),
+        }),
+      ],
+    });
+    const r = await listTestbedGroupChoices(ak.api);
+    if (!r.ok) throw new Error(r.error);
+    return r.value.find((c) => c.name === "DomAdmin")?.domain;
+  };
+
+  it("parses the attribute like a typed domain", async () => {
+    expect(await domainOf("NileWorkshop-1.COM")).toBe("nileworkshop-1.com");
+  });
+
+  it.each([undefined, 7, "", "nile"])(
+    "gives null for %j and still offers the group",
+    async (v) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(await domainOf(v)).toBeNull();
+      if (v !== undefined) {
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("DomAdmin"));
+        expect(JSON.stringify(warn.mock.calls)).not.toContain('"nile"');
+      }
+      warn.mockRestore();
+    },
+  );
 });

@@ -63,6 +63,14 @@ export const TESTBED_GROUP = markedGroup(
   "NileWorkshop1Admin",
 );
 
+// Authentik's `attributes` filter: a JSON object whose every key must equal
+// the group's attribute.
+const hasAttributes = (g: FakeGroup, filter: string | null) =>
+  !filter ||
+  Object.entries(JSON.parse(filter) as Record<string, unknown>).every(
+    ([k, v]) => g.attributes[k] === v,
+  );
+
 export function fakeAuthentik(
   initial: readonly FakeUser[],
   opts: {
@@ -122,7 +130,11 @@ export function fakeAuthentik(
     if (method === "GET" && path === "/core/groups/")
       return json(
         page(
-          groups.filter((g) => !q.get("name") || g.name === q.get("name")),
+          groups.filter(
+            (g) =>
+              (!q.get("name") || g.name === q.get("name")) &&
+              hasAttributes(g, q.get("attributes")),
+          ),
           q,
         ),
       );

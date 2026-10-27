@@ -34,9 +34,14 @@ import {
   type ReturnUrlError,
 } from "@/lib/google-sign-in";
 import { ok, err, type Result } from "@/lib/result";
-import { TESTBED_MESSAGES, type TestbedEditDefaults } from "@/lib/testbeds";
+import {
+  TESTBED_MESSAGES,
+  type GroupChoice,
+  type TestbedEditDefaults,
+} from "@/lib/testbeds";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
+import { listTestbedGroupChoices } from "@/server/authentik/groups";
 import {
   createApiKey,
   deleteApiKey,
@@ -51,6 +56,7 @@ import {
   createTestbed,
   deleteTestbed,
   getTestbedForEdit,
+  liveTestbedGroupPks,
   updateTestbed,
 } from "@/server/catalog/testbeds";
 import {
@@ -891,6 +897,24 @@ export async function loadTestbedForEdit(
   await requireAdmin();
   if (!isId(id)) return err("not_found");
   return getTestbedForEdit(db(), id);
+}
+
+// Spec 0017 AC-16, AC-18: the add dialog's load on open. No cache; the
+// group pks stay here and only names and domains go to the browser.
+export async function loadTestbedGroupChoices(): Promise<
+  Result<readonly GroupChoice[], "unavailable">
+> {
+  await requireAdmin();
+  const [choices, used] = await Promise.all([
+    listTestbedGroupChoices(authentik()),
+    liveTestbedGroupPks(db()),
+  ]);
+  if (!choices.ok) return err("unavailable");
+  return ok(
+    choices.value
+      .filter((c) => !used.has(c.pk))
+      .map(({ name, domain }) => ({ name, domain })),
+  );
 }
 
 // Spec 0007 AC-3 to AC-5, spec 0017 AC-5, AC-6. The page binds the row's id.

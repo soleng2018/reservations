@@ -54,11 +54,12 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
-| 19 | Testbed domain & predefined groups | Slice 6 | done |
+| 19 | Testbed domain & predefined groups | Slice 6 | in-progress (amended 2026-10-26) |
 | 20 | Nile identity per domain | Slice 6 | done |
 | 21 | Testbed friendly name | Slice 6 | done |
 | 22 | Cleanup gap between labs | Slice 6 | done |
 | 23 | Cleanup hook for labs that end early | Slice 6 | done |
+| 24 | Nile Portal reset when a lab ends | Slice 6 | planned |
 
 ## Foundations
 
@@ -322,7 +323,7 @@ spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts
 
 ## Slice 6: Nile tenants
 
-### 19. Testbed domain & predefined groups · done · Full
+### 19. Testbed domain & predefined groups · in-progress · Full
 Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creating and deleting testbed groups: an admin names the testbed exactly like a group that already exists in Authentik (for example `NileWorkshop1Admin`, made by a separate script), and the app refuses the testbed when no such group exists. A small hint under the Name field says the name must be the group name. Cloudflare Access per VM rules use the same group name. This replaces the app made `pod-<slug>` groups of features 6, 9, and 14.
 **Done when:** an admin cannot save a testbed without a Domain, or with one that is not a valid domain name; a second live testbed with the same name, or the same domain (ignoring case), is refused with a clear message and nothing is written; a name that matches no Authentik group is refused with a clear message and nothing is written; the app creates and deletes no group in Authentik; a booked learner is added to the group named like the testbed and removed from it when the booking ends; deleting a testbed leaves its group alone; the HOL Labs gate no longer depends on `pod-` names.
 - [x] Design it (spec): `/architect testbed domain & predefined groups`
@@ -337,6 +338,22 @@ Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creati
 - [x] Review it (fresh model): `/check review testbed domain & predefined groups`
 - [ ] Document it: `/document testbed domain & predefined groups`
 spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
+
+> Amendment (2026-10-26): pick the group, don't type it. Inputs for `/architect`, who amends spec 0017.
+> - Today the admin types the group name exactly. Instead, the add form shows a dropdown of the Authentik groups that carry the `hol_testbed_group: true` attribute (the marker the app already checks). This is a convenience only: saving still runs the same lookup and marker check, so a stale or tampered choice is refused as before.
+> - Confirmed possible (live read, 2026-10-26): Authentik lists groups filtered by that attribute with the provisioning token the app already holds, and returns exactly the 15 marked groups today (NileWorkshop1 to 5, each as Admin, Contractor, and Employee). No new permission is needed, and the app still never writes a group.
+> - The dropdown hides groups that a live testbed already uses (one live testbed per group), and shows a clear message with the choice disabled when Authentik cannot be reached.
+> - The domain cannot be pulled today. The marked groups carry only the marker, and the provisioning token is refused (403) on the SAML provider list, so the app has no reliable source for it. Recommended path for the owner: add a domain attribute (suggested name `hol_testbed_domain`) to each marked group, through the `nile-idp` script or by hand. Then the form fills Domain from the chosen group. The admin can still edit it, and it still passes the domain format check and the unique domain rule. Where a group has no such attribute, Domain stays a typed field, so nothing blocks on the owner. Guessing the domain from the `NileWorkshopN` name is not recommended, because it breaks the first time a name changes.
+> - Unchanged: feature 21's split between Group Name (admin side) and Name (what learners see); the name lock on edit; the domain lock while a booking is Upcoming or Current.
+> - Open for `/architect`: the attribute name and where its value is validated, how a group with a bad or missing domain attribute behaves, whether the Contractor and Employee groups should appear in the list or only Admin groups, and whether the list is read when the dialog opens or cached for a short time.
+
+**Amendment done when:** the add form offers a dropdown of marked groups and no free text group field; a group already used by a live testbed is not offered; an unreachable Authentik shows a clear message and blocks saving; saving a group that is no longer marked, or was removed after the list loaded, is refused with the existing message and nothing is written; when the chosen group carries a domain attribute, Domain is filled from it and stays editable, and when it does not, Domain is typed as today; the app still creates, updates, and deletes no group.
+- [x] Design it (spec): `/architect testbed group dropdown and domain prefill` (amends spec 0017, AC-14 to AC-19; decided 2026-10-26: the list offers marked groups whose name ends in `Admin`, read on dialog open with no cache, domain attribute `hol_testbed_domain` parsed by the domain rules, a bad or missing value just leaves Domain typed)
+- [ ] Build it: `/develop testbed group dropdown and domain prefill` (owner step first, optional: add the domain attribute to the marked groups)
+  - [x] Group choices read: the filtered, paged Authentik list, the `Admin` suffix and unique name rules, the domain attribute parse, hide used groups, fake Authentik filter (AC-15, 16, 17, 19)
+  - [ ] Add dialog: `loadTestbedGroupChoices`, the client add dialog with loading, unavailable, and empty states, the select and domain fill, hints, Playwright (AC-13, 14, 17, 18, 19)
+- [ ] Verify it: `/check verify testbed group dropdown and domain prefill`
+- [ ] Test it: `/test testbed group dropdown and domain prefill`
 
 > Ownership (2026-10-25): the `soleng2018/nile-idp` script owns the Authentik SAML and SCIM setup for Nile tenants and the shared `Nile:` mappings; the owner does the Nile Portal checklist by hand; this app owns the learner user, its domain username and `attributes.mail`. Table in [spec 0019](../specs/0019-nile-identity-per-domain.md).
 
@@ -395,7 +412,19 @@ Follow up from spec 0020. A Current booking that is cancelled (by anyone) or mov
   - [x] Outcomes, failure audit, and the guarded badge (AC-6, 7), then tests and scans (AC-9, 11)
 - [x] Verify it: `/check verify cleanup hook for labs that end early` (2026-10-26: console, a live worker run against a signed https receiver with a 200 and a 404, the audit row, and the Needs attention badge; the 500 retry and the move event are proven in tests only, and the learner screens by diff and tests, see `verify.md`)
 - [x] Test it: `/test cleanup hook for labs that end early`
+Enhancement queued (2026-10-26): the hook must also fire when a lab ends at its booked time, not only on an early end. Details in the spec 0021 Follow-up (marked ENHANCE) and in feature 24.
 spec [0021](../specs/0021-cleanup-hook-early-end/index.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
+
+### 24. Nile Portal reset when a lab ends · needs a decision · Full
+Follow up from features 22 and 23. After every lab, whether it ends at its booked time or early, a receiver signs in to that workshop's Nile Portal as its admin and resets the portal to a clean baseline through the portal's own API, so the next learner starts on an empty tenant. The 30 minute gap after each lab (feature 22) is the time the reset gets to finish. The hook from feature 23 only fires on an early end today, so the app must also send it when a lab ends normally. It deletes things, so it is Full tier: a wrong target or a wrong tenant is hard to undo.
+**Done when:** with a live `CLEANUP` key, every lab that ends, at its booked time or early (cancel or move), resets that workshop's portal inside the 30 minute gap (every SSID except the protected one, all integrations, all Wired Access Management, Segments, DHCP, and RADIUS entries are removed); a repeat call finds nothing left and changes nothing; a call that fails shows in the existing audit row and Needs attention badge; no portal password, token, or hook secret appears in a log, payload, or error.
+- [ ] Design it (spec): `/architect nile portal reset when a lab ends`
+> Owner inputs (2026-10-26), for `/architect`:
+> - Correction (2026-10-26): the reset runs after every lab, not only an early end, which is why the 30 minute gap exists. Spec 0021 sends nothing at the normal end on purpose, so the app needs a new event when a lab ends normally. The worker already completes ended bookings, which is the natural place to send it. `/architect` decides whether that is part of this feature or its own spec.
+> - Reset list so far: all SSIDs except one (the portal gives that one no delete option), all integrations, all Wired Access Management, Segments, DHCP, RADIUS, and more. The owner will send the rest of the list later.
+> - Five workshops, N = 1 to 5, each with its own portal admin `admin@nileworkshop-N.com`. The password is in `~/secrets/nileportal.pw` (to confirm it is the same for all five). Only workshop 1 (`nileworkshop-1.com`, portal `u1.nile-global.cloud`) is a testbed in the app today.
+> - Proven on workshop 1 (2026-10-26): sign in goes through Authentik and gives the portal an `x-id-token`; the portal API lists SSIDs with `GET /api/v1/settings/ssids` and deleted a test SSID with `DELETE /api/v1/settings/ssids/:id` (204). The page's own code names its routes, so every other resource type needs its list and delete routes found the same way.
+> - Open questions for the owner: (1) the full reset list and its order, since some items may depend on others (for example segments used by SSIDs); (2) which SSID is the protected one and how to recognise it; (3) delete by "everything except" or by a name rule; (4) portal addresses and passwords for workshops 2 to 5; (5) the reset must finish inside the 30 minute gap: how long it takes today per workshop, and what happens if it overruns (alert, hold the next lab); (6) how the receiver gets the token (a headless browser sign in, or the sign in steps without a browser) and where it runs (a new container behind Traefik was the leading idea); (7) what happens when a call fails halfway (retry, partial reset, alert); (8) a dry run mode that lists what it would delete without deleting; (9) a safety check that the testbed's domain matches the portal tenant before anything is deleted; (10) whether the app or the receiver maps a testbed to its portal admin account.
 
 ## Deferred
 Out of scope for the current build pass, kept so the plan stays honest.

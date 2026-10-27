@@ -153,6 +153,7 @@ const {
   createTestbedTypeAction,
   deleteTestbedTypeAction,
   loadTestbedForEdit,
+  loadTestbedGroupChoices,
   updateTestbedAction,
   updateTestbedTypeAction,
 } = await import("./actions");
@@ -1828,6 +1829,7 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       const created = testbedForm(`Blocked${crypto.randomUUID()}`, type.id);
 
       expect(await redirectOf(() => loadTestbedForEdit(testbed.id))).toBe(to);
+      expect(await redirectOf(() => loadTestbedGroupChoices())).toBe(to);
       expect(
         await redirectOf(() =>
           updateTestbedAction(
@@ -1856,6 +1858,40 @@ describe.skipIf(!hasDb)("testbed actions", () => {
       const name = `NileLab${crypto.randomUUID().slice(0, 8)}Admin`;
       return { name, group: markedGroup(crypto.randomUUID(), name) };
     };
+
+    // covers: spec 0017 AC-16, AC-18
+    it("lists unused marked groups without their pk, and hides a live testbed's group", () =>
+      as("admin", async (trx) => {
+        const { type } = await makeLab(trx);
+        const { name, group } = labGroup();
+        ctx.authentik = fakeAuthentik([], { groups: [group] }).api;
+        const listed = async () => {
+          const r = await loadTestbedGroupChoices();
+          if (!r.ok) throw new Error(r.error);
+          return r.value;
+        };
+        expect(await listed()).toContainEqual({ name, domain: null });
+        expect(JSON.stringify(await listed())).not.toContain(group.pk);
+        await createTestbedAction(IDLE, testbedForm(name, type.id));
+        expect((await listed()).map((c) => c.name)).not.toContain(name);
+        await trx
+          .updateTable("testbeds")
+          .set({ deleted_at: new Date() })
+          .where("group_name", "=", name)
+          .execute();
+        expect((await listed()).map((c) => c.name)).toContain(name);
+      }));
+
+    it("answers unavailable when Authentik is down", () =>
+      as("admin", async () => {
+        const error = vi.spyOn(console, "error").mockImplementation(() => {});
+        ctx.authentik = fakeAuthentik([], { down: true }).api;
+        expect(await loadTestbedGroupChoices()).toEqual({
+          ok: false,
+          error: "unavailable",
+        });
+        error.mockRestore();
+      }));
 
     it("creates a testbed on the owner's group", () =>
       as("admin", async (trx) => {
