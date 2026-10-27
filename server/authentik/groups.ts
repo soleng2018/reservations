@@ -140,8 +140,6 @@ export const findTestbedGroup = (
 // domain such as `nileworkshop-1.com`, to prefill the add form's Domain.
 export const TESTBED_GROUP_DOMAIN_ATTRIBUTE = "hol_testbed_domain";
 
-// Spec 0017 AC-15: the display filter on a group's name (case sensitive).
-const GROUP_CHOICE_SUFFIX = "Admin";
 const CHOICE_PAGE = 100;
 const CHOICE_MAX_PAGES = 5;
 
@@ -172,8 +170,8 @@ export function toGroupChoice(g: Group): TestbedGroupChoice {
 
 // Spec 0017 AC-15: the marked groups the add form offers, sorted by name
 // ignoring case. One paged read, at most 5 pages. A group is kept only when
-// it passes the same "add" check as the save, its name ends with `Admin`, and
-// no other group in the read carries its name (the save would refuse it).
+// it passes the same "add" check as the save and no other group in the read
+// carries its name (the save would refuse it). The marker alone picks groups.
 export const listTestbedGroupChoices = (
   api: CoreApi,
 ): Promise<Result<readonly TestbedGroupChoice[], AuthentikFailure>> =>
@@ -205,7 +203,6 @@ export const listTestbedGroupChoices = (
       read.value
         .filter(
           (g) =>
-            g.name.endsWith(GROUP_CHOICE_SUFFIX) &&
             count(g.name) === 1 &&
             checkGroupWrite(toGroupTarget(g), "add", admins.value).ok,
         )

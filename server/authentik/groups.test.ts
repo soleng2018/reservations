@@ -282,7 +282,7 @@ const names = async (ak: ReturnType<typeof fakeAuthentik>) => {
 
 // covers: spec 0017 AC-15, AC-19
 describe("listTestbedGroupChoices (spec 0017 AC-15)", () => {
-  it("offers only marked, flat groups whose name ends with Admin, sorted ignoring case", async () => {
+  it("offers only marked, flat groups whatever their name ends with, sorted ignoring case", async () => {
     const ak = fakeAuthentik([], {
       groups: [
         markedGroup("b", "beta Admin"),
@@ -296,7 +296,12 @@ describe("listTestbedGroupChoices (spec 0017 AC-15)", () => {
         markedGroup("j", "hol-admins"),
       ],
     });
-    expect(await names(ak)).toEqual(["beta Admin", "NileWorkshop1Admin"]);
+    expect(await names(ak)).toEqual([
+      "beta Admin",
+      "NileWorkshop1Admin",
+      "NileWorkshop1Contractor",
+      "NileWorkshop1Employee",
+    ]);
     expect(ak.writes).toEqual([]);
   });
 
