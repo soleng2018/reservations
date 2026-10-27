@@ -54,7 +54,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 16 | Set password / welcome email | Slice 4 | done |
 | 17 | Reminder before start | Slice 4 | done |
 | 18 | Admin audit log | Slice 5 | done |
-| 19 | Testbed domain & predefined groups | Slice 6 | in-progress (amended 2026-10-26) |
+| 19 | Testbed domain & predefined groups | Slice 6 | done (amended 2026-10-26) |
 | 20 | Nile identity per domain | Slice 6 | done |
 | 21 | Testbed friendly name | Slice 6 | done |
 | 22 | Cleanup gap between labs | Slice 6 | done |
@@ -323,7 +323,7 @@ spec [0016](../specs/0016-admin-audit-log/index.md) · code in `lib/audit-log.ts
 
 ## Slice 6: Nile tenants
 
-### 19. Testbed domain & predefined groups · in-progress · Full
+### 19. Testbed domain & predefined groups · done · Full
 Every testbed gets a mandatory Domain, one per Nile tenant. The app stops creating and deleting testbed groups: an admin names the testbed exactly like a group that already exists in Authentik (for example `NileWorkshop1Admin`, made by a separate script), and the app refuses the testbed when no such group exists. A small hint under the Name field says the name must be the group name. Cloudflare Access per VM rules use the same group name. This replaces the app made `pod-<slug>` groups of features 6, 9, and 14.
 **Done when:** an admin cannot save a testbed without a Domain, or with one that is not a valid domain name; a second live testbed with the same name, or the same domain (ignoring case), is refused with a clear message and nothing is written; a name that matches no Authentik group is refused with a clear message and nothing is written; the app creates and deletes no group in Authentik; a booked learner is added to the group named like the testbed and removed from it when the booking ends; deleting a testbed leaves its group alone; the HOL Labs gate no longer depends on `pod-` names.
 - [x] Design it (spec): `/architect testbed domain & predefined groups`
@@ -353,8 +353,8 @@ spec [0017](../specs/0017-testbed-domain-predefined-groups/index.md)
   - [x] Group choices read: the filtered, paged Authentik list, the unique name rule, the domain attribute parse, hide used groups, fake Authentik filter (AC-15, 16, 17, 19)
   - [x] Add dialog: `loadTestbedGroupChoices`, the client add dialog with loading, unavailable, and empty states, the select and domain fill, hints, Playwright (AC-13, 14, 17, 18, 19)
   - [x] Domain from the group (spec 0017 task 10): `parseGroupDomain`, `TestbedGroup.domain`, create reads the domain from the group (`group_no_domain`), no `domain` in the inputs or the edit, no domain lock, the read only Domain box and disabled no domain options, tests (AC-1, 2, 20 to 23); Playwright updated but not run, the hol-test fixtures are gone
-- [ ] Verify it: `/check verify testbed group dropdown and domain prefill`
-- [ ] Test it: `/test testbed group dropdown and domain prefill`
+- [x] Verify it: `/check verify testbed group dropdown and domain prefill` (2026-10-26, live: dropdown, read only Domain, no valid domain refusal, none has a domain message, Authentik unreachable alert; the steps that add or delete a real testbed were left to the unit and DB tests)
+- [x] Test it: `/test testbed group dropdown and domain prefill` (vitest 481 pass, Playwright `testbed-group-dropdown` and `testbeds` pass)
 
 > Ownership (2026-10-25): the `soleng2018/nile-idp` script owns the Authentik SAML and SCIM setup for Nile tenants and the shared `Nile:` mappings; the owner does the Nile Portal checklist by hand; this app owns the learner user, its domain username and `attributes.mail`. Table in [spec 0019](../specs/0019-nile-identity-per-domain.md).
 
