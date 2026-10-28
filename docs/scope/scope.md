@@ -457,10 +457,10 @@ Feature 24 needs to know which portal calls to make and in what order, so the ow
   - [x] Edit mode, the draft, the JSON row editor, the mode confirm, and dragging by mouse, touch, and keyboard (AC-5, 6, 8, 22, 23)
   - [x] The starting list gaps control, then tests and the no portal scan (AC-13, 14, 26)
   - [x] README: update the "Nile Portal Reset setup (planned)" section to match what shipped (drop the planned tag, exact names), and add the new steps to the Docker setup
-- [ ] Verify it: `/check verify admin: nile portal reset page`
+- [x] Verify it: `/check verify admin: nile portal reset page`
 - [x] Test it: `/test admin: nile portal reset page`
 - [x] Review it (fresh model): `/check review admin: nile portal reset page`
-- [ ] Document it: `/document admin: nile portal reset page`
+- [x] Document it: `/document admin: nile portal reset page`
 spec [0022](../specs/0022-nile-portal-reset-page.md) · code in `server/portal-reset/`, `lib/portal-reset/`, `app/admin/nile-portal-reset/`, `db/migrations/0018_portal_reset.sql`, `db/seed/`
 > Notes for `/architect` (2026-10-26, kept for history): the owner asked for "a page listing all the APIs, ordered" and "a Nile Portal Reset page with the email and the drag table"; they are one page (decided 2026-10-26). Resolved in the 2026-10-27 revision: what an entry holds (typed parts, spec 0022), one saved list serves all five workshops, how a wrong order is caught before it runs (a dry run mode, spec 0023), and no Reset to starting list button (a removed starting step is offered back under "Add from starting list"). Keep the drag handle usable with the keyboard.
 
