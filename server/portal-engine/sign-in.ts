@@ -6,6 +6,7 @@ import {
   type Page,
 } from "playwright-core";
 import type { PortalResetSignInReason } from "@/lib/db-enums";
+import { CALL_TIMEOUT } from "@/lib/portal-reset/timing";
 import { err, ok, type Result } from "@/lib/result";
 import type { Session } from "./client";
 import { secret, type Secret } from "./secret";
@@ -93,6 +94,31 @@ function captureHeaders(
   return () => captured;
 }
 
+// API calls go through the signed in context's own request client. The
+// portal's gateway redirects a plain fetch even with the same cookies, and the
+// context keeps the session cookies fresh as the portal rotates them.
+export function contextFetch(context: BrowserContext): typeof fetch {
+  return async (input, init) => {
+    const reply = await context.request.fetch(String(input), {
+      method: init?.method ?? "GET",
+      headers: Object.fromEntries(new Headers(init?.headers).entries()),
+      ...(typeof init?.body === "string" ? { data: init.body } : {}),
+      maxRedirects: 0,
+      failOnStatusCode: false,
+      timeout: CALL_TIMEOUT,
+    });
+    const status = reply.status();
+    const body = await reply.body();
+    return new Response(
+      [204, 205, 304].includes(status) ? null : new Uint8Array(body),
+      {
+        status,
+        headers: reply.headers(),
+      },
+    );
+  };
+}
+
 async function drive(page: Page, input: SignInInput): Promise<void> {
   const { origin, username } = input;
   await step("portal_unreachable", () =>
@@ -160,13 +186,13 @@ export async function signIn(
       await page.waitForTimeout(1000);
     }
     const found = headers();
-    if (found === undefined || !found["x-id-token"])
-      throw new SignInStop("token_missing");
+    if (found === undefined) throw new SignInStop("token_missing");
     const state = await context.storageState();
     return ok({
       session: {
         origin: input.origin,
         headers: secret(found),
+        fetch: contextFetch(context),
         close,
       },
       browser,

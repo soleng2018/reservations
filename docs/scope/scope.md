@@ -425,7 +425,7 @@ Follow up from features 22 and 23. After every lab, whether it ends at its booke
   - [x] Pure rules, the run tables, and the tracer thread: queue, claim, stop check, lanes in the worker, one step on the in memory fake portal (AC-1 to 6, 8, 11)
   - [x] The interpreter for all part kinds and the 13 starting steps on the fake, then guards and the single call choke point (AC-18 to 27)
   - [x] Resume, passes, reporting (run records, run level audit, the report email job, purge), and the dry run (AC-9, 10, 28 to 33)
-  - [ ] Real sign in, tenant check, discovery, Recent resets, the worker image with Chromium, README (AC-12 to 17, 32, 34 to 41). Built 2026-10-27; still owed: the live `portal:automation-check --apply` on Workshop 4 (AC-44), the worker's permission start check (AC-39), the two by hand probes and the `furniture` data from `00-discover-pages.mjs`
+  - [ ] Real sign in, tenant check, discovery, Recent resets, the worker image with Chromium, README (AC-12 to 17, 32, 34 to 41). Built 2026-10-27; live `portal:automation-check --apply` on Workshop 4 passed 2026-10-28 (user created, signed in, tenant matched, admin list read, second run created nothing); still owed: the worker's permission start check (AC-39), the two by hand probes and the `furniture` data from `00-discover-pages.mjs`
 - [ ] Verify it: `/check verify nile portal reset when a lab ends` (a dry run and then a live run on the scratch tenant, Workshop 4, with the owner present)
 - [ ] Test it: `/test nile portal reset when a lab ends`
 - [ ] Review it (fresh model): `/check review nile portal reset when a lab ends`

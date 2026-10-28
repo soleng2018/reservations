@@ -24,6 +24,8 @@ export type Session = {
   readonly origin: string;
   // `x-id-token`, `x-nile-client`, `x-requested-with` (AC-13).
   readonly headers: Secret<Readonly<Record<string, string>>>;
+  // How calls are sent. The real sign in gives its browser context's client.
+  readonly fetch?: typeof fetch;
   readonly close: () => Promise<void>;
 };
 
@@ -68,7 +70,7 @@ const parseBody = (text: string): unknown => {
 
 export function makePortalClient(
   session: Session,
-  fetchImpl: FetchImpl = fetch,
+  fetchImpl: FetchImpl = session.fetch ?? fetch,
 ): PortalClient {
   const urlFor = (path: string): URL => {
     if (isDenied(path) || !path.startsWith("/api/")) {
