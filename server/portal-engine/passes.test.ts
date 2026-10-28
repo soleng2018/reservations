@@ -17,7 +17,7 @@ import type { PortalClient } from "./portal";
 import { executeRun, readProgress, type RunDeps } from "./run";
 import { makeFake } from "./testing";
 
-afterAll(() => db().destroy());
+afterAll(() => (hasDb ? db().destroy() : undefined));
 
 // Spec 0023 AC-8, AC-9, AC-10, AC-19, AC-28, AC-31, AC-33: the phases, the
 // resume, the saved item records, and the report job. The interpreter is
