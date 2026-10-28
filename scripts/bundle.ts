@@ -25,7 +25,9 @@ build({
   jsx: "automatic",
   alias: { "server-only": "./node_modules/server-only/empty.js" },
   // pg loads pg-native only when asked for it; it is not installed.
-  external: ["pg-native"],
+  // playwright-core drives Chromium and is installed beside the bundle in the
+  // worker image (spec 0023 AC-40), not bundled.
+  external: ["pg-native", "playwright-core"],
   // Some bundled CommonJS calls require(); ESM has none, so give it one.
   banner: {
     js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);",

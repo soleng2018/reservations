@@ -108,7 +108,7 @@ const stringLeaves = (value: unknown): readonly string[] => {
 const underPrefix = (
   route: readonly string[],
   prefix: readonly string[],
-): boolean => prefix.every((segment, i) => segment === route[i]);
+): boolean => prefix.every((part, i) => part === route[i]);
 
 // The guard whose delete route `path` falls under and whose protected ids the
 // path (after the route prefix) or `extra` holds, or undefined.
@@ -124,7 +124,7 @@ function hitOf(
     return [
       ...route.slice(prefix.length),
       ...extra.map((e) => e.toLowerCase()),
-    ].some((segment) => ids.has(segment));
+    ].some((part) => ids.has(part));
   });
 }
 

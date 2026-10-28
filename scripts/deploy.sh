@@ -12,9 +12,12 @@ tag="sha-$(git -C "$root" rev-parse --short HEAD)"
 git -C "$root" diff --quiet HEAD || tag="$tag-dirty"
 export IMAGE_TAG="$tag"
 
-echo "building reservations:$tag"
-"${compose[@]}" build --pull migrate
+# Two images: reservations (web, migrate) and reservations-worker (the same
+# plus Chromium for the Nile Portal reset sign in, spec 0023 AC-40).
+echo "building reservations:$tag and reservations-worker:$tag"
+"${compose[@]}" build --pull migrate worker
 docker tag "reservations:$tag" reservations:latest
+docker tag "reservations-worker:$tag" reservations-worker:latest
 
 # Start db and apply the bootstrap first, so a rotated hol_app password is
 # applied before migrate runs.

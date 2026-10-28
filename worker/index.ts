@@ -45,6 +45,7 @@ import {
   WORKER_LOCK_KEY,
   type Step,
 } from "@/server/worker/loop";
+import { checkBrowser } from "@/server/portal-engine/browser-check";
 import { claimDueRun } from "@/server/portal-engine/claim";
 import { realRunDeps } from "@/server/portal-engine/deps";
 import { runLanes } from "@/server/portal-engine/lanes";
@@ -104,6 +105,14 @@ async function main(): Promise<number> {
     log(
       `worker: the email renderer failed to load (${e instanceof Error ? e.message : String(e)}), exiting`,
     );
+    return 1;
+  }
+
+  // Spec 0023 AC-40: the reset signs in with a headless Chromium, so launch
+  // it once here. A worker that cannot start it exits 1 at deploy.
+  const browser = await checkBrowser();
+  if (!browser.ok) {
+    log(`worker: Chromium failed to start (${browser.error}), exiting`);
     return 1;
   }
 

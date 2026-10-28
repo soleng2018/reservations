@@ -69,6 +69,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      target: runner
     restart: "no"
     command: ["node", "dist/migrate.mjs"]
     environment: *env
@@ -97,7 +98,16 @@ services:
 
   worker:
     <<: *app
+    # The worker target adds Chromium (spec 0023 AC-40); web and migrate stay
+    # on the smaller runner target.
+    image: reservations-worker:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: worker
     command: ["node", "dist/worker.mjs"]
+    # Chromium keeps its shared memory in /dev/shm; Docker's 64 MB is too small.
+    shm_size: 1gb
     environment:
       <<: *env
       # The one worker. Its advisory lock keeps it to one per database.

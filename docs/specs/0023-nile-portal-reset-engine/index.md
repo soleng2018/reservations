@@ -285,9 +285,9 @@ Build approach: Tracer Bullet (the project default). The first thread is thin an
 7. [x] Reporting: item records, run level audit rows, the `send_reset_report` handler and template, the purge, satisfies **AC-28, AC-29, AC-31**
 8. [x] Dry run: the virtual deletes and `would_*` records, satisfies **AC-33**
 9. Real sign in: the `authentik:setup` permission check and `portal:automation-check` (AC-44), then the automation account (`server/authentik/portal-automation.ts`, `guardAutomationWrite`, `automation-user.json`, the fake Authentik tests), the portal host allow list, `sign-in.ts` with Playwright against the prototype's selectors, the header capture, the tenant check, the failure reasons, retry, and the held state, satisfies **AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-39, AC-42, AC-43, AC-44**
-10. Discovery: `discovery-rules.ts` and `discovery.json`, then the browser collector and the delete and verify loop, satisfies **AC-34, AC-35, AC-36, AC-37, AC-38**
-11. Recent resets pages, satisfies **AC-32**
-12. Image and operations: Chromium in the worker target, `playwright-core` runtime dependency, compose secret, the worker start check, README update, satisfies **AC-40, AC-41**
+10. [x] Discovery: `discovery-rules.ts` and `discovery.json`, then the browser collector and the delete and verify loop, satisfies **AC-34, AC-35, AC-36, AC-37, AC-38**
+11. [x] Recent resets pages, satisfies **AC-32**
+12. [x] Image and operations: Chromium in the worker target, `playwright-core` runtime dependency, compose secret, the worker start check, README update, satisfies **AC-40, AC-41**
 13. Tests: the secret and names scans, the DB integration tests inside `inRollback`, then the by hand dry run and live run on the scratch tenant, satisfies **AC-24, AC-30, AC-34**
 
 ## Consequences
