@@ -179,3 +179,111 @@ export async function guardGroupWrite(
   }
   return group;
 }
+
+// Spec 0023 AC-42: the one non learner user the app writes. For each
+// workshop it owns `automation@<domain>`, which the reset engine signs in
+// as. Exactly three writes pass `guardAutomationWrite`: create the user, set
+// its password, and add it to the testbed's access group. It never reaches a
+// user the app did not make (no marker), an admin, or a superuser.
+export const AUTOMATION_MARKER = "hol_portal_automation";
+export const AUTOMATION_DOMAIN_ATTRIBUTE = "hol_testbed_domain";
+
+export const automationUsername = (domain: string) => `automation@${domain}`;
+
+export type AutomationWrite =
+  | { readonly kind: "create"; readonly domain: string }
+  | {
+      readonly kind: "set_password";
+      readonly domain: string;
+      readonly pk: number;
+    }
+  | {
+      readonly kind: "add_to_group";
+      readonly domain: string;
+      readonly pk: number;
+      readonly groupUuid: string;
+    };
+
+export type AutomationRefusal =
+  | "exists" // a create, but the username is already someone's
+  | "is_admin"
+  | "not_automation" // no marker, or the pk is not the automation username
+  | "not_testbed_group"; // unmarked, wrong domain, or an admin group
+
+// Pure: may this write touch this user? `username` is the user's own.
+export function checkAutomationUser(
+  target: UserTarget & { readonly username: string },
+  adminGroupUuid: string,
+  domain: string,
+): Result<void, AutomationRefusal> {
+  if (target.username !== automationUsername(domain))
+    return err("not_automation");
+  if (target.isSuperuser || target.groups.includes(adminGroupUuid))
+    return err("is_admin");
+  return target.attributes[AUTOMATION_MARKER] === true
+    ? ok(undefined)
+    : err("not_automation");
+}
+
+// Pure: a flat marked group whose `hol_testbed_domain` is this domain.
+export function checkAutomationGroup(
+  group: GroupTarget,
+  adminGroupUuid: string,
+  domain: string,
+): Result<void, AutomationRefusal> {
+  const allowed = checkGroupWrite(group, "add", adminGroupUuid);
+  return allowed.ok && group.attributes[AUTOMATION_DOMAIN_ATTRIBUTE] === domain
+    ? ok(undefined)
+    : err("not_testbed_group");
+}
+
+// Re-reads the target from Authentik before the write, like the learner
+// guard. A create is allowed only when nobody holds the username.
+export async function guardAutomationWrite(
+  api: CoreApi,
+  write: AutomationWrite,
+): Promise<Result<void, AutomationRefusal | AuthentikFailure>> {
+  const admins = await adminGroupUuid(api);
+  if (!admins.ok) return admins;
+  const refuse = (reason: AutomationRefusal) => {
+    console.warn(
+      `authentik guard: refused automation ${write.kind}: ${reason}`,
+    );
+    return err(reason);
+  };
+  if (write.kind === "create") {
+    const found = await call("users.list automation", () =>
+      api.coreUsersList({
+        username: automationUsername(write.domain),
+        pageSize: 5,
+      }),
+    );
+    if (!found.ok) return found;
+    return found.value.results.some(
+      (u) => u.username === automationUsername(write.domain),
+    )
+      ? refuse("exists")
+      : ok(undefined);
+  }
+  const user = await call("users.retrieve automation", () =>
+    api.coreUsersRetrieve({ id: write.pk }),
+  );
+  if (!user.ok) return user;
+  const userOk = checkAutomationUser(
+    { ...toTarget(user.value), username: user.value.username },
+    admins.value,
+    write.domain,
+  );
+  if (!userOk.ok) return refuse(userOk.error);
+  if (write.kind === "set_password") return ok(undefined);
+  const group = await call("groups.retrieve automation", () =>
+    api.coreGroupsRetrieve({ groupUuid: write.groupUuid, includeUsers: false }),
+  );
+  if (!group.ok) return group;
+  const groupOk = checkAutomationGroup(
+    toGroupTarget(group.value),
+    admins.value,
+    write.domain,
+  );
+  return groupOk.ok ? ok(undefined) : refuse(groupOk.error);
+}

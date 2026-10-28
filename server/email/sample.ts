@@ -81,6 +81,7 @@ export const SAMPLE_RESET_REPORT: ResetReport = {
   mode: "live",
   outcome: "incomplete",
   reason: null,
+  signInReason: null,
   labEndedAt: "2026-10-13T17:00:00.000Z",
   startedAt: "2026-10-13T17:05:00.000Z",
   finishedAt: "2026-10-13T17:21:00.000Z",

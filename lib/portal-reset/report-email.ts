@@ -2,6 +2,7 @@ import type {
   PortalResetAbortReason,
   PortalResetEvent,
   PortalResetRunMode,
+  PortalResetSignInReason,
 } from "@/lib/db-enums";
 
 // What the reset report email says (spec 0023 AC-31). Plain data built by the
@@ -30,8 +31,11 @@ export type ResetReport = {
   readonly domain: string;
   readonly event: PortalResetEvent;
   readonly mode: PortalResetRunMode;
-  readonly outcome: "incomplete" | "aborted" | "done";
+  // `held`: the sign in failed in a way a retry cannot fix, so the run waits
+  // (spec 0023 AC-14).
+  readonly outcome: "incomplete" | "aborted" | "done" | "held";
   readonly reason: PortalResetAbortReason | null;
+  readonly signInReason: PortalResetSignInReason | null;
   readonly labEndedAt: string;
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
@@ -66,7 +70,9 @@ export const reportSubject = (r: ResetReport): string =>
   `Portal reset ${
     r.outcome === "aborted"
       ? "stopped"
-      : r.outcome === "incomplete"
-        ? "did not finish"
-        : "found something new"
+      : r.outcome === "held"
+        ? "is waiting"
+        : r.outcome === "incomplete"
+          ? "did not finish"
+          : "found something new"
   }: ${r.testbedName}`;

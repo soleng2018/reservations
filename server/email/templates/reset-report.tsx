@@ -1,6 +1,7 @@
 import "server-only";
 import { Section, Text } from "react-email";
 import { formatEmailDateTime } from "@/lib/format-time";
+import { SIGN_IN_TEXT } from "@/lib/portal-reset/sign-in";
 import {
   ABORT_TEXT,
   reportSubject,
@@ -33,12 +34,16 @@ const call = (f: {
 const count = (r: ResetReport, key: string) => r.counts[key] ?? 0;
 
 export function ResetReportEmail({ report }: { readonly report: ResetReport }) {
+  const signIn =
+    report.signInReason === null ? null : SIGN_IN_TEXT[report.signInReason];
   const intro =
-    report.outcome === "aborted" && report.reason !== null
-      ? ABORT_TEXT[report.reason]
-      : report.outcome === "incomplete"
-        ? "The reset finished its passes, but something is left or failed."
-        : "The reset found a kind of portal item that its list does not cover.";
+    report.outcome === "held"
+      ? "The reset could not sign in and is waiting. It tries again in 30 minutes unless a lab starts first."
+      : report.outcome === "aborted" && report.reason !== null
+        ? ABORT_TEXT[report.reason]
+        : report.outcome === "incomplete"
+          ? "The reset finished its passes, but something is left or failed."
+          : "The reset found a kind of portal item that its list does not cover.";
   return (
     <EmailFrame
       title={reportSubject(report)}
@@ -50,6 +55,7 @@ export function ResetReportEmail({ report }: { readonly report: ResetReport }) {
         rows={[
           ["Testbed", report.testbedName],
           ["Workshop", report.domain],
+          ...(signIn === null ? [] : [["Sign in problem", signIn] as const]),
           ["Lab ended", when(report.labEndedAt)],
           ["Started", when(report.startedAt)],
           ["Finished", when(report.finishedAt)],

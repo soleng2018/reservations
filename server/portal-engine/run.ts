@@ -2,7 +2,11 @@ import "server-only";
 import type { Kysely } from "kysely";
 import { z } from "zod";
 import type { Result } from "@/lib/result";
-import type { PortalResetAbortReason } from "@/lib/db-enums";
+import type {
+  PortalResetAbortReason,
+  PortalResetSignInReason,
+} from "@/lib/db-enums";
+import { holdsRun } from "@/lib/portal-reset/sign-in";
 import { guards as guardFile } from "@/lib/portal-reset/guards";
 import { readResetList, type ResetStep } from "@/server/portal-reset/steps";
 import type { DB } from "@/server/db/types";
@@ -20,8 +24,14 @@ import {
   isGuardedWrite,
   NO_PROTECTION,
 } from "./guards";
-import { appendItems, finishRun, type Counts, type GuardNote } from "./report";
-import { GuardStop, Shutdown, StopRun } from "./stop";
+import {
+  appendItems,
+  finishRun,
+  holdRun,
+  type Counts,
+  type GuardNote,
+} from "./report";
+import { GuardStop, SessionLost, Shutdown, StopRun } from "./stop";
 
 // One run, start to finish (spec 0023 "Run algorithm"): claim, stop check,
 // snapshot, sign in, four phases, one finish.
@@ -40,15 +50,21 @@ import { GuardStop, Shutdown, StopRun } from "./stop";
 
 export type RunDeps = {
   readonly conn: Kysely<DB>;
-  // Sign in for the run's testbed; the error is a closed sign in reason.
+  // Sign in for the run's testbed (AC-12 to AC-16, AC-43). The error says
+  // what the run does next; `sign_in` carries a closed reason.
   readonly signIn: (
     run: ClaimedRun,
-  ) => Promise<Result<PortalClient, "sign_in_failed">>;
+  ) => Promise<Result<PortalClient, SignInError>>;
   readonly runStep: (step: ResetStep, env: StepEnv) => Promise<StepResult>;
   readonly recheckStep: (step: ResetStep, env: StepEnv) => Promise<boolean>;
   readonly shouldStop: () => boolean;
   readonly sleep?: (ms: number) => Promise<void>;
 };
+
+export type SignInError =
+  | { readonly kind: "sign_in"; readonly reason: PortalResetSignInReason }
+  | { readonly kind: "testbed_unavailable" }
+  | { readonly kind: "tenant_mismatch" };
 
 const Phase = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 
@@ -122,7 +138,21 @@ export async function executeRun(
   const skippedSteps = list.steps.length - steps.length;
 
   const signedIn = await deps.signIn(run);
-  if (!signedIn.ok) return abort("sign_in_failed", {});
+  if (!signedIn.ok) {
+    const failure = signedIn.error;
+    if (failure.kind !== "sign_in") return abort(failure.kind, {});
+    // AC-14: a failure no retry can fix holds the run; the rest end it.
+    if (holdsRun(failure.reason)) {
+      await holdRun(conn, run.id, failure.reason);
+      return;
+    }
+    return finishRun(conn, run.id, {
+      kind: "aborted",
+      reason: "sign_in_failed",
+      counts: {},
+      signIn: failure.reason,
+    }).then(() => undefined);
+  }
   const raw = signedIn.value;
   const sleep = deps.sleep ?? wait;
   const records: ItemRecord[] = [];
@@ -218,6 +248,14 @@ export async function executeRun(
     if (!(e instanceof StopRun)) throw e;
     if (e.reason === "lost") return;
     await flush();
+    if (e instanceof SessionLost) {
+      return finishRun(conn, run.id, {
+        kind: "aborted",
+        reason: "sign_in_failed",
+        counts: {},
+        signIn: e.signInReason,
+      }).then(() => undefined);
+    }
     return e instanceof GuardStop
       ? abort("guard_stop", {}, { stepKey: stepName, route: e.route })
       : abort(e.reason, {});

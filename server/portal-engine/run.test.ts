@@ -469,7 +469,10 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
       const { conn, run } = await start(trx);
       await executeRun(run, {
         conn,
-        signIn: async () => ({ ok: false, error: "sign_in_failed" }),
+        signIn: async () => ({
+          ok: false,
+          error: { kind: "sign_in", reason: "timeout" },
+        }),
         runStep: async () => "done",
         recheckStep: async () => true,
         shouldStop: () => false,

@@ -265,7 +265,10 @@ describe.skipIf(!hasDb)("phases (AC-19)", () => {
       const p = portal();
       await executeRun(run, {
         ...deps(conn, p.client, { run: async () => true }),
-        signIn: async () => ({ ok: false, error: "sign_in_failed" }),
+        signIn: async () => ({
+          ok: false,
+          error: { kind: "sign_in", reason: "timeout" },
+        }),
       });
       const row = await finished(trx, run.id);
       expect(row).toMatchObject({

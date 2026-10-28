@@ -1,5 +1,8 @@
 import "server-only";
-import type { PortalResetAbortReason } from "@/lib/db-enums";
+import type {
+  PortalResetAbortReason,
+  PortalResetSignInReason,
+} from "@/lib/db-enums";
 
 // Thrown by the interpreter's `beforeWrite` hook when the stop check says the
 // run must end (spec 0023 AC-6). It is control flow inside one run, caught in
@@ -25,6 +28,19 @@ export class GuardStop extends StopRun {
     super("guard_stop");
     this.name = "GuardStop";
     this.route = route;
+  }
+}
+
+// A 401 the engine could not recover from (spec 0023 AC-17): the one fresh
+// sign in did not help, or was refused. The run ends as a sign in failure
+// with this closed reason.
+export class SessionLost extends StopRun {
+  readonly signInReason: PortalResetSignInReason;
+
+  constructor(signInReason: PortalResetSignInReason) {
+    super("sign_in_failed");
+    this.name = "SessionLost";
+    this.signInReason = signInReason;
   }
 }
 

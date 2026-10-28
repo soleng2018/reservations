@@ -1,19 +1,27 @@
 import "server-only";
+import { setTimeout as pause } from "node:timers/promises";
 import type { Kysely } from "kysely";
-import { err } from "@/lib/result";
+import { authentik } from "@/server/authentik/client";
 import type { DB } from "@/server/db/types";
+import { connect } from "./connect";
 import { recheckStep, runStep } from "./interpret";
 import type { RunDeps } from "./run";
+import { signIn } from "./sign-in";
 
-// The run's real dependencies. Until the real sign in lands (spec 0023 task
-// 9), a claimed run ends `sign_in_failed` before any portal call, so turning
-// the mode on early cannot reach a portal.
+// The run's real dependencies: the browser sign in, the Authentik account,
+// and the interpreter. A mode of `off` never reaches this (the claim and the
+// stop check end the run first).
 export const realRunDeps = (
   conn: Kysely<DB>,
   shouldStop: () => boolean,
 ): RunDeps => ({
   conn,
-  signIn: async () => err("sign_in_failed"),
+  signIn: connect({
+    conn,
+    api: authentik(),
+    browserSignIn: (input) => signIn(input),
+    sleep: (ms) => pause(ms),
+  }),
   runStep,
   recheckStep,
   shouldStop,

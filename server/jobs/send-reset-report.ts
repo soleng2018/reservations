@@ -1,7 +1,11 @@
 import "server-only";
 import { z } from "zod";
 import { routeEmail } from "@/lib/email-routing";
-import { PortalResetAbortReason, PortalResetEvent } from "@/lib/db-enums";
+import {
+  PortalResetAbortReason,
+  PortalResetEvent,
+  PortalResetSignInReason,
+} from "@/lib/db-enums";
 import {
   MAX_REPORT_FAILURES,
   MAX_REPORT_ROUTES,
@@ -56,6 +60,7 @@ async function buildReport(
       "r.mode",
       "r.state",
       "r.abort_reason",
+      "r.sign_in_reason",
       "r.lab_ended_at",
       "r.started_at",
       "r.finished_at",
@@ -84,7 +89,9 @@ async function buildReport(
     .limit(MAX_REPORT_ROUTES)
     .execute();
   const total = counts(run.counts);
-  const state = z.enum(["incomplete", "aborted", "done"]).safeParse(run.state);
+  const state = z
+    .enum(["incomplete", "aborted", "done", "held"])
+    .safeParse(run.state);
   return {
     testbedName: run.testbed_name,
     domain: run.domain ?? "",
@@ -95,6 +102,10 @@ async function buildReport(
       run.abort_reason === null
         ? null
         : PortalResetAbortReason.parse(run.abort_reason),
+    signInReason:
+      run.sign_in_reason === null
+        ? null
+        : PortalResetSignInReason.parse(run.sign_in_reason),
     labEndedAt: run.lab_ended_at.toISOString(),
     startedAt: run.started_at?.toISOString() ?? null,
     finishedAt: run.finished_at?.toISOString() ?? null,
