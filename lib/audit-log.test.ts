@@ -102,6 +102,7 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "portal_reset.run_aborted": "system",
   "portal_reset.guard_stop": "system",
   "portal_reset.sign_in_failed": "system",
+  "portal_reset.route_found": "system",
   "portal_reset.credential_failed": "system",
   "portal_reset.automation_user_created": "system",
   "portal_reset.report_failed": "system",
