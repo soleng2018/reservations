@@ -17,6 +17,7 @@ import type { Bookings, DB } from "@/server/db/types";
 import { claimDueRun, stopCheck } from "./claim";
 import type { PortalClient } from "./portal";
 import { queueEndedResets } from "./queue";
+import { makeFake, populatedState } from "./testing";
 import { executeRun } from "./run";
 
 afterAll(() => db().destroy());
@@ -307,8 +308,12 @@ const oneStep = async (trx: Kysely<DB>) => {
 
 const fakePortal = () => {
   const state = { calls: 0, closed: false };
+  // The guard lists (AC-26) are read from a real fake tenant; only the calls
+  // a step makes are counted.
+  const tenant = makeFake();
   const portal: PortalClient = {
-    call: async () => {
+    call: async (req) => {
+      if (!req.path.startsWith("/api/v1/x")) return tenant.portal.call(req);
       state.calls += 1;
       return ok({ status: 200, body: {} });
     },
@@ -469,5 +474,103 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
         .where("id", "=", run.id)
         .executeTakeFirstOrThrow();
       expect(row).toEqual({ state: "aborted", abort_reason: "sign_in_failed" });
+    }));
+
+  // covers: AC-25, AC-26
+  const guardStopRows = (trx: Kysely<DB>, runId: string) =>
+    trx
+      .selectFrom("audit_events")
+      .select(["action", "metadata"])
+      .where("target_id", "=", runId)
+      .orderBy("action")
+      .execute();
+
+  it("a step that calls a denied path ends guard_stop, sends nothing, and audits the route", () =>
+    inRollback(async (trx) => {
+      const { conn, run } = await start(trx);
+      const tenant = makeFake();
+      await executeRun(run, {
+        conn,
+        signIn: async () => ok(tenant.portal),
+        runStep: async (_s, ctx) => {
+          await ctx.portal.call({
+            method: "GET",
+            path: "/api/v1/idps/abc12345",
+          });
+          return "done";
+        },
+        shouldStop: () => false,
+      });
+      const row = await trx
+        .selectFrom("portal_reset_runs")
+        .select(["state", "abort_reason"])
+        .where("id", "=", run.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ state: "aborted", abort_reason: "guard_stop" });
+      expect(tenant.calls.some((c) => c.includes("idps"))).toBe(false);
+      expect(await guardStopRows(trx, run.id)).toEqual([
+        {
+          action: "portal_reset.guard_stop",
+          metadata: { stepKey: "Tracer", route: "/api/v1/idps/{id}" },
+        },
+        {
+          action: "portal_reset.run_aborted",
+          metadata: { reason: "guard_stop", counts: {} },
+        },
+      ]);
+    }));
+
+  it("two protected SSIDs end the run guard_stop before any step or write", () =>
+    inRollback(async (trx) => {
+      const { conn, run } = await start(trx);
+      const state = populatedState();
+      state.ssids = [
+        ...state.ssids,
+        { id: "second", ssid: { popTunnelUsed: true } },
+      ];
+      const tenant = makeFake(state);
+      let steps = 0;
+      await executeRun(run, {
+        conn,
+        signIn: async () => ok(tenant.portal),
+        runStep: async () => {
+          steps += 1;
+          return "done";
+        },
+        shouldStop: () => false,
+      });
+      const row = await trx
+        .selectFrom("portal_reset_runs")
+        .select(["state", "abort_reason"])
+        .where("id", "=", run.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ state: "aborted", abort_reason: "guard_stop" });
+      expect(steps).toBe(0);
+      expect(tenant.writes).toHaveLength(0);
+    }));
+
+  it("a write that holds the protected id is refused at the choke point", () =>
+    inRollback(async (trx) => {
+      const { conn, run } = await start(trx);
+      const tenant = makeFake();
+      await executeRun(run, {
+        conn,
+        signIn: async () => ok(tenant.portal),
+        runStep: async (_s, ctx) => {
+          await ctx.portal.call({
+            method: "DELETE",
+            path: "/api/v1/settings/ssids/ssid-protected",
+          });
+          return "done";
+        },
+        shouldStop: () => false,
+      });
+      expect(tenant.writes).toHaveLength(0);
+      expect(tenant.state.ssids.map((r) => r.id)).toContain("ssid-protected");
+      const rows = await guardStopRows(trx, run.id);
+      expect(rows[0]?.metadata).toEqual({
+        stepKey: "Tracer",
+        route: "/api/v1/settings/ssids/{id}",
+      });
     }));
 });

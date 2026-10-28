@@ -280,7 +280,7 @@ Build approach: Tracer Bullet (the project default). The first thread is thin an
 2. [x] Migration `0019_portal_reset_runs.sql` (both tables, indexes, job kind, audit target type), Zod enums and `checkLists`, `db:codegen`, new `AuditAction` values and Audit Log labels, satisfies **AC-8, AC-29**
 3. [x] Tracer thread: `queue.ts` (`queueEndedResets`, `queuePortalReset` called from the cancel and move code), `claim.ts` (claim, lease, stop check), `lanes.ts` wired into `worker/index.ts` beside the tick, `run.ts` skeleton with the fake portal, the fake sign in, one step, and `finishRun`, satisfies **AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-11**
 4. [x] The in memory fake portal (`testing.ts`) with the reply shapes from the research, and the interpreter (`interpret.ts`) for all part kinds, with the 13 starting steps and the AC-24 baseline test, satisfies **AC-19, AC-20, AC-22, AC-23, AC-24**
-5. Guards and the single call choke point: `guards.ts`, `client.ts` (deny list, redirect manual, timeout, size cap, retries), satisfies **AC-25, AC-26, AC-27**
+5. [x] Guards and the single call choke point: `guards.ts`, `client.ts` (deny list, redirect manual, timeout, size cap, retries), satisfies **AC-25, AC-26, AC-27**
 6. Resume, shutdown, passes, and the final re-read: lease and resume, the second pass, `allowLeftover`, the stop on SIGTERM, satisfies **AC-9, AC-10, AC-19, AC-23**
 7. Reporting: item records, run level audit rows, the `send_reset_report` handler and template, the purge, satisfies **AC-28, AC-29, AC-31**
 8. Dry run: the virtual deletes and `would_*` records, satisfies **AC-33**

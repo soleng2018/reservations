@@ -423,7 +423,7 @@ Follow up from features 22 and 23. After every lab, whether it ends at its booke
 - [x] Design it (spec): `/architect nile portal reset when a lab ends` (spec 0023 from the research D1 to D17; accepted by the owner 2026-10-27)
 - [ ] Build it: `/develop nile portal reset when a lab ends` (after feature 25 tasks 1 to 6)
   - [x] Pure rules, the run tables, and the tracer thread: queue, claim, stop check, lanes in the worker, one step on the in memory fake portal (AC-1 to 6, 8, 11)
-  - [ ] The interpreter for all part kinds and the 13 starting steps on the fake, then guards and the single call choke point (AC-18 to 27)
+  - [x] The interpreter for all part kinds and the 13 starting steps on the fake, then guards and the single call choke point (AC-18 to 27)
   - [ ] Resume, passes, reporting (run records, run level audit, the report email job, purge), and the dry run (AC-9, 10, 28 to 33)
   - [ ] Real sign in, tenant check, discovery, Recent resets, the worker image with Chromium, README (AC-12 to 17, 32, 34 to 41)
 - [ ] Verify it: `/check verify nile portal reset when a lab ends` (a dry run and then a live run on the scratch tenant, Workshop 4, with the owner present)

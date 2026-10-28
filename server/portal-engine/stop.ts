@@ -14,3 +14,16 @@ export class StopRun extends Error {
     this.reason = reason;
   }
 }
+
+// A path no call may use, or a write that would touch a protected item
+// (spec 0023 AC-25, AC-26). Nothing was sent. `route` is a pattern with
+// `{id}`, never a resolved URL. The run ends `guard_stop`.
+export class GuardStop extends StopRun {
+  readonly route: string;
+
+  constructor(route: string) {
+    super("guard_stop");
+    this.name = "GuardStop";
+    this.route = route;
+  }
+}

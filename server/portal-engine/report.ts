@@ -8,6 +8,13 @@ import type { DB } from "@/server/db/types";
 // and the run level audit row. The report email joins it with task 7.
 export type Counts = Readonly<Record<string, number>>;
 
+// What a guard stop adds to the audit (AC-25): the step and a route pattern,
+// never a value.
+export type GuardNote = {
+  readonly stepKey: string | null;
+  readonly route: string;
+};
+
 export type Finish =
   | {
       readonly kind: "done" | "incomplete";
@@ -18,6 +25,7 @@ export type Finish =
       readonly kind: "aborted";
       readonly reason: PortalResetAbortReason;
       readonly counts: Counts;
+      readonly guard?: GuardNote;
     };
 
 // Only a `running` run ends, so a run whose lease was taken over cannot be
@@ -52,6 +60,16 @@ export async function finishRunIn(
         ? { reason: f.reason, counts: f.counts }
         : { outcome: f.kind, mode: f.mode, counts: f.counts },
   });
+  if (f.kind === "aborted" && f.guard !== undefined) {
+    await audit(trx, {
+      actorUserId: null,
+      action: "portal_reset.guard_stop",
+      targetType: "portal_reset_run",
+      targetId: runId,
+      summary: "Portal reset stopped by a guard",
+      metadata: { stepKey: f.guard.stepKey, route: f.guard.route },
+    });
+  }
   return true;
 }
 
