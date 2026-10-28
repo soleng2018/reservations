@@ -48,6 +48,7 @@ export const JobKind = z.enum([
   "calendar_delete",
   "send_welcome",
   "cleanup_notify",
+  "send_reset_report",
 ]);
 export type JobKind = z.infer<typeof JobKind>;
 
@@ -84,6 +85,7 @@ export const AuditTargetType = z.enum([
   "authentik_group",
   "portal_reset_step",
   "portal_reset_settings",
+  "portal_reset_run",
 ]);
 export type AuditTargetType = z.infer<typeof AuditTargetType>;
 
@@ -91,6 +93,66 @@ export type AuditTargetType = z.infer<typeof AuditTargetType>;
 // deletes for real.
 export const PortalResetMode = z.enum(["off", "dry_run", "live"]);
 export type PortalResetMode = z.infer<typeof PortalResetMode>;
+
+// Spec 0023: the reset engine's run records.
+export const PortalResetEvent = z.enum(["lab_ended", "ended_early", "moved"]);
+export type PortalResetEvent = z.infer<typeof PortalResetEvent>;
+
+export const PortalResetRunMode = z.enum(["dry_run", "live"]);
+export type PortalResetRunMode = z.infer<typeof PortalResetRunMode>;
+
+export const PortalResetRunState = z.enum([
+  "queued",
+  "running",
+  "held",
+  "done",
+  "incomplete",
+  "aborted",
+]);
+export type PortalResetRunState = z.infer<typeof PortalResetRunState>;
+
+export const PortalResetAbortReason = z.enum([
+  "mode_off",
+  "sign_in_failed",
+  "tenant_mismatch",
+  "guard_stop",
+  "lab_started",
+  "deadline",
+  "testbed_unavailable",
+  "invalid_list",
+  "crashed",
+]);
+export type PortalResetAbortReason = z.infer<typeof PortalResetAbortReason>;
+
+export const PortalResetSignInReason = z.enum([
+  "credential_failed",
+  "idp_rejected",
+  "browser_unavailable",
+  "portal_unreachable",
+  "timeout",
+  "token_missing",
+]);
+export type PortalResetSignInReason = z.infer<typeof PortalResetSignInReason>;
+
+export const PortalResetItemKind = z.enum([
+  "deleted",
+  "changed",
+  "failed",
+  "would_delete",
+  "would_change",
+  "route_found",
+]);
+export type PortalResetItemKind = z.infer<typeof PortalResetItemKind>;
+
+export const PortalResetItemMethod = z.enum(["GET", "POST", "PUT", "DELETE"]);
+export type PortalResetItemMethod = z.infer<typeof PortalResetItemMethod>;
+
+export const PortalResetReportNote = z.enum([
+  "not_needed",
+  "no_address",
+  "queued",
+]);
+export type PortalResetReportNote = z.infer<typeof PortalResetReportNote>;
 
 // Statuses that hold a testbed slot and count toward one live booking per user.
 export const LIVE_BOOKING_STATUSES = [
@@ -115,4 +177,12 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "set_password_links.ended_reason": SetPasswordLinkEndReason.options,
   "audit_events.target_type": AuditTargetType.options,
   "portal_reset_settings.mode": PortalResetMode.options,
+  "portal_reset_runs.event": PortalResetEvent.options,
+  "portal_reset_runs.mode": PortalResetRunMode.options,
+  "portal_reset_runs.state": PortalResetRunState.options,
+  "portal_reset_runs.abort_reason": PortalResetAbortReason.options,
+  "portal_reset_runs.sign_in_reason": PortalResetSignInReason.options,
+  "portal_reset_runs.report_note": PortalResetReportNote.options,
+  "portal_reset_run_items.kind": PortalResetItemKind.options,
+  "portal_reset_run_items.method": PortalResetItemMethod.options,
 };

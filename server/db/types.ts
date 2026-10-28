@@ -158,6 +158,46 @@ export interface LearnerDomainLogins {
   username: string;
 }
 
+export interface PortalResetRunItems {
+  created_at: Generated<Timestamp>;
+  detail: Json | null;
+  id: Generated<string>;
+  item_id: string | null;
+  kind: string;
+  label: string | null;
+  message: string | null;
+  method: string | null;
+  pass: number;
+  resolved: Generated<boolean>;
+  route: string | null;
+  run_id: string;
+  seq: number;
+  status: number | null;
+  step_key: string;
+}
+
+export interface PortalResetRuns {
+  abort_reason: string | null;
+  booking_id: string | null;
+  counts: Generated<Json>;
+  created_at: Generated<Timestamp>;
+  due_at: Timestamp;
+  ended_key: string;
+  event: string;
+  finished_at: Timestamp | null;
+  id: Generated<string>;
+  lab_ended_at: Timestamp;
+  lease_until: Timestamp | null;
+  mode: string;
+  progress: Generated<Json>;
+  report_note: string | null;
+  resumes: Generated<number>;
+  sign_in_reason: string | null;
+  started_at: Timestamp | null;
+  state: Generated<string>;
+  testbed_id: string;
+}
+
 export interface PortalResetSettings {
   abort_email: string | null;
   id: Generated<boolean>;
@@ -268,6 +308,8 @@ export interface DB {
   "hol_auth.verification": HolAuthVerification;
   jobs: Jobs;
   learner_domain_logins: LearnerDomainLogins;
+  portal_reset_run_items: PortalResetRunItems;
+  portal_reset_runs: PortalResetRuns;
   portal_reset_settings: PortalResetSettings;
   portal_reset_steps: PortalResetSteps;
   rate_limits: RateLimits;

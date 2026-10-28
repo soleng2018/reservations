@@ -276,10 +276,10 @@ The same migration adds `send_reset_report` to `jobs_kind_check` (and `JobKind` 
 
 Build approach: Tracer Bullet (the project default). The first thread is thin and real: a queued run for one testbed, the stop check, the interpreter running one trivial step against the in memory fake, one run level audit row. Then thicken: the classification and retries, the guards, the real sign in and portal client, the real steps, reporting, discovery, operations. Spec 0022 tasks 1 to 6 (language, seed, migration, read module) come first.
 
-1. Pure rules: `rules.ts`, `template.ts`, `classify.ts`, `redact.ts`, `timing.ts`, the `Secret` wrapper, with plain tests, satisfies **AC-21, AC-22, AC-30**
-2. Migration `0019_portal_reset_runs.sql` (both tables, indexes, job kind, audit target type), Zod enums and `checkLists`, `db:codegen`, new `AuditAction` values and Audit Log labels, satisfies **AC-8, AC-29**
-3. Tracer thread: `queue.ts` (`queueEndedResets`, `queuePortalReset` called from the cancel and move code), `claim.ts` (claim, lease, stop check), `lanes.ts` wired into `worker/index.ts` beside the tick, `run.ts` skeleton with the fake portal, the fake sign in, one step, and `finishRun`, satisfies **AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-11**
-4. The in memory fake portal (`testing.ts`) with the reply shapes from the research, and the interpreter (`interpret.ts`) for all part kinds, with the 13 starting steps and the AC-24 baseline test, satisfies **AC-19, AC-20, AC-22, AC-23, AC-24**
+1. [x] Pure rules: `rules.ts`, `template.ts`, `classify.ts`, `redact.ts`, `timing.ts`, the `Secret` wrapper, with plain tests, satisfies **AC-21, AC-22, AC-30**
+2. [x] Migration `0019_portal_reset_runs.sql` (both tables, indexes, job kind, audit target type), Zod enums and `checkLists`, `db:codegen`, new `AuditAction` values and Audit Log labels, satisfies **AC-8, AC-29**
+3. [x] Tracer thread: `queue.ts` (`queueEndedResets`, `queuePortalReset` called from the cancel and move code), `claim.ts` (claim, lease, stop check), `lanes.ts` wired into `worker/index.ts` beside the tick, `run.ts` skeleton with the fake portal, the fake sign in, one step, and `finishRun`, satisfies **AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-11**
+4. [x] The in memory fake portal (`testing.ts`) with the reply shapes from the research, and the interpreter (`interpret.ts`) for all part kinds, with the 13 starting steps and the AC-24 baseline test, satisfies **AC-19, AC-20, AC-22, AC-23, AC-24**
 5. Guards and the single call choke point: `guards.ts`, `client.ts` (deny list, redirect manual, timeout, size cap, retries), satisfies **AC-25, AC-26, AC-27**
 6. Resume, shutdown, passes, and the final re-read: lease and resume, the second pass, `allowLeftover`, the stop on SIGTERM, satisfies **AC-9, AC-10, AC-19, AC-23**
 7. Reporting: item records, run level audit rows, the `send_reset_report` handler and template, the purge, satisfies **AC-28, AC-29, AC-31**
@@ -309,7 +309,7 @@ Build approach: Tracer Bullet (the project default). The first thread is thin an
 - Two lanes mean a third lab ending at the same minute waits for a free lane; the 25 minute target is a target, and the stop check protects the next lab.
 
 **Neutral**:
-- The cleanup hook (spec 0021) is unchanged and independent. Whether it also fires at a normal end is still a separate decision.
+- The cleanup hook (spec 0021) is unchanged and independent. Decided 2026-10-27: the owner will not use an external system for reset, so the hook does not fire at a normal end and this feature builds no external call. The reset here is the only cleanup.
 - The scope text for feature 24 changes: the audit line (D9) and the done when line now match this spec.
 - The `portal_reset` audit area now holds both admin and system actions.
 
@@ -322,6 +322,6 @@ Build approach: Tracer Bullet (the project default). The first thread is thin an
 - [ ] While building: run the two by hand tests in Critical test scenarios (what each list answers when its feature is unset, and whether the API refuses a segment a policy group still uses). If the API accepts the delete, consider a generic `blockedBy` check in the language.
 - [ ] Learn the portal token's lifetime. AC-17 assumes it can expire mid run and re-signs in once.
 - [ ] Run `00-discover-pages.mjs` once more and complete `discovery.json` `furniture` from its output before the first live run.
-- [ ] Decide separately whether the cleanup hook of spec 0021 also fires at a normal lab end.
+- [x] Cleanup hook at a normal lab end: decided no (2026-10-27). The owner uses no external reset system. The ENHANCE item in spec 0021 Follow-up can be closed as not needed.
 - [ ] Later option: a form per part kind in the page; a mode per testbed; a Reset now button on a testbed; an HTTP only sign in (replacing the browser sign in behind the same `signIn` interface) if the Authentik flow API proves stable.
 - [ ] `/sync`: update `server/authentik/AGENTS.md` (the one allowed non learner write, `guardPortalAdminWrite`) and add to `AGENTS.md` the engine rules (secrets only in `Secret`, one call choke point, no type names in `server/portal-engine/`, `server/portal-engine/AGENTS.md`), and the new env values to the commands and Docker notes.

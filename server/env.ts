@@ -240,6 +240,8 @@ export function assertEncryptionEnv(): Result<EncryptionEnv, string> {
 // Worker only (spec 0001, 0004): `npm run worker` exits unless this is true.
 const workerSchema = z.object({
   WORKER_ENABLED: z.stringbool().default(false),
+  // Spec 0023 AC-39: how many Nile Portal resets run at once.
+  PORTAL_RESET_LANES: z.coerce.number().int().min(1).max(5).default(2),
 });
 
 export type WorkerEnv = z.infer<typeof workerSchema>;
@@ -247,6 +249,7 @@ export type WorkerEnv = z.infer<typeof workerSchema>;
 export function workerEnv(): WorkerEnv {
   return workerSchema.parse({
     WORKER_ENABLED: process.env.WORKER_ENABLED || undefined,
+    PORTAL_RESET_LANES: process.env.PORTAL_RESET_LANES || undefined,
   });
 }
 

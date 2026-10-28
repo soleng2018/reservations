@@ -98,6 +98,8 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "user.nile_login_set": "system",
   "user.nile_login_conflict": "system",
   "access.granted": "system",
+  "portal_reset.run_finished": "system",
+  "portal_reset.run_aborted": "system",
   "access.revoked": "system",
   "admin.sign_in_refused": "system",
   "set_password.resent": "system",

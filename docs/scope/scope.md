@@ -414,7 +414,7 @@ Follow up from spec 0020. A Current booking that is cancelled (by anyone) or mov
   - [x] Outcomes, failure audit, and the guarded badge (AC-6, 7), then tests and scans (AC-9, 11)
 - [x] Verify it: `/check verify cleanup hook for labs that end early` (2026-10-26: console, a live worker run against a signed https receiver with a 200 and a 404, the audit row, and the Needs attention badge; the 500 retry and the move event are proven in tests only, and the learner screens by diff and tests, see `verify.md`)
 - [x] Test it: `/test cleanup hook for labs that end early`
-Enhancement queued (2026-10-26): the hook must also fire when a lab ends at its booked time, not only on an early end. Details in the spec 0021 Follow-up (marked ENHANCE) and in feature 24.
+Enhancement closed, not needed (2026-10-27): the app resets the Nile Portal itself after every lab (feature 24), so the hook stays early end and move only.
 spec [0021](../specs/0021-cleanup-hook-early-end/index.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
 
 ### 24. Nile Portal reset when a lab ends · in-progress · Full
@@ -422,7 +422,7 @@ Follow up from features 22 and 23. After every lab, whether it ends at its booke
 **Done when:** with the mode on `live`, every lab that ends, at its booked time or early, resets that workshop's portal inside the 30 minute gap (the 13 steps bring a populated tenant to the baseline and a repeat run changes nothing); the run starts 5 minutes after the lab ends, retries a failed call 3 times, makes one second pass, and finishes or aborts before the next session starts, emailing the address from feature 25 on a failed sign in, an abort, an unfinished reset, or a newly found route; an empty or missing step is a success and the run goes on; system defined items, empty steps, already gone items, and expected refusals are silent, while every deleted item, changed value, and unexpected failure is recorded with the portal's own message (a run record kept 30 days, plus permanent run level audit rows), never with a password, token, header, webhook URL, SIEM credential, key, certificate, recipient address, or raw reply; Identity and Users are impossible to call and the protected items impossible to delete; a dry run sends no write; a call that fails shows in the run record; no portal password, token, or hook secret appears in a log, payload, or error. (D5's shared password file is superseded by this on 2026-10-27.)
 - [x] Design it (spec): `/architect nile portal reset when a lab ends` (spec 0023 from the research D1 to D17; accepted by the owner 2026-10-27)
 - [ ] Build it: `/develop nile portal reset when a lab ends` (after feature 25 tasks 1 to 6)
-  - [ ] Pure rules, the run tables, and the tracer thread: queue, claim, stop check, lanes in the worker, one step on the in memory fake portal (AC-1 to 6, 8, 11)
+  - [x] Pure rules, the run tables, and the tracer thread: queue, claim, stop check, lanes in the worker, one step on the in memory fake portal (AC-1 to 6, 8, 11)
   - [ ] The interpreter for all part kinds and the 13 starting steps on the fake, then guards and the single call choke point (AC-18 to 27)
   - [ ] Resume, passes, reporting (run records, run level audit, the report email job, purge), and the dry run (AC-9, 10, 28 to 33)
   - [ ] Real sign in, tenant check, discovery, Recent resets, the worker image with Chromium, README (AC-12 to 17, 32, 34 to 41)

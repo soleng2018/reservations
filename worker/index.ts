@@ -39,6 +39,11 @@ import {
   WORKER_LOCK_KEY,
   type Step,
 } from "@/server/worker/loop";
+import { claimDueRun } from "@/server/portal-engine/claim";
+import { realRunDeps } from "@/server/portal-engine/deps";
+import { runLanes } from "@/server/portal-engine/lanes";
+import { queueEndedResets } from "@/server/portal-engine/queue";
+import { executeRun } from "@/server/portal-engine/run";
 import { reconcileAccess } from "@/server/worker/reconcile";
 import { releaseDeletedTestbeds } from "@/server/worker/release";
 import {
@@ -165,6 +170,30 @@ async function main(): Promise<number> {
     });
     for (const f of step.failed) console.error(`cleanup hook: ${f} failed`);
   };
+  // Spec 0023 AC-1, AC-2: ended labs get a reset run queued by the tick.
+  const resetQueue = async () => {
+    const queued = await queueEndedResets(conn);
+    if (queued > 0) log(`portal reset: queued ${queued}`);
+  };
+  // Spec 0023 AC-11: the run lanes go beside the tick, only here, where the
+  // worker lock is held, so a long run never delays another step.
+  const lanes = runLanes(
+    {
+      claim: () => claimDueRun(conn),
+      execute: (run) =>
+        executeRun(
+          run,
+          realRunDeps(conn, () => stop.signal.aborted),
+        ),
+      pause: (ms) =>
+        sleep(ms, undefined, { signal: stop.signal }).catch(() => undefined),
+      log,
+    },
+    {
+      lanes: workerEnv().PORTAL_RESET_LANES,
+      shouldStop: () => stop.signal.aborted,
+    },
+  );
   const reminders = async () => {
     const { queued } = await queueReminders(conn);
     if (queued > 0) log(`reminders: queued ${queued}`);
@@ -192,6 +221,7 @@ async function main(): Promise<number> {
       // send in the same tick.
       { name: "reminders", run: reminders },
       { name: "cleanup hook", run: cleanupHook },
+      { name: "portal reset queue", run: resetQueue },
       { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
         ? [
@@ -215,6 +245,8 @@ async function main(): Promise<number> {
     );
   }
 
+  // Spec 0023 AC-10: the lanes finish the call they are in, then stop.
+  await lanes;
   await lock.end().catch(() => undefined);
   await conn.destroy();
   log("worker: stopped");
