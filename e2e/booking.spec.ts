@@ -21,6 +21,7 @@ import {
   toConfirm,
   waitForToken,
 } from "./book-flow";
+import { resetDevBookingLimits } from "./db";
 
 // The booking loop end to end (spec 0004, spec 0010), against the real
 // database and real Authentik. It commits what it creates (a type, a testbed,
@@ -34,6 +35,7 @@ test.skip(
   !haveSecrets || !haveProvisioning,
   "hol-test passwords or the provisioning token are not on this machine",
 );
+test.beforeAll(resetDevBookingLimits);
 
 const id = crypto.randomUUID().slice(0, 8);
 const typeName = `e2e type ${id}`;

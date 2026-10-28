@@ -10,6 +10,7 @@ import {
   pickStart,
   waitForToken,
 } from "./book-flow";
+import { resetDevBookingLimits } from "./db";
 
 // Feature 13 (spec 0011) in the browser, against the real database and
 // Authentik, as hol-test-learner: book again from /reservations, reschedule,
@@ -17,6 +18,7 @@ import {
 // checked with axe and shot at both widths on the way (AC-18); the card
 // states one learner cannot hold at once are in the UI gallery.
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+test.beforeAll(resetDevBookingLimits);
 test.describe.configure({ mode: "serial" });
 
 // A lab type the hol-test fixtures keep bookable.
