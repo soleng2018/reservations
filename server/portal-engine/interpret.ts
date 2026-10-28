@@ -7,6 +7,7 @@ import {
   type Outcome,
   type Verb,
 } from "@/lib/portal-reset/classify";
+import type { RouteDetail } from "@/lib/portal-reset/discovery-rules";
 import { getPortalPath, setPortalPath } from "@/lib/portal-reset/portal-path";
 import {
   portalMessage,
@@ -41,7 +42,12 @@ import type { PortalClient, PortalRequest } from "./portal";
 // is then `failed` and the run's second pass picks it up.
 
 export type ItemKind =
-  "deleted" | "changed" | "failed" | "would_delete" | "would_change";
+  | "deleted"
+  | "changed"
+  | "failed"
+  | "would_delete"
+  | "would_change"
+  | "route_found";
 
 // What a run keeps of one item (AC-28). `route` is the pattern with its
 // placeholders unfilled, never a resolved URL.
@@ -55,6 +61,8 @@ export type ItemRecord = {
   readonly status: number | null;
   readonly message: RedactedText | null;
   readonly pass: 1 | 2;
+  // For `route_found` only (AC-37): numbers and fixed words, never a record.
+  readonly detail?: RouteDetail;
 };
 
 export type StepResult = "done" | "failed";

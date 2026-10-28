@@ -72,9 +72,22 @@ export async function appendItems(
           status: r.status,
           message: r.message,
           pass: r.pass,
+          detail: r.detail === undefined ? null : JSON.stringify(r.detail),
         })),
       )
       .execute();
+    // AC-37: one permanent audit row per found route, in the same
+    // transaction as its record. A route pattern and counts, never a record.
+    for (const r of records.filter((x) => x.kind === "route_found")) {
+      await audit(trx, {
+        actorUserId: null,
+        action: "portal_reset.route_found",
+        targetType: "portal_reset_run",
+        targetId: runId,
+        summary: "Portal reset found a route its list does not cover",
+        metadata: { route: r.route, method: r.method, ...r.detail },
+      });
+    }
   });
 }
 

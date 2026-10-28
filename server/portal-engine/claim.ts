@@ -2,6 +2,7 @@ import "server-only";
 import { sql, type Kysely } from "kysely";
 import type { PortalResetRunMode } from "@/lib/db-enums";
 import {
+  DISCOVERY_START_LIMIT,
   HARD_CAP,
   HELD_RETRY,
   LEASE,
@@ -196,4 +197,17 @@ export async function settleHeldRuns(conn: Kysely<DB>): Promise<void> {
         where id = ${row.id}::uuid and state = 'held'`.execute(conn);
     }
   }
+}
+
+// AC-38: discovery does not start later than 15 minutes after the lab ended,
+// by the database clock.
+export async function discoveryWindowOpen(
+  conn: Kysely<DB>,
+  runId: string,
+): Promise<boolean> {
+  const { rows } = await sql<{ open: boolean }>`
+    select now() <= r.lab_ended_at + make_interval(secs => ${secs(DISCOVERY_START_LIMIT)}) as open
+    from hol_app.portal_reset_runs r
+    where r.id = ${runId}::uuid`.execute(conn);
+  return rows[0]?.open ?? false;
 }

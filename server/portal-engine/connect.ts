@@ -198,3 +198,7 @@ export const connect =
     }
     return ok(portal);
   };
+
+// A portal that has an open browser, for discovery (AC-13).
+export const hasBrowser = (portal: PortalClient): portal is ConnectedPortal =>
+  "signedIn" in portal;

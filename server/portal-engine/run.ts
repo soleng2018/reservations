@@ -10,7 +10,14 @@ import { holdsRun } from "@/lib/portal-reset/sign-in";
 import { guards as guardFile } from "@/lib/portal-reset/guards";
 import { readResetList, type ResetStep } from "@/server/portal-reset/steps";
 import type { DB } from "@/server/db/types";
-import { releaseRun, saveProgress, stopCheck, type ClaimedRun } from "./claim";
+import {
+  discoveryWindowOpen,
+  releaseRun,
+  saveProgress,
+  stopCheck,
+  type ClaimedRun,
+} from "./claim";
+import type { DiscoveryResult } from "./discovery";
 import {
   stepKeyOf,
   type ItemRecord,
@@ -58,6 +65,13 @@ export type RunDeps = {
   readonly runStep: (step: ResetStep, env: StepEnv) => Promise<StepResult>;
   readonly recheckStep: (step: ResetStep, env: StepEnv) => Promise<boolean>;
   readonly shouldStop: () => boolean;
+  // The discovery pass (AC-34 to AC-38), between phases 1 and 2. Left out in
+  // tests that do not exercise it.
+  readonly discover?: (
+    portal: PortalClient,
+    env: StepEnv,
+    steps: readonly ResetStep[],
+  ) => Promise<DiscoveryResult>;
   readonly sleep?: (ms: number) => Promise<void>;
 };
 
@@ -75,10 +89,23 @@ const Progress = z.object({
   done: z.array(z.string()),
   failed: z.array(z.string()),
   bad: z.array(z.string()),
+  // Discovery is one more piece of phase 1: whether it ran, whether it left
+  // something, and its numbers (counts only, AC-38).
+  discovered: z.boolean().default(false),
+  discoveryFailed: z.boolean().default(false),
+  discovery: z.record(z.string(), z.number()).default({}),
 });
 type Progress = z.infer<typeof Progress>;
 
-const START: Progress = { phase: 1, done: [], failed: [], bad: [] };
+const START: Progress = {
+  phase: 1,
+  done: [],
+  failed: [],
+  bad: [],
+  discovered: false,
+  discoveryFailed: false,
+  discovery: {},
+};
 
 export const readProgress = (raw: unknown): Progress => {
   const parsed = Progress.safeParse(raw);
@@ -220,6 +247,24 @@ export async function executeRun(
         await flush();
         await saveProgress(conn, run.id, progress);
       }
+      if (phase === 1 && deps.discover !== undefined && !progress.discovered) {
+        if (deps.shouldStop()) throw new Shutdown();
+        const stop = await stopCheck(conn, run.id);
+        if (stop === "lost") return;
+        if (stop !== "go") throw new StopRun(stop);
+        stepName = "discovery";
+        const found = (await discoveryWindowOpen(conn, run.id))
+          ? await deps.discover(raw, env, steps)
+          : { failed: false, counts: { discoverySkippedForTime: 1 } };
+        progress = {
+          ...progress,
+          discovered: true,
+          discoveryFailed: found.failed,
+          discovery: found.counts,
+        };
+        await flush();
+        await saveProgress(conn, run.id, progress);
+      }
       progress = {
         ...progress,
         phase: phase === 4 ? 4 : ((phase + 1) as 2 | 3 | 4),
@@ -230,12 +275,16 @@ export async function executeRun(
     }
 
     await finishRun(conn, run.id, {
-      kind: progress.bad.length === 0 ? "done" : "incomplete",
+      kind:
+        progress.bad.length === 0 && !progress.discoveryFailed
+          ? "done"
+          : "incomplete",
       mode: run.mode,
       counts: {
         steps: steps.length,
         failedSteps: progress.bad.length,
         skippedSteps,
+        ...progress.discovery,
       },
       resolvedSteps: without(progress.failed, progress.bad),
     });

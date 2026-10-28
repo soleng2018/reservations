@@ -133,7 +133,14 @@ const reportJobs = (trx: Kysely<DB>, runId: string) =>
 describe("progress (AC-9)", () => {
   it("reads a saved shape and falls back to the start on anything else", () => {
     const saved = { phase: 3, done: ["a"], failed: ["a", "b"], bad: [] };
-    expect(readProgress(saved)).toEqual(saved);
+    // A shape saved before discovery existed still reads (the new fields
+    // default).
+    expect(readProgress(saved)).toEqual({
+      ...saved,
+      discovered: false,
+      discoveryFailed: false,
+      discovery: {},
+    });
     expect(readProgress({}).phase).toBe(1);
     expect(readProgress({ phase: 9 }).phase).toBe(1);
     expect(readProgress(null).done).toEqual([]);
@@ -332,6 +339,9 @@ describe.skipIf(!hasDb)("resume and shutdown (AC-9, AC-10)", () => {
         done: ["a"],
         failed: [],
         bad: [],
+        discovered: false,
+        discoveryFailed: false,
+        discovery: {},
       });
       const items = await trx
         .selectFrom("portal_reset_run_items")
