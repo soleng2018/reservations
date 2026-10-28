@@ -118,6 +118,7 @@ Take the Nile visual language from the mock (colors, type, logo, rounded cards a
   - [x] Axe, keyboard and screenshot specs, and the root `design.md` (AC-14, 15, 16)
 - [x] Verify it: `/check verify design system & UI foundation`
 - [x] Test it: `/test design system & UI foundation`
+- [x] Account menu (amended 2026-10-28): every signed in user, admin or learner, sees an avatar with their initials (`John Doe` is JD, `John` is JJ, `John Singh Pat` is JP) that opens a panel with name, email and Sign out. Learner top bar right, admin sidebar bottom left, and also on `/`. Replaces both old Sign out controls and reverses the "no Sign out on `/`" rule of feature 11. Build it: `/develop account menu` (AC-3, 11, 17; spec 0009 AC-1)
 spec [0005](../specs/0005-design-system-ui-foundation/index.md) · code in `app/globals.css`, `components/ui/`, `components/admin/`, `components/learner-frame.tsx`, `app/admin/`, `design.md`
 
 ## Slice 1: Core booking loop

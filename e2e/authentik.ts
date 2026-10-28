@@ -75,9 +75,20 @@ export async function signIn(page: Page, entry: string, who: Who) {
   await page.goto(entry);
   await page.getByRole("button", { name: /sign in/i }).click();
   const form = page.getByRole("textbox", { name: /email or username/i });
-  const signedIn = page.getByRole("button", { name: "Sign out" });
+  const signedIn = accountMenu(page);
   await expect(form.or(signedIn)).toBeVisible({ timeout: 20_000 });
   if (await form.isVisible()) await authentikLogin(page, who);
+}
+
+// The signed in user's avatar button (spec 0005 AC-17).
+export function accountMenu(page: Page) {
+  return page.getByRole("button", { name: /^Account menu for / });
+}
+
+// Opens the account menu and clicks Sign out.
+export async function signOutViaMenu(page: Page) {
+  await accountMenu(page).click();
+  await page.getByRole("button", { name: "Sign out" }).click();
 }
 
 // The Authentik sessions a user has right now.

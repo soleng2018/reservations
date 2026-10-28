@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
-import { ADMIN_ENTRY, haveSecrets } from "./authentik";
+import { accountMenu, ADMIN_ENTRY, haveSecrets } from "./authentik";
 import { walkScreens } from "./book-flow";
 import { resetDevBookingLimits } from "./db";
 
@@ -42,6 +42,15 @@ for (const w of WIDTHS) {
       await page.getByRole("button", { name: "Open navigation" }).click();
       await expect(page.locator("[data-slot=sheet-content]")).toBeVisible();
       await shot(page, w.name, "drawer-open");
+      await accountMenu(page).click();
+      await expect(page.locator("[data-slot=popover-content]")).toBeVisible();
+      await shot(page, w.name, "account-menu-open");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+    } else {
+      await accountMenu(page).click();
+      await expect(page.locator("[data-slot=popover-content]")).toBeVisible();
+      await shot(page, w.name, "account-menu-open");
       await page.keyboard.press("Escape");
     }
 

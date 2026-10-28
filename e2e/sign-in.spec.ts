@@ -8,6 +8,7 @@ import {
   haveSecrets,
   learner,
   signIn,
+  signOutViaMenu,
 } from "./authentik";
 
 // Real Authentik sign in with the hol-test fixture accounts (spec 0003).
@@ -43,7 +44,7 @@ test("an admin signs in at the entry page, lands on the console, and signs out b
 
   const visited: string[] = [];
   page.on("framenavigated", (f) => visited.push(f.url()));
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaMenu(page);
   await expect(page).toHaveURL(new RegExp(`${ADMIN_ENTRY}$`));
   await expectSignedOutOfAuthentik(page, admin.username, visited, ADMIN_ENTRY);
 });
@@ -60,7 +61,7 @@ test("a learner signs in at /reservations, stays there, and signs out to /", asy
 
   const visited: string[] = [];
   page.on("framenavigated", (f) => visited.push(f.url()));
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaMenu(page);
   await expect(page).toHaveURL(/:3000\/$/);
   await expectSignedOutOfAuthentik(
     page,

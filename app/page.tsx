@@ -75,7 +75,7 @@ const HERO_SIZES =
 // they work without JavaScript; neither names the admin entry.
 export default function Home() {
   return (
-    <LearnerFrame showSignOut={false}>
+    <LearnerFrame>
       <section className="px-7 pt-16 pb-10">
         <div className="mx-auto grid max-w-[1080px] grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] items-center gap-10">
           <div>

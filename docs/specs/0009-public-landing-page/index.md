@@ -2,6 +2,7 @@
 
 **Date**: 2026-10-11
 **Status**: Accepted
+**Amended**: 2026-10-28 (AC-1: signed in users see the account menu; spec 0005 AC-17)
 
 ## Summary
 
@@ -15,7 +16,7 @@ The home page at `/` becomes the learner landing from the mock. It has a hero wi
 - As the product owner, I want `/` to show up well in search results and link previews, while the flow pages and the admin console stay out of search.
 
 **Acceptance criteria**:
-- **AC-1**: `/` renders the same page for an anonymous visitor, a signed in learner, and a signed in admin. There is no redirect and no Sign out button (as in the mock, Sign out shows only in the learner area). Neither the page nor its frame calls `currentSession()` or the database.
+- **AC-1**: `/` renders the same page for an anonymous visitor, a signed in learner, and a signed in admin. There is no redirect. The page content is identical for all three; the only difference is the top bar, which shows the account menu (spec 0005 AC-17) for a signed in user and nothing for a visitor. The frame calls `currentSession()` (one database read), and if that read throws the page still renders as for a visitor, so it loads when the database is down. The page body itself reads no session and touches no database.
 - **AC-2**: The hero shows, in order: the eyebrow "Nile Hands-On Labs", the `h1` "Get hands-on with real Nile gear, from anywhere.", the lead paragraph from *Copy*, then two links. "Reserve a lab" goes to `/book` (the `cta` gradient pill) and "Manage an existing reservation" goes to `/reservations` (the `outline` pill). Both are real `<a>` elements, so they work without JavaScript.
 - **AC-3**: Below the hero, three cards show the titles and bodies from *Copy*, each with its icon (`LayoutGrid`, `Calendar`, `Router` from lucide, `aria-hidden`). A visually hidden `h2` "How it works" comes before them, and each card title is an `h3`.
 - **AC-4**: The hero art is `public/brand/hol-hero.jpg`, the mock's 1920×1080 JPEG byte for byte (its sha256 matches the decoded mock asset, recorded in `verify.md`). It renders through `next/image` as decoration (`alt=""`), at most 520px wide, beside the text at 1280px and below the buttons at 390px. Its `sizes` is the one in *Page contract*, so at 390px wide the loaded `currentSrc` has a `w` below 1920.
@@ -103,14 +104,14 @@ Reasoning and options: see [rationale.md](rationale.md).
 | `/` metadata | title, description, alt text | *Copy* table above |
 | `/` page | hero art | `public/brand/hol-hero.jpg`: in `context/reservations_mock.html`, the `D.c` page (the customer view), then its `<script type="__bundler/manifest">` JSON, then asset `b7f58e0c-2e1c-4a0c-9300-ada9499e5249` (`image/jpeg`, not compressed), base64 decoded and written unchanged. Extracted by a throwaway script kept outside the repo, the same way spec 0005 extracted the logos. `verify.md` records its sha256 |
 | `/` page | CTA targets | constants `/book` and `/reservations` |
-| `/` page | Sign out hidden | `LearnerFrame` prop `showSignOut={false}`. With it off, the frame skips `currentSession()` entirely |
+| `/` page | account menu | the same `LearnerFrame` as every learner page (the `showSignOut` prop is removed). It shows the menu when `currentSession()` returns a user and falls back to no menu when the read throws |
 | Footer | year | `new Date().getUTCFullYear()` at render. This is display only, not a booking, slot, or access decision, so the "database is the clock" rule does not apply. Say so in a one line comment |
 | `robots.txt` | sitemap URL, rules | `` `${appUrl()}/sitemap.xml` ``; rules are constants in `app/robots.ts` |
 | `sitemap.xml` | the one URL | `` `${appUrl()}/` `` |
 | Root layout | default `noindex` | `robots: { index: false, follow: false }` in `app/layout.tsx` metadata. `/` overrides it with `{ index: true, follow: true }` |
 
 **Key invariants**:
-- `/` and the frame in `showSignOut={false}` mode never call `currentSession()`, `db()`, or `auth()`. The frame still imports `server/auth/require.ts`, which is fine because those modules connect only when called.
+- The `/` page body never calls `db()` or `auth()`. Only the frame reads the session, and a failure there is swallowed so the page still renders (changed 2026-10-28; before, nothing on `/` touched the session or database).
 - Nothing on the public surface (page, footer, `robots.txt`, sitemap) names `ADMIN_ENTRY_PATH` or `/auth/admin-entry`.
 - `noindex` is the default. A page becomes indexable only by explicitly opting in, and today that is `/` alone. `/auth/error` and the admin entry keep their own `noindex` lines (redundant, harmless).
 - No env read at module scope or during `next build`. Every `appUrl()` call sits in a `force-dynamic` route.
@@ -122,7 +123,7 @@ Reasoning and options: see [rationale.md](rationale.md).
 
 **Critical test scenarios** (Playwright in `e2e/landing.spec.ts`, plus the existing suites):
 - Happy path: anonymous `/` shows the eyebrow, `h1`, lead, both links with the right `href`s, the three cards, and the art; clicking "Reserve a lab" lands on `/book`. Verifies **AC-2**, **AC-3**, **AC-4**
-- Same page for everyone: a signed in learner and a signed in admin (the existing session helpers) open `/`, see the same content, are not redirected, and see no Sign out. Verifies **AC-1**
+- Same page for everyone: a signed in learner and a signed in admin (the existing session helpers) open `/`, see the same content and are not redirected; the signed in ones see the avatar with their initials, and a visitor sees none. With the database made unreachable, `/` still loads. Verifies **AC-1**
 - Metadata: assert every AC-6 tag through DOM locators (`page.locator('meta[property="og:image"]')` and so on), which work wherever Next streams them. Then make one `request.get("/")` with the header `User-Agent: facebookexternalhit/1.1` and assert the `og:` and `twitter:` tags sit in the raw `<head>`. Fetch `og:image` and check the status, type, size, and dimensions. `/book`, `/reservations`, and `/auth/error` carry `noindex`. Verifies **AC-6**, **AC-7**
 - Crawl files: `/robots.txt` and `/sitemap.xml` match AC-8 and contain neither the live `ADMIN_ENTRY` value (from `e2e/authentik.ts`) nor `/auth/admin-entry`. Verifies **AC-8**, **AC-9**
 - Footer: present with the current UTC year on `/`, `/book`, `/auth/error`, and `/reservations` (signed out, then signed in through the existing `signIn` helper). Absent on `/admin/testbed-types` (the existing admin session) and on the `ADMIN_ENTRY` page. Contrast pairs pass in `tests/design-contrast.test.ts`. Verifies **AC-5**
