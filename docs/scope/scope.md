@@ -458,7 +458,7 @@ Feature 24 needs to know which portal calls to make and in what order, so the ow
   - [x] The starting list gaps control, then tests and the no portal scan (AC-13, 14, 26)
   - [x] README: update the "Nile Portal Reset setup (planned)" section to match what shipped (drop the planned tag, exact names), and add the new steps to the Docker setup
 - [ ] Verify it: `/check verify admin: nile portal reset page`
-- [ ] Test it: `/test admin: nile portal reset page`
+- [x] Test it: `/test admin: nile portal reset page`
 - [ ] Review it (fresh model): `/check review admin: nile portal reset page`
 - [ ] Document it: `/document admin: nile portal reset page`
 spec [0022](../specs/0022-nile-portal-reset-page.md) · code in `server/portal-reset/`, `lib/portal-reset/`, `app/admin/nile-portal-reset/`, `db/migrations/0018_portal_reset.sql`, `db/seed/`

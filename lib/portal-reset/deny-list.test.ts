@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isDenied, normalizePortalRoute } from "./deny-list";
 
+// covers: AC-19
 describe("isDenied", () => {
   it.each([
     "/api/v1/idps",

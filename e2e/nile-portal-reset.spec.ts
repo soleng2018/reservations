@@ -290,3 +290,56 @@ test("edit mode at 390px keeps the handles and does not scroll sideways", async 
     fullPage: true,
   });
 });
+
+// covers: AC-23, AC-19
+test("the row editor flags bad JSON by path, describes good JSON, and adds only to the draft", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  await page.getByRole("button", { name: "Add row" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add a step" });
+  await dialog.getByLabel("Name").fill("e2e editor check");
+  const json = dialog.getByLabel("Steps, as JSON");
+  const apply = dialog.getByRole("button", { name: "Add to draft" });
+
+  // A path on the deny list is flagged next to the text, with its path.
+  await json.fill(
+    JSON.stringify({
+      parts: [{ kind: "call", method: "DELETE", path: "/api/v1/idps/{id}" }],
+    }),
+  );
+  const problems = dialog.getByRole("list", { name: "Problems in the JSON" });
+  await expect(problems).toBeVisible();
+  await expect(problems.locator("code").first()).toContainText("parts.0");
+  await apply.click();
+  await expect(dialog).toBeVisible();
+
+  // Valid JSON clears the problems and shows what the step does.
+  await json.fill(
+    JSON.stringify({
+      parts: [
+        { kind: "call", method: "DELETE", path: "/api/v1/settings/e2e-check" },
+      ],
+    }),
+  );
+  await expect(problems).toBeHidden();
+  await expect(dialog.getByText("What this does")).toBeVisible();
+  await expect(
+    dialog
+      .getByRole("listitem")
+      .filter({ hasText: "/api/v1/settings/e2e-check" }),
+  ).toBeVisible();
+
+  // Applying changes the draft only: Discard leaves the saved list as it was.
+  await apply.click();
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(14);
+  await page.getByRole("button", { name: "Discard" }).click();
+  const confirm = page.getByRole("alertdialog");
+  if (await confirm.isVisible())
+    await confirm.getByRole("button", { name: /Discard/ }).click();
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+  await page.goto("/admin/nile-portal-reset");
+  await expect(
+    page.getByRole("list", { name: /Reset steps/ }).locator("> li"),
+  ).toHaveCount(13);
+});
