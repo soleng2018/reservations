@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { test } from "./admin-session";
+import { adminContext, test } from "./admin-session";
 import { haveSecrets } from "./authentik";
 import { expectNoSeriousViolations } from "./axe";
 
@@ -342,4 +342,171 @@ test("the row editor flags bad JSON by path, describes good JSON, and adds only 
   await expect(
     page.getByRole("list", { name: /Reset steps/ }).locator("> li"),
   ).toHaveCount(13);
+});
+
+// The safety controls on the editor (spec 0022 AC-5, AC-7, AC-11, AC-22). The
+// database is shared with the running app, so a test that saves puts the email
+// (empty) and the mode (off) back through the page, and never saves `live`.
+const emailInput = (page: Page) =>
+  page
+    .getByRole("region", { name: "Reset settings" })
+    .getByLabel("Abort email");
+const modeSelect = (page: Page) => page.getByRole("combobox", { name: "Mode" });
+const chooseMode = async (page: Page, label: string) => {
+  await modeSelect(page).click();
+  await page.getByRole("option", { name: label, exact: true }).click();
+};
+const saveDraft = async (page: Page) => {
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Reset list saved.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+};
+
+// covers: AC-22, AC-7
+test("choosing Live asks a second confirm, Cancel keeps the mode, and Discard asks first", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  await expect(modeSelect(page)).toContainText("Off");
+
+  await chooseMode(page, "Live");
+  const live = page.getByRole("alertdialog", { name: "Switch to live?" });
+  await expect(live).toContainText(
+    "Resets delete things on real Nile Portals after every lab.",
+  );
+  await live.getByRole("button", { name: "Cancel" }).click();
+  await expect(live).toBeHidden();
+  await expect(modeSelect(page)).toContainText("Off");
+
+  await chooseMode(page, "Live");
+  await page
+    .getByRole("alertdialog", { name: "Switch to live?" })
+    .getByRole("button", { name: "Use live mode" })
+    .click();
+  await expect(modeSelect(page)).toContainText("Live");
+
+  // The draft has a change, so Discard asks; Keep editing keeps it.
+  await page.getByRole("button", { name: "Discard" }).click();
+  const discard = page.getByRole("alertdialog", {
+    name: "Discard your changes?",
+  });
+  await discard.getByRole("button", { name: "Keep editing" }).click();
+  await expect(discard).toBeHidden();
+  await expect(page.getByRole("button", { name: "Save" })).toBeVisible();
+  await expect(modeSelect(page)).toContainText("Live");
+  await page.getByRole("button", { name: "Discard" }).click();
+  await page
+    .getByRole("alertdialog", { name: "Discard your changes?" })
+    .getByRole("button", { name: "Discard" })
+    .click();
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+
+  // Nothing was stored: the page still reads Off.
+  await page.goto("/admin/nile-portal-reset");
+  await expect(
+    page.getByRole("region", { name: "Reset settings" }),
+  ).toContainText("Off");
+});
+
+// covers: AC-7
+test("a nav click with a dirty draft asks before leaving, and Stay keeps the draft", async ({
+  adminPage: page,
+}) => {
+  await startEditing(page);
+  await emailInput(page).fill("leave-check@example.test");
+  await page
+    .getByRole("link", { name: "Audit Log", exact: true })
+    .first()
+    .click();
+  const leave = page.getByRole("alertdialog", {
+    name: "Leave without saving?",
+  });
+  await leave.getByRole("button", { name: "Stay" }).click();
+  await expect(page).toHaveURL(/\/admin\/nile-portal-reset$/);
+  await expect(emailInput(page)).toHaveValue("leave-check@example.test");
+
+  await page
+    .getByRole("link", { name: "Audit Log", exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("alertdialog", { name: "Leave without saving?" })
+    .getByRole("button", { name: "Leave" })
+    .click();
+  await expect(page).toHaveURL(/\/admin\/audit-log/);
+});
+
+// covers: AC-7, AC-10
+test("the email and the mode are saved through the page, then put back", async ({
+  adminPage: page,
+}) => {
+  const settings = page.getByRole("region", { name: "Reset settings" });
+  await startEditing(page);
+  await expect(emailInput(page)).toHaveValue("");
+  await expect(modeSelect(page)).toContainText("Off");
+  try {
+    await emailInput(page).fill("Reset-Check@Example.test");
+    await chooseMode(page, "Dry run");
+    await saveDraft(page);
+    await page.goto("/admin/nile-portal-reset");
+    await expect(settings).toContainText("reset-check@example.test");
+    await expect(settings).toContainText("Dry run");
+    await expect(
+      page.getByText("Aborted resets will not be emailed."),
+    ).toHaveCount(0);
+  } finally {
+    await startEditing(page);
+    await emailInput(page).fill("");
+    await chooseMode(page, "Off");
+    await saveDraft(page);
+  }
+  await page.goto("/admin/nile-portal-reset");
+  await expect(settings).toContainText("Off");
+  await expect(
+    page.getByText("Aborted resets will not be emailed."),
+  ).toBeVisible();
+});
+
+// covers: AC-11
+test("a stale Save keeps the draft and offers Reload, which returns to the saved list", async ({
+  adminPage: page,
+  browser,
+}) => {
+  const other = await adminContext(browser);
+  const second = await other.newPage();
+  try {
+    await startEditing(page);
+    await startEditing(second);
+
+    // Another admin saves first.
+    await emailInput(second).fill("first-admin@example.test");
+    await saveDraft(second);
+
+    // This admin, still on the old version, tries to save a change of their own.
+    await emailInput(page).fill("second-admin@example.test");
+    await page.getByRole("button", { name: "Save" }).click();
+    const notice = page
+      .getByRole("alert")
+      .filter({ hasText: "Someone else saved" });
+    await expect(notice).toBeVisible();
+    await expect(emailInput(page)).toHaveValue("second-admin@example.test");
+    await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(
+      13,
+    );
+
+    // Reload drops the draft, shows the other admin's save, and Edit works at once.
+    await notice.getByRole("button", { name: "Reload" }).click();
+    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+    const settings = page.getByRole("region", { name: "Reset settings" });
+    await expect(settings).toContainText("first-admin@example.test");
+    await startEditing(page);
+    await emailInput(page).fill("");
+    await saveDraft(page);
+  } finally {
+    await other.close();
+  }
+  await page.goto("/admin/nile-portal-reset");
+  await expect(
+    page.getByText("Aborted resets will not be emailed."),
+  ).toBeVisible();
 });
