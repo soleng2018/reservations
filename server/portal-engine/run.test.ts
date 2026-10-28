@@ -23,7 +23,12 @@ import { executeRun } from "./run";
 afterAll(() => db().destroy());
 
 const setMode = (trx: Kysely<DB>, mode: "off" | PortalResetRunMode) =>
-  trx.updateTable("portal_reset_settings").set({ mode }).execute();
+  // mode_changed_at is cleared too: the live row holds the time of the last
+  // real switch, and a booking that ended before it would never queue.
+  trx
+    .updateTable("portal_reset_settings")
+    .set({ mode, mode_changed_at: null })
+    .execute();
 
 async function world(trx: Transaction<DB>) {
   const type = await makeType(trx);

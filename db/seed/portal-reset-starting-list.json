@@ -658,12 +658,18 @@
     {
       "key": "guest-portal-branding",
       "featureName": "Guest Portal branding: restore to default",
-      "note": "Always restores, because a reset cannot know whether a learner used it. The request body is not known yet, so it ships with none.",
+      "note": "Always restores. The query names the profile (found 2026-10-28). A tenant at the defaults answers 500 and counts as an expected refusal; a customised tenant is not tested yet.",
       "parts": [
         {
           "kind": "call",
           "method": "DELETE",
-          "path": "/api/v1/cloud-profile/value"
+          "path": "/api/v1/cloud-profile/value?profile_name=profiles&profile_type=app_profile&scope_type=tenant",
+          "expectRefusals": [
+            {
+              "status": 500,
+              "messageContains": "Failed to Delete Profile Value"
+            }
+          ]
         }
       ]
     }

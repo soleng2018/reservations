@@ -83,7 +83,7 @@ describe("the 13 starting steps", () => {
     // the portal refuses (expected), and the guest switch cycled on and off.
     const extra = fake.writes.slice(writesBefore);
     expect(extra.map((w) => `${w.method} ${w.path}`).sort()).toEqual([
-      "DELETE /api/v1/cloud-profile/value",
+      "DELETE /api/v1/cloud-profile/value?profile_name=profiles&profile_type=app_profile&scope_type=tenant",
       "DELETE /api/v1/cloudradius/config/demo/keys",
       "DELETE /api/v3/policy/groups/g-app",
       "PUT /api/v1/guestpop/advance/ga1",
