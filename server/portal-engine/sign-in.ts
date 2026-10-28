@@ -94,6 +94,18 @@ function captureHeaders(
   return () => captured;
 }
 
+// Playwright joins repeated headers with a newline, which `Headers` refuses,
+// and the portal sends several `Set-Cookie` lines on some replies. The context
+// keeps the cookies itself and no caller reads them, so they are dropped.
+export const replyHeaders = (
+  headers: Readonly<Record<string, string>>,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(headers).filter(
+      ([name]) => name.toLowerCase() !== "set-cookie",
+    ),
+  );
+
 // API calls go through the signed in context's own request client. The
 // portal's gateway redirects a plain fetch even with the same cookies, and the
 // context keeps the session cookies fresh as the portal rotates them.
@@ -113,7 +125,7 @@ export function contextFetch(context: BrowserContext): typeof fetch {
       [204, 205, 304].includes(status) ? null : new Uint8Array(body),
       {
         status,
-        headers: reply.headers(),
+        headers: replyHeaders(reply.headers()),
       },
     );
   };
