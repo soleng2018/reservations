@@ -98,6 +98,13 @@ const fieldPath = z
   .string()
   .refine(isPortalPath, "Not a valid field path (dots and [0] indexes only).");
 
+// A field whose value is copied out of a portal reply into a run record, an
+// audit row, or an email (a list label, a picked value): never a secret.
+const copiedField = fieldPath.refine(
+  (path) => !looksSecret(path),
+  "This field looks like a secret, and its value would be copied into records and emails.",
+);
+
 const name = z
   .string()
   .max(40)
@@ -220,7 +227,7 @@ const list = z.strictObject({
   nested: nested.optional(),
   unwrap: fieldPath.optional(),
   idField: fieldPath,
-  labelField: fieldPath.optional(),
+  labelField: copiedField.optional(),
   emptyOn: statusList.optional(),
 });
 
@@ -239,7 +246,7 @@ const readPart = z.strictObject({
   body: body.optional(),
   // Name to path. Each must resolve to a scalar; the reply is dropped.
   pick: z
-    .record(name, fieldPath)
+    .record(name, copiedField)
     .refine((p) => Object.keys(p).length >= 1, "Pick at least one field.")
     .refine((p) => Object.keys(p).length <= 20, "Pick 20 fields at most."),
   emptyOn: statusList.optional(),
@@ -351,7 +358,13 @@ function checkPlaceholders(
   const add = (message: string) =>
     ctx.addIssue({ code: "custom", message, path: [...at] });
   placeholdersIn(value).forEach((p) => {
-    if (p === "id" && !allowed.item)
+    const known =
+      p === "id" || p === "parentId" || p === "ids" || READ_REF.test(p);
+    if (!known) {
+      add(
+        `{${p}} is not a placeholder. Use {id}, {parentId}, {ids} or {read.NAME.KEY}.`,
+      );
+    } else if (p === "id" && !allowed.item)
       add("{id} is only for a delete of each item.");
     else if (p === "parentId" && !allowed.parent) {
       add("{parentId} needs nested.parentIdField on the list.");

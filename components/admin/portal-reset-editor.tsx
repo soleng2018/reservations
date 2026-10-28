@@ -171,7 +171,10 @@ function Editing({
   const [errors, setErrors] = useState<FieldErrors>({});
   const [notice, setNotice] = useState<Notice | null>(null);
   const [asking, setAsking] = useState<Asking>(null);
-  const [pending, startSave] = useTransition();
+  const [saving, startSave] = useTransition();
+  const [reloading, startReload] = useTransition();
+  const pending = saving || reloading;
+  const reloadStarted = useRef(false);
   const added = useRef(0);
   const dirty = isDirty(session.start, draft);
 
@@ -225,11 +228,21 @@ function Editing({
       }
     });
 
+  // Edit mode ends once the refresh has landed, so an Edit click right after
+  // Reload opens on the new version, not the stale one.
   const onReload = () => {
     setDirty(false);
-    router.refresh();
-    onExit();
+    startReload(() => {
+      router.refresh();
+    });
   };
+  useEffect(() => {
+    if (reloading) reloadStarted.current = true;
+    else if (reloadStarted.current) {
+      reloadStarted.current = false;
+      onExit();
+    }
+  }, [reloading, onExit]);
 
   const rowErrors = (index: number): readonly string[] =>
     Object.entries(errors).flatMap(([path, message]) => {
@@ -308,6 +321,7 @@ function Editing({
                 ? "Some steps have problems. They are listed under each step."
                 : "Fix the problems marked below, then save again."}
               {errors.steps ? ` ${errors.steps}` : null}
+              {errors.expectedVersion ? ` ${errors.expectedVersion}` : null}
             </AlertDescription>
           </Alert>
         ) : null}

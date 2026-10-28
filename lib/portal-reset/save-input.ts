@@ -57,6 +57,12 @@ export const StepFields = draftStep.pick({
 });
 export type StepFields = z.output<typeof StepFields>;
 
+// A Server Action body is 1 MB by default (next.config.ts keeps that), and the
+// per step cap alone would allow about 2 MB. This keeps the whole list under it
+// with room for the other fields, and refuses with a field error instead of a
+// generic failure.
+export const MAX_LIST_BYTES = 600_000;
+
 export const SaveRequest = z
   .strictObject({
     expectedVersion: z.number().int().min(1),
@@ -68,6 +74,16 @@ export const SaveRequest = z
       .max(MAX_STEPS, `A list holds ${MAX_STEPS} steps at most.`),
   })
   .superRefine((request, ctx) => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify(request.steps.map((step) => step.definition)),
+    ).length;
+    if (bytes > MAX_LIST_BYTES) {
+      ctx.addIssue({
+        code: "custom",
+        message: "The whole list is too large to save. Shorten some steps.",
+        path: ["steps"],
+      });
+    }
     request.steps.forEach((step, i) => {
       const first = request.steps.findIndex(
         (s) => nameKey(s.featureName) === nameKey(step.featureName),

@@ -2,7 +2,12 @@ import { sql, type Transaction } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import { StartingList } from "@/lib/portal-reset/starting-list";
 import { db } from "@/server/db";
-import { asConn, hasDb, inRollback } from "@/server/db/testing";
+import {
+  asConn,
+  hasDb,
+  inRollback,
+  inRollbackNested,
+} from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import { seedPortalReset } from "./seed";
 import { startingList } from "./starting-list";
@@ -115,6 +120,25 @@ describe.skipIf(!hasDb)("seedPortalReset", () => {
       expect(await steps(trx)).toEqual(before);
     });
   });
+
+  // Never commits (spec 0002): a second connection cannot see the first one's
+  // uncommitted work, so this proves the race by blocking. Seed takes the
+  // settings row lock before it reads `seeded_at`, so a second seed waits on
+  // the first (lock_timeout 55P03) instead of reading the old marker and
+  // inserting again. A read before the lock would not wait.
+  it("AC-2: two seeds at once, the second waits on the first's lock", () =>
+    inRollback(async (a) => {
+      await unseeded(a);
+      await seedPortalReset(asConn(a));
+      const fromB = await inRollbackNested(async (b) => {
+        await sql`set local lock_timeout = '300ms'`.execute(b);
+        await seedPortalReset(asConn(b));
+      }).then(
+        () => undefined,
+        (e: unknown) => (e as { code?: string }).code,
+      );
+      expect(fromB).toBe("55P03");
+    }));
 
   it("AC-2: after an admin emptied the list, a seed brings nothing back", async () => {
     await inRollback(async (trx) => {

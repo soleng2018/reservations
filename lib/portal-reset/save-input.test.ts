@@ -23,6 +23,25 @@ const errors = (input: unknown) => {
 };
 
 describe("SaveRequest (AC-9)", () => {
+  it("refuses a list too large for a Server Action, with a field error", () => {
+    // Each definition is under its own 20 000 character cap (about 17 000).
+    const heavy = {
+      parts: [
+        {
+          kind: "call",
+          method: "PUT",
+          path: "/api/v1/x",
+          body: { a: Array.from({ length: 400 }, () => "x".repeat(40)) },
+        },
+      ],
+    };
+    const steps = Array.from({ length: 40 }, (_, i) =>
+      step({ featureName: `Heavy ${i}`, definition: heavy }),
+    );
+    expect(errors(request({ steps: steps.slice(0, 20) }))).toBeNull();
+    expect(errors(request({ steps }))?.steps).toMatch(/too large/);
+  });
+
   it("accepts a valid Save", () => {
     expect(errors(request())).toBeNull();
   });

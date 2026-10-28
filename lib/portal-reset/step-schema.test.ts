@@ -207,6 +207,23 @@ describe("AC-9: a definition is refused, keyed by dotted path", () => {
     expect(at(definition, "parts.0.list.path")).toMatch(/only for a delete/);
   });
 
+  it("refuses an unknown placeholder in a query value, a path, or a body", () => {
+    const read = (path: string) => step({ ...stateRead, path });
+    expect(errorsOf(read("/api/v1/x?q={evil}"))).toHaveProperty("parts.0.path");
+    expect(errorsOf(read("/api/v1/x/{evil}"))).not.toBeNull();
+    expect(
+      errorsOf(
+        step({
+          kind: "call",
+          method: "PUT",
+          path: "/api/v1/x",
+          body: { a: "{evil}" },
+        }),
+      ),
+    ).not.toBeNull();
+    expect(errorsOf(read("/api/v1/x?q={read.state.id}"))).not.toBeNull(); // no earlier read
+  });
+
   it("allows a query on a list and on a read", () => {
     expect(
       portalPathProblem("/api/v1/x?page=0&size=500", { query: true }),
@@ -393,5 +410,27 @@ describe("AC-25: a definition holds no secret", () => {
     expect(errorsOf(step({ ...stateRead, pick: {} }))).toHaveProperty(
       "parts.0.pick",
     );
+  });
+  it("refuses a pick path, and a list label, that reads a secret field", () => {
+    expect(
+      errorsOf(step({ ...stateRead, pick: { v: "[0].password" } })),
+    ).toHaveProperty("parts.0.pick.v");
+    expect(
+      errorsOf(
+        step({
+          ...deleteEach,
+          list: { ...list, labelField: "config.secret" },
+        }),
+      ),
+    ).toHaveProperty("parts.0.list.labelField");
+  });
+
+  it("allows an ordinary pick path and label", () => {
+    expect(
+      errorsOf(step({ ...stateRead, pick: { v: "[0].name" } })),
+    ).toBeNull();
+    expect(
+      errorsOf(step({ ...deleteEach, list: { ...list, labelField: "name" } })),
+    ).toBeNull();
   });
 });
