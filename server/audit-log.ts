@@ -428,7 +428,7 @@ export async function resolveTargets(
       refs.filter((r) => r.type === "authentik_group").map((r) => r.id),
     ),
   ];
-  const [types, testbeds, keys, users, bookings, groups, resetSteps] =
+  const [types, testbeds, keys, users, bookings, groups, resetSteps, runs] =
     await Promise.all([
       namedRows(conn, "testbed_types", idsOf("testbed_type")),
       inList(idsOf("testbed"), (ids) =>
@@ -475,6 +475,16 @@ export async function resolveTargets(
           .selectFrom("portal_reset_steps")
           .select(["id", "feature_name"])
           .where("id", "in", ids)
+          .execute(),
+      ),
+      // Spec 0023: a reset run, "Reset of <testbed> at <time>". Runs are
+      // purged after 30 days, then the row keeps the not found fallback.
+      inList(idsOf("portal_reset_run"), (ids) =>
+        conn
+          .selectFrom("portal_reset_runs as r")
+          .innerJoin("testbeds as t", "t.id", "r.testbed_id")
+          .select(["r.id", "r.lab_ended_at", "t.name"])
+          .where("r.id", "in", ids)
           .execute(),
       ),
     ]);
@@ -530,6 +540,16 @@ export async function resolveTargets(
 
   resetSteps.forEach((r) =>
     put("portal_reset_step", r.id, named(`Reset step ${r.feature_name}`)),
+  );
+
+  runs.forEach((r) =>
+    put(
+      "portal_reset_run",
+      r.id,
+      named(
+        `Reset of ${r.name} at ${formatDateTime(r.lab_ended_at, timeZone)}`,
+      ),
+    ),
   );
 
   refs.forEach((r) => {

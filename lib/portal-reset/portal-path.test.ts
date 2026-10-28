@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getPortalPath,
+  setPortalPath,
   isPortalPath,
   isScalar,
   parsePortalPath,
@@ -72,5 +73,27 @@ describe("isScalar", () => {
   it("accepts string, number, boolean, and null only", () => {
     expect([null, "a", 1, true].every(isScalar)).toBe(true);
     expect([undefined, {}, []].some(isScalar)).toBe(false);
+  });
+});
+
+describe("setPortalPath", () => {
+  const record = { a: { list: [{ n: 1 }, { n: 2 }] }, keep: true };
+
+  it("sets a nested value and an indexed one without changing the input", () => {
+    expect(setPortalPath(record, "a.list[1].n", 9)).toEqual({
+      a: { list: [{ n: 1 }, { n: 9 }] },
+      keep: true,
+    });
+    expect(setPortalPath(record, "a.list", [])).toEqual({
+      a: { list: [] },
+      keep: true,
+    });
+    expect(record.a.list[1]?.n).toBe(2);
+  });
+
+  it("returns the value as it was when the path cannot be walked", () => {
+    expect(setPortalPath(record, "a.list.x", 1)).toEqual(record);
+    expect(setPortalPath(record, "$", 1)).toBe(record);
+    expect(setPortalPath(record, "a b", 1)).toBe(record);
   });
 });

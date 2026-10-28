@@ -99,6 +99,9 @@ export function fakeAuthentik(
   const users = initial.map((u) => ({ ...u, groups: [...u.groups] }));
   const sessions = (opts.sessions ?? []).map((s) => ({ ...s }));
   const writes: string[] = [];
+  // The passwords set through `set_password`, by pk: tests compare them and
+  // check none leaks. The real Authentik never returns one.
+  const passwords = new Map<number, string>();
   // Every group read, so a test can check none asked for the members.
   const groupReads: { path: string; includeUsers: string | null }[] = [];
   const groups = [ADMINS, TESTBED_GROUP, fakeGroup("other-uuid", "staff")]
@@ -230,9 +233,15 @@ export function fakeAuthentik(
       users.push(created);
       return json(created, 201);
     }
-    const one = path.match(/^\/core\/users\/(\d+)\/(recovery\/)?$/);
+    const one = path.match(
+      /^\/core\/users\/(\d+)\/(recovery\/|set_password\/)?$/,
+    );
     const user = one && users.find((u) => u.pk === Number(one[1]));
     if (!one || !user) return notFound();
+    if (one[2] === "set_password/") {
+      passwords.set(user.pk, String(body.password));
+      return noContent();
+    }
     if (one[2])
       return json({
         link: `https://auth.test/recover/${user.pk}?for=${body?.token_duration}`,
@@ -264,6 +273,7 @@ export function fakeAuthentik(
     sessions,
     groups,
     writes,
+    passwords,
     groupReads,
     api: createCoreApi(
       { AUTHENTIK_URL: "https://auth.test", token: "t" },

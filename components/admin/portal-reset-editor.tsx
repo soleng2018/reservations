@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   CircleAlertIcon,
   HistoryIcon,
+  ListChecksIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -48,6 +49,7 @@ import {
 import { MODE_HELP } from "@/lib/portal-reset/mode";
 import type { FieldErrors } from "@/lib/form-errors";
 import type { ResetRowView } from "@/lib/portal-reset/view";
+import { RUNS_PATH } from "@/lib/portal-reset/runs-view";
 
 type Save = typeof savePortalResetAction;
 
@@ -138,14 +140,24 @@ export function PortalResetEditor(props: Props) {
 function HistoryLink({ href }: { readonly href: string }) {
   const { intercept } = useLeaveGuard();
   return (
-    <Link
-      href={href}
-      onClick={(e) => intercept(e, href)}
-      className={buttonVariants({ variant: "outline" })}
-    >
-      <HistoryIcon data-icon="inline-start" aria-hidden="true" />
-      History
-    </Link>
+    <>
+      <Link
+        href={RUNS_PATH}
+        onClick={(e) => intercept(e, RUNS_PATH)}
+        className={buttonVariants({ variant: "outline" })}
+      >
+        <ListChecksIcon data-icon="inline-start" aria-hidden="true" />
+        Recent resets
+      </Link>
+      <Link
+        href={href}
+        onClick={(e) => intercept(e, href)}
+        className={buttonVariants({ variant: "outline" })}
+      >
+        <HistoryIcon data-icon="inline-start" aria-hidden="true" />
+        History
+      </Link>
+    </>
   );
 }
 

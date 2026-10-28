@@ -17,11 +17,16 @@ import {
   type BookingEmailKind,
   type InviteFields,
 } from "@/lib/booking-email";
+import {
+  reportSubject,
+  type ResetReport,
+} from "@/lib/portal-reset/report-email";
 import { WELCOME_SUBJECT, type WelcomeEmailDetails } from "@/lib/welcome-email";
 import { CancellationEmail } from "./templates/cancellation-email";
 import { DETAILS_ROW } from "./templates/details-card";
 import { LOGO_CID } from "./templates/email-frame";
 import { LabAccessEmail } from "./templates/lab-access-email";
+import { ResetReportEmail } from "./templates/reset-report";
 import { WelcomeEmail } from "./templates/welcome-email";
 
 // Spec 0013 AC-15, AC-17: one booking email as one MIME message, ready for
@@ -109,6 +114,13 @@ export async function renderWelcomeEmail(
   url: string,
 ): Promise<Rendered> {
   return renderParts(createElement(WelcomeEmail, { details, email, url }));
+}
+
+// Spec 0023 AC-31.
+export async function renderResetReport(
+  report: ResetReport,
+): Promise<Rendered> {
+  return renderParts(createElement(ResetReportEmail, { report }));
 }
 
 export type ComposeInput = {
@@ -212,6 +224,40 @@ export async function composeWelcomeEmail(
     to: input.to,
     subject,
     messageId: messageId(input.emailId),
+    text,
+    html,
+    attachments: [
+      {
+        filename: "nile-logo.png",
+        content: nileLogo(),
+        contentType: "image/png",
+        cid: LOGO_CID,
+      },
+    ],
+  }).compile();
+  return { subject, raw: base64url(await node.build()) };
+}
+
+export type ResetReportComposeInput = {
+  // The run's id: the Message-ID, so a duplicate send is visible in Sent.
+  readonly runId: string;
+  readonly report: ResetReport;
+  readonly senderEmail: string;
+  readonly to: string;
+  readonly subjectPrefix: string;
+};
+
+// Spec 0023 AC-31: HTML and text with the inline logo, never a Bcc.
+export async function composeResetReport(
+  input: ResetReportComposeInput,
+): Promise<{ readonly subject: string; readonly raw: string }> {
+  const subject = `${input.subjectPrefix}${reportSubject(input.report)}`;
+  const { html, text } = await renderResetReport(input.report);
+  const node = new MailComposer({
+    from: { name: SENDER_NAME, address: input.senderEmail },
+    to: input.to,
+    subject,
+    messageId: messageId(input.runId),
     text,
     html,
     attachments: [

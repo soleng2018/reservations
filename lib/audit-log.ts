@@ -147,6 +147,38 @@ export const AUDIT_ACTION_INFO = {
     label: "Reset mode changed",
     area: "portal_reset",
   },
+  "portal_reset.run_finished": {
+    label: "Portal reset finished",
+    area: "portal_reset",
+  },
+  "portal_reset.run_aborted": {
+    label: "Portal reset aborted",
+    area: "portal_reset",
+  },
+  "portal_reset.sign_in_failed": {
+    label: "Portal reset sign in failed",
+    area: "portal_reset",
+  },
+  "portal_reset.guard_stop": {
+    label: "Portal reset safety stop",
+    area: "portal_reset",
+  },
+  "portal_reset.route_found": {
+    label: "Portal reset found a new route",
+    area: "portal_reset",
+  },
+  "portal_reset.report_failed": {
+    label: "Portal reset report not sent",
+    area: "portal_reset",
+  },
+  "portal_reset.credential_failed": {
+    label: "Portal reset account not ready",
+    area: "portal_reset",
+  },
+  "portal_reset.automation_user_created": {
+    label: "Portal reset account created",
+    area: "portal_reset",
+  },
 } as const satisfies Record<AuditAction, AuditActionInfo>;
 
 // Every action of one area, for the `area` filter's `action in (...)`.
@@ -232,6 +264,7 @@ export const TARGET_TYPE_LABEL = {
   authentik_group: "Access group",
   portal_reset_step: "Reset step",
   portal_reset_settings: "Nile Portal Reset settings",
+  portal_reset_run: "Portal reset run",
 } as const satisfies Record<AuditTargetType, string>;
 
 export const AUDIT_LOG_PATH = "/admin/audit-log";
@@ -300,6 +333,7 @@ const UUID_TARGETS: ReadonlySet<AuditTargetType> = new Set([
   "api_key",
   "booking",
   "portal_reset_step",
+  "portal_reset_run",
 ]);
 const SPECIAL_USER = /^(?:authentik:\d{1,18}|unknown)$/;
 const GROUP_ID = /^[A-Za-z0-9-]{1,64}$/;

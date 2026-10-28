@@ -12,11 +12,16 @@ import {
 import { db } from "@/server/db";
 import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { purgeSetPasswordLinks } from "@/server/auth/set-password-links";
-import { renderBookingEmail, renderWelcomeEmail } from "@/server/email/compose";
+import {
+  renderBookingEmail,
+  renderResetReport,
+  renderWelcomeEmail,
+} from "@/server/email/compose";
 import {
   SAMPLE_BOOKING_DETAILS,
   SAMPLE_CLIENT_LOGINS,
   SAMPLE_REMINDER_DETAILS,
+  SAMPLE_RESET_REPORT,
   SAMPLE_WELCOME,
 } from "@/server/email/sample";
 import {
@@ -29,6 +34,7 @@ import { runCleanupHooks } from "@/server/jobs/cleanup-hook";
 import { syncBookingEvent } from "@/server/jobs/calendar-sync";
 import { queueReminders } from "@/server/jobs/reminders";
 import { runSendEmail } from "@/server/jobs/send-email";
+import { runSendResetReport } from "@/server/jobs/send-reset-report";
 import { runSendWelcome } from "@/server/jobs/send-welcome";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
@@ -39,6 +45,14 @@ import {
   WORKER_LOCK_KEY,
   type Step,
 } from "@/server/worker/loop";
+import { checkBrowser } from "@/server/portal-engine/browser-check";
+import { checkAutomationPermissions } from "@/server/authentik/permission-check";
+import { claimDueRun } from "@/server/portal-engine/claim";
+import { realRunDeps } from "@/server/portal-engine/deps";
+import { runLanes } from "@/server/portal-engine/lanes";
+import { purgePortalResetRuns } from "@/server/portal-engine/purge";
+import { queueEndedResets } from "@/server/portal-engine/queue";
+import { executeRun } from "@/server/portal-engine/run";
 import { reconcileAccess } from "@/server/worker/reconcile";
 import { releaseDeletedTestbeds } from "@/server/worker/release";
 import {
@@ -56,6 +70,7 @@ const HANDLERS: Handlers = {
   calendar_upsert: syncBookingEvent,
   calendar_delete: syncBookingEvent,
   send_welcome: runSendWelcome,
+  send_reset_report: runSendResetReport,
 };
 
 const log = (line: string) =>
@@ -86,12 +101,26 @@ async function main(): Promise<number> {
       SAMPLE_WELCOME.email,
       SAMPLE_WELCOME.url,
     );
+    await renderResetReport(SAMPLE_RESET_REPORT);
   } catch (e) {
     log(
       `worker: the email renderer failed to load (${e instanceof Error ? e.message : String(e)}), exiting`,
     );
     return 1;
   }
+
+  // Spec 0023 AC-40: the reset signs in with a headless Chromium, so launch
+  // it once here. A worker that cannot start it exits 1 at deploy.
+  const browser = await checkBrowser();
+  if (!browser.ok) {
+    log(`worker: Chromium failed to start (${browser.error}), exiting`);
+    return 1;
+  }
+
+  // Spec 0023 AC-39: a missing provisioning permission is logged once and
+  // never stops the worker.
+  const permissionLine = await checkAutomationPermissions();
+  if (permissionLine) log(`worker: ${permissionLine}`);
 
   const lock = lockClient(dbEnv());
   await lock.connect();
@@ -165,6 +194,30 @@ async function main(): Promise<number> {
     });
     for (const f of step.failed) console.error(`cleanup hook: ${f} failed`);
   };
+  // Spec 0023 AC-1, AC-2: ended labs get a reset run queued by the tick.
+  const resetQueue = async () => {
+    const queued = await queueEndedResets(conn);
+    if (queued > 0) log(`portal reset: queued ${queued}`);
+  };
+  // Spec 0023 AC-11: the run lanes go beside the tick, only here, where the
+  // worker lock is held, so a long run never delays another step.
+  const lanes = runLanes(
+    {
+      claim: () => claimDueRun(conn),
+      execute: (run) =>
+        executeRun(
+          run,
+          realRunDeps(conn, () => stop.signal.aborted),
+        ),
+      pause: (ms) =>
+        sleep(ms, undefined, { signal: stop.signal }).catch(() => undefined),
+      log,
+    },
+    {
+      lanes: workerEnv().PORTAL_RESET_LANES,
+      shouldStop: () => stop.signal.aborted,
+    },
+  );
   const reminders = async () => {
     const { queued } = await queueReminders(conn);
     if (queued > 0) log(`reminders: queued ${queued}`);
@@ -192,6 +245,7 @@ async function main(): Promise<number> {
       // send in the same tick.
       { name: "reminders", run: reminders },
       { name: "cleanup hook", run: cleanupHook },
+      { name: "portal reset queue", run: resetQueue },
       { name: "jobs", run: jobs },
       ...(purgeDue(lastPurge, now)
         ? [
@@ -200,6 +254,10 @@ async function main(): Promise<number> {
             {
               name: "purge set password links",
               run: () => purgeSetPasswordLinks(conn),
+            },
+            {
+              name: "purge portal reset runs",
+              run: () => purgePortalResetRuns(conn),
             },
           ]
         : []),
@@ -215,6 +273,8 @@ async function main(): Promise<number> {
     );
   }
 
+  // Spec 0023 AC-10: the lanes finish the call they are in, then stop.
+  await lanes;
   await lock.end().catch(() => undefined);
   await conn.destroy();
   log("worker: stopped");

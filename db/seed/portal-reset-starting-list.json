@@ -460,7 +460,7 @@
     {
       "key": "authentication-admin-radius-and-guest-portals",
       "featureName": "Authentication: RADIUS servers and Guest Portals",
-      "note": "Admin defined RADIUS servers and Guest Portals. Nile RADIUS (cloudRadius true) stays and is held by the guards file.",
+      "note": "Admin defined RADIUS servers and Guest Portals. Nile RADIUS (radius.cloudRadius true) stays and is held by the guards file.",
       "pages": ["/network-setup/authentication"],
       "parts": [
         {
@@ -477,7 +477,7 @@
           },
           "skipWhen": [
             {
-              "field": "cloudRadius",
+              "field": "radius.cloudRadius",
               "op": "eq",
               "value": true
             }
@@ -658,12 +658,52 @@
     {
       "key": "guest-portal-branding",
       "featureName": "Guest Portal branding: restore to default",
-      "note": "Always restores, because a reset cannot know whether a learner used it. The request body is not known yet, so it ships with none.",
+      "note": "Always restores. The query names the profile by its own name: <tenantId>_V1 once customised, profiles at the defaults (found 2026-10-28). A tenant at the defaults answers 500, an expected refusal. The check reads the name back.",
       "parts": [
+        {
+          "kind": "read",
+          "as": "branding",
+          "method": "GET",
+          "path": "/api/v1/guestpop/advance",
+          "pick": {
+            "tenantId": "[0].tenantId"
+          }
+        },
+        {
+          "kind": "read",
+          "as": "profile",
+          "method": "GET",
+          "path": "/api/v1/cloud-profile/map/{read.branding.tenantId}?profile_type=app_profile&scope_type=tenant",
+          "pick": {
+            "name": "name"
+          }
+        },
         {
           "kind": "call",
           "method": "DELETE",
-          "path": "/api/v1/cloud-profile/value"
+          "path": "/api/v1/cloud-profile/value?profile_name={read.profile.name}&profile_type=app_profile&scope_type=tenant",
+          "expectRefusals": [
+            {
+              "status": 500,
+              "messageContains": "Failed to Delete Profile Value"
+            }
+          ]
+        },
+        {
+          "kind": "read",
+          "as": "profileAfter",
+          "method": "GET",
+          "path": "/api/v1/cloud-profile/map/{read.branding.tenantId}?profile_type=app_profile&scope_type=tenant",
+          "pick": {
+            "name": "name"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "profileAfter",
+          "key": "name",
+          "op": "eq",
+          "value": "profiles"
         }
       ]
     }

@@ -9,6 +9,11 @@ import { describe, expect, it } from "vitest";
 // server/db/constraint-errors.ts is on the list because it maps the unique
 // index `testbeds_group_name_lower_uq` (a name, not a read).
 const ALLOWED = new Set([
+  // Spec 0023 AC-42: the reset engine's automation account joins the
+  // testbed's access group, so these name it.
+  "server/authentik/portal-automation.ts",
+  "server/portal-engine/connect.ts",
+  "scripts/portal-automation-check.ts",
   "server/catalog/testbeds.ts",
   "server/worker/reconcile.ts",
   "lib/reconcile.ts",

@@ -60,3 +60,26 @@ export const isScalar = (v: unknown): v is Scalar =>
   typeof v === "string" ||
   typeof v === "number" ||
   typeof v === "boolean";
+
+// A copy of `value` with `path` set to `next`; the input is never changed.
+// Used by `update_record` to build the PUT body. A path that cannot be walked
+// (a missing parent, a bad path) returns the value as it was.
+export function setPortalPath(
+  value: unknown,
+  path: string,
+  next: unknown,
+): unknown {
+  const keys = parsePortalPath(path);
+  if (keys === null || keys.length === 0) return value;
+  const put = (current: unknown, rest: readonly PathKey[]): unknown => {
+    const [key, ...tail] = rest;
+    if (key === undefined) return next;
+    if (typeof key === "number") {
+      if (!Array.isArray(current)) return current;
+      return current.map((item, i) => (i === key ? put(item, tail) : item));
+    }
+    if (!isRecord(current)) return current;
+    return { ...current, [key]: put(current[key], tail) };
+  };
+  return put(value, keys);
+}

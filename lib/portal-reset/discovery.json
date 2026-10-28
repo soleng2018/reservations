@@ -1,0 +1,35 @@
+{
+  "furniture": [
+    "sensor-metrics",
+    "alerts",
+    "valet",
+    "featureflags",
+    "userinfo",
+    "tenant-types",
+    "/groups$",
+    "workorder",
+    "/tags",
+    "/sites",
+    "/zones",
+    "/buildings",
+    "/floors",
+    "/tenants?/",
+    "wired-clients-status-summary",
+    "client-config-summary",
+    "client-feature",
+    "enablement",
+    "cloudradius/eaptypes"
+  ],
+  "exclude": [],
+  "listShapes": ["", "content", "data", "data.content"],
+  "labelFields": ["name", "instanceName", "groupName", "title", "type"],
+  "systemFlagFields": [
+    "isDefault",
+    "isSystem",
+    "systemDefined",
+    "readOnly",
+    "popTunnelUsed"
+  ],
+  "sharedThreshold": 3,
+  "maxItemsPerRoute": 25
+}

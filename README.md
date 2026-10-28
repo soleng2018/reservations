@@ -8,7 +8,7 @@ Built with Next.js 16 (App Router), React 19, Kysely on its own Postgres contain
 
 Read this before you start: **everything here is dev, and Authentik is shared.** A worker you start on your machine changes real Authentik group membership, and test users you create there are real.
 
-Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10. Once the Nile Portal Reset engine ships, also do [Nile Portal Reset setup](#nile-portal-reset-setup) before any learner books a lab.
+Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10. Also do [Nile Portal Reset setup](#nile-portal-reset-setup) before you turn the reset on.
 
 Placeholders in `<angle brackets>` are values only you know. Write them as plain text, without the brackets.
 
@@ -535,35 +535,50 @@ When a testbed is deleted, the group is left alone. The worker only records that
 
 ## Nile Portal Reset setup
 
-The **Nile Portal Reset** page is built ([spec 0022](docs/specs/0022-nile-portal-reset-page.md)). The reset engine that reads this list and calls the portal after a lab ([spec 0023](docs/specs/0023-nile-portal-reset-engine)) is not built yet, so nothing runs against a portal today and the mode stays **Off**. Nothing here is needed to run the app. Do it before the engine ships, so it is ready before any learner books a lab.
+The **Nile Portal Reset** page ([spec 0022](docs/specs/0022-nile-portal-reset-page.md)) keeps the list of portal calls, and the reset engine ([spec 0023](docs/specs/0023-nile-portal-reset-engine)) runs it. After every lab, at its booked end or when it is cancelled or moved early, the worker resets that workshop's Nile Portal so the next learner starts on an empty tenant. The run starts 5 minutes after the lab ends and should finish within 25. The mode starts **Off**, so nothing runs until you change it. Nothing here is needed to run the rest of the app.
 
-After every lab, the app will reset that workshop's Nile Portal by signing in as its admin and deleting what the learner made. It needs three things set up first:
+How it signs in: the app owns one Authentik user per workshop, `automation@<testbed domain>` (for workshop N, `automation@nileworkshop-N.com`). Before each sign in the worker makes sure the user exists, is in the testbed's access group (the group the portal maps to Administrator), and has a new random password. The password is used for that one sign in and is never saved, so there is **no password file and no shared password** to set up. Nobody ever sees or sets it. The worker signs in with a headless Chromium, then makes plain API calls.
 
-1. **The portal password file.** The reset signs in as `admin@<testbed domain>` (for workshop N, `admin@nileworkshop-N.com`), with one shared password kept in a file, never in the database. In dev that file is `~/secrets/nileportal.pw`. Make it the same way as the other secrets (one value, mode `600`). In Docker, put the file in `SECRETS_DIR` too, and it will be mounted into the containers like the six files in [Secret files](#2-secret-files). The variable that points at it will be named when the engine is built. If the file is missing, the reset will fail and tell the abort address, so check it exists before you deploy.
+Set up, in this order:
 
-2. **Testbed domains.** The username comes from each testbed's domain, so every testbed that gets a reset needs its domain set (see [Testbed groups](#testbed-groups)). The domain must match the portal tenant, or the reset refuses to run.
+1. **Testbed domain, group, and portal address.** Every testbed that gets a reset needs its **domain** set, its **Authentik group** (the marked group that carries the same domain, see [Testbed groups](#testbed-groups)), and its **Portal URL** on an allowed portal host (today only `nile-global.cloud`, kept in `lib/portal-reset/portal-hosts.json`). The domain must match the portal tenant, or the run stops with `tenant_mismatch` before it changes anything.
 
-3. **The Nile Portal Reset page.** Sign in to the admin console and open **Nile Portal Reset**, then:
+2. **The Authentik permissions.** The provisioning account needs `add_user`, `change_user`, `reset_user_password`, and `add_user_to_group`. `npm run authentik:setup` (a dry run) lists any that are missing. It has no delete permission, and the app never deletes an Authentik user.
+
+3. **Check one workshop by hand (optional, recommended once).** This makes the user, signs in to the real portal, and reads one list. It prints only pass or fail, never the password or a reply. Run it with the dry run first:
+
+   ```bash
+   npm run portal:automation-check -- --domain nileworkshop-4.com
+   npm run portal:automation-check -- --domain nileworkshop-4.com --apply
+   ```
+
+   If the workshop is not a testbed in the app yet, add `--group <access group name> --portal-url <portal address>`.
+
+4. **The Nile Portal Reset page.** Sign in to the admin console and open **Nile Portal Reset**, then:
    - Check the list of portal calls. The first `npm run db:migrate` (the `migrate` container in Docker) loads the starting list from [db/seed/portal-reset-starting-list.json](db/seed/portal-reset-starting-list.json) and prints `seeded: N Nile Portal Reset steps`, so a fresh install already has the full list and you only review it. The order matters: a thing must come after everything that uses it.
-   - Click **Edit**, confirm the pop up, type the **abort email** (where an aborted or failed reset is reported), and press **Save**. Until this is saved, the page warns "Aborted resets will not be emailed."
-   - Leave the **mode** on **Off** for now. The choices are **Off** (resets do not run), **Dry run** (a reset reads the portal and reports what it would delete, but deletes nothing), and **Live** (deletes on real Nile Portals after every lab). Choosing Live asks for a second confirm. Run a dry run first, then go live with the owner present.
+   - Click **Edit**, confirm the pop up, type the **abort email** (where a stopped, held, or unfinished reset is reported), and press **Save**. Until this is saved, the page warns "Aborted resets will not be emailed."
+   - Set the **mode**. **Off** means resets do not run. **Dry run** reads the portal and records what it would delete, but sends no write. **Live** deletes on real Nile Portals after every lab, and asks for a second confirm. **Start with a dry run**, look at it under **Recent resets**, then go live with the owner present.
    - To change a step, use its row: drag the handle (mouse, touch, or the keyboard) to move it, switch it off with **Enabled**, or edit its JSON. A step you removed can be brought back under **Add from starting list**.
-   - Later deploys never overwrite your list or email, because the file is loaded once (an admin may empty the list on purpose and it stays empty). Only an admin changes them, and every change is in the Audit Log as a `portal_reset.*` entry.
+   - Later deploys never overwrite your list or email, because the file is loaded once. Every change is in the Audit Log as a `portal_reset.*` entry.
 
-Two rules cannot be changed from the page, because they live in the repo: a deny list (Global Settings Identity and Network Setup Users are never called, and a Save that names them is refused) and the guards (the protected SSID, system policies, Nile RADIUS, Nile DHCP, and the Default Network Policy are never deleted).
+**Recent resets.** The button on the Nile Portal Reset page opens the last 50 resets (when the lab ended, the testbed, the mode, the outcome and reason, and the counts). Open one to see each item it deleted, changed, or failed on, with the portal's own message. Records are kept 30 days. Items that are empty, system defined, already gone, or expected are not recorded.
 
-**Docker:** this feature adds no new file, variable, or service. The migration and the seed run in the existing `migrate` service (the starting list is bundled into `dist/migrate.mjs`), so `scripts/deploy.sh` is enough. Only the password file in step 1 will be new, once the engine ships.
+**When a reset cannot finish.** The abort email says what happened and never holds a password or a token. A reset that cannot sign in because the account could not be prepared, or the password was refused, goes on **hold** and emails at once. It tries again after 30 minutes if no lab is on that testbed, and ends if a lab starts first. A lab that starts always stops a reset in progress.
+
+Rules that cannot be changed from the page, because they live in the repo: a deny list (Global Settings Identity and Network Setup Users are never called) and the guards (the protected SSID, system policies, Nile RADIUS, Nile DHCP, and the Default Network Policy are never deleted). After the saved steps, a **discovery pass** opens the portal pages the steps name, finds short lists the steps do not cover, deletes what is in them, and reports each new route in the email so the list can catch up.
+
+**Docker:** the worker runs from its own image target, `reservations-worker`, which is the app image plus Chromium (a few hundred MB more, only in the worker). `scripts/deploy.sh` builds both images. The worker launches Chromium once at start and **exits with code 1 if it cannot**, so a bad image is found at deploy: read `docker compose logs worker`. The container gets 1 GB of shared memory for the browser. One optional setting, `PORTAL_RESET_LANES` (1 to 5, default 2), sets how many resets run at once; it goes in `docker/.env`.
 
 ## Running with Docker
 
-The app runs on this host as one Docker Compose project named `reservations`, with four services (the Postgres `db`, and three built from one image):
+The app runs on this host as one Docker Compose project named `reservations`, with four services (the Postgres `db`, and three built from one Dockerfile: `web` and `migrate` share one image, `worker` has its own):
 
 | Service | Runs | Notes |
 | --- | --- | --- |
 | `db` | `postgres:18.6-bookworm`, pinned by digest | The app's database, in the volume `hol_pgdata`. Published on `127.0.0.1` only. `migrate` starts after it is healthy |
 | `migrate` | `node dist/migrate.mjs` | Applies new migrations, then exits. `web` and `worker` start only after it succeeds |
 | `web` | `node server.js` (Next.js standalone) | Port 3000 inside the container, published only through Traefik. Healthcheck on `/api/health` |
-| `worker` | `node dist/worker.mjs` | The one worker (`WORKER_ENABLED=true`). On stop it finishes its current step, with up to 60 seconds |
+| `worker` | `node dist/worker.mjs` | The one worker (`WORKER_ENABLED=true`). Its own image, `reservations-worker`, with Chromium for the Nile Portal reset. On stop it finishes its current step, with up to 60 seconds |
 
 A request travels: browser → Cloudflare → Cloudflare Tunnel (`cloudflared`) → Traefik → `web:3000`. The containers reach Postgres as `db:5432` on the `hol-internal` network, which Compose creates. The files are [Dockerfile](Dockerfile), [docker/compose.yaml](docker/compose.yaml), [docker/.env.example](docker/.env.example), and [scripts/deploy.sh](scripts/deploy.sh).
 

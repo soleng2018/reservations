@@ -267,7 +267,8 @@ const deleteEachPart = z.strictObject({
 const callPart = z.strictObject({
   kind: z.literal("call"),
   method: z.enum(["DELETE", "PUT"]),
-  path: portalPath({ query: false }),
+  // A query is allowed: the branding restore names its profile in one.
+  path: portalPath({ query: true }),
   body: body.optional(),
   okStatus: statusList.optional(),
   expectRefusals: z.array(expectRefusal).min(1).max(5).optional(),

@@ -67,5 +67,14 @@ export const AuditAction = z.enum([
   "portal_reset.steps_reordered",
   "portal_reset.email_changed",
   "portal_reset.mode_changed",
+  // Feature 24 (spec 0023). All system actor, target a portal_reset_run.
+  "portal_reset.run_finished",
+  "portal_reset.run_aborted",
+  "portal_reset.sign_in_failed",
+  "portal_reset.guard_stop",
+  "portal_reset.route_found",
+  "portal_reset.report_failed",
+  "portal_reset.credential_failed",
+  "portal_reset.automation_user_created",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

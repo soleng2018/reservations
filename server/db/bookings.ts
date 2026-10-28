@@ -5,6 +5,7 @@ import { err, ok, type Result } from "@/lib/result";
 import { cleanupHookOn } from "@/server/catalog/api-keys";
 import { queueBookingNotice } from "@/server/jobs/booking-notice";
 import { queueCleanupNotice } from "@/server/jobs/cleanup-queue";
+import { queuePortalReset } from "@/server/portal-engine/queue";
 import type { DB, Testbeds } from "./types";
 
 // Data rules for booking writes (spec 0002). Every function takes the caller's
@@ -97,23 +98,21 @@ export async function rescheduleBooking(
   // Spec 0021 AC-3: with a live CLEANUP key, a Current booking's old slot is
   // read first (the caller holds the row FOR UPDATE; Current is decided in
   // SQL, the database being the clock).
-  const hook = await cleanupHookOn(trx);
-  const old = hook
-    ? await trx
-        .selectFrom("bookings")
-        .select([
-          "testbed_id",
-          "starts_at",
-          "ends_at",
-          sql<boolean>`starts_at <= now()`.as("was_current"),
-        ])
-        .where("id", "=", r.id)
-        .where("status", "=", "confirmed")
-        .where("ends_at", ">", sql<Date>`now()`)
-        .where("version", "=", r.expectedVersion)
-        .forUpdate()
-        .executeTakeFirst()
-    : undefined;
+  // Spec 0023 AC-3 needs the old slot too, so it is always read.
+  const old = await trx
+    .selectFrom("bookings")
+    .select([
+      "testbed_id",
+      "starts_at",
+      "ends_at",
+      sql<boolean>`starts_at <= now()`.as("was_current"),
+    ])
+    .where("id", "=", r.id)
+    .where("status", "=", "confirmed")
+    .where("ends_at", ">", sql<Date>`now()`)
+    .where("version", "=", r.expectedVersion)
+    .forUpdate()
+    .executeTakeFirst();
   const row = await trx
     .updateTable("bookings")
     .set({
@@ -131,15 +130,24 @@ export async function rescheduleBooking(
   if (!row) return err("stale");
   // Spec 0013 AC-6: the rescheduled notice, in this transaction.
   await queueBookingNotice(trx, r.id, row.version, "rescheduled");
-  if (old?.was_current)
-    await queueCleanupNotice(trx, {
+  if (old?.was_current) {
+    if (await cleanupHookOn(trx))
+      await queueCleanupNotice(trx, {
+        bookingId: r.id,
+        version: row.version,
+        event: "booking.moved",
+        oldTestbedId: old.testbed_id,
+        oldStartsAt: old.starts_at,
+        oldEndsAt: old.ends_at,
+      });
+    // Spec 0023 AC-3: the old testbed gets a portal reset.
+    await queuePortalReset(trx, {
       bookingId: r.id,
+      testbedId: old.testbed_id,
       version: row.version,
-      event: "booking.moved",
-      oldTestbedId: old.testbed_id,
-      oldStartsAt: old.starts_at,
-      oldEndsAt: old.ends_at,
+      event: "moved",
     });
+  }
   return ok(row);
 }
 
@@ -188,6 +196,14 @@ export async function cancelBooking(
       oldTestbedId: row.testbed_id,
       oldStartsAt: row.starts_at,
       oldEndsAt: row.ends_at,
+    });
+  // Spec 0023 AC-3: the same Current rule queues a portal reset.
+  if (row.was_current)
+    await queuePortalReset(trx, {
+      bookingId: c.id,
+      testbedId: row.testbed_id,
+      version: row.version,
+      event: "ended_early",
     });
   return ok({ version: row.version });
 }
