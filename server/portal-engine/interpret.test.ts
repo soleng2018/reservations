@@ -104,6 +104,16 @@ describe("the 13 starting steps", () => {
     ]);
   });
 
+  it("restores a customised guest portal by the profile's own name", async () => {
+    const fake = makeFake(populatedState());
+    await runStep(stepNamed("guest-portal-branding"), envFor(fake).env);
+    expect(fake.state.brandingRestores).toBe(1);
+    expect(fake.state.brandingProfile).toBe("profiles");
+    expect(fake.writes.map((w) => w.path)).toEqual([
+      "/api/v1/cloud-profile/value?profile_name=t1_V1&profile_type=app_profile&scope_type=tenant",
+    ]);
+  });
+
   it("waits only when the guest switch had to be turned on", async () => {
     const off = populatedState();
     off.guestAdvance = [

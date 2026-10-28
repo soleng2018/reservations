@@ -658,18 +658,52 @@
     {
       "key": "guest-portal-branding",
       "featureName": "Guest Portal branding: restore to default",
-      "note": "Always restores. The query names the profile (found 2026-10-28). A tenant at the defaults answers 500 and counts as an expected refusal; a customised tenant is not tested yet.",
+      "note": "Always restores. The query names the profile by its own name: <tenantId>_V1 once customised, profiles at the defaults (found 2026-10-28). A tenant at the defaults answers 500, an expected refusal. The check reads the name back.",
       "parts": [
+        {
+          "kind": "read",
+          "as": "branding",
+          "method": "GET",
+          "path": "/api/v1/guestpop/advance",
+          "pick": {
+            "tenantId": "[0].tenantId"
+          }
+        },
+        {
+          "kind": "read",
+          "as": "profile",
+          "method": "GET",
+          "path": "/api/v1/cloud-profile/map/{read.branding.tenantId}?profile_type=app_profile&scope_type=tenant",
+          "pick": {
+            "name": "name"
+          }
+        },
         {
           "kind": "call",
           "method": "DELETE",
-          "path": "/api/v1/cloud-profile/value?profile_name=profiles&profile_type=app_profile&scope_type=tenant",
+          "path": "/api/v1/cloud-profile/value?profile_name={read.profile.name}&profile_type=app_profile&scope_type=tenant",
           "expectRefusals": [
             {
               "status": 500,
               "messageContains": "Failed to Delete Profile Value"
             }
           ]
+        },
+        {
+          "kind": "read",
+          "as": "profileAfter",
+          "method": "GET",
+          "path": "/api/v1/cloud-profile/map/{read.branding.tenantId}?profile_type=app_profile&scope_type=tenant",
+          "pick": {
+            "name": "name"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "profileAfter",
+          "key": "name",
+          "op": "eq",
+          "value": "profiles"
         }
       ]
     }

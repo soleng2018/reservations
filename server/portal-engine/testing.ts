@@ -28,6 +28,9 @@ export type FakeState = {
   nileRadiusConfig: { usable: boolean; tlsComplete: boolean };
   dhcp: Rec[];
   brandingRestores: number;
+  // The guest portal profile's own name: `<tenantId>_V1` once customised,
+  // `profiles` at the defaults.
+  brandingProfile: string;
 };
 
 export type Write = {
@@ -137,6 +140,7 @@ export const populatedState = (): FakeState => ({
     },
   ],
   brandingRestores: 0,
+  brandingProfile: "t1_V1",
 });
 
 export const baselineState = (): FakeState => ({
@@ -147,6 +151,7 @@ export const baselineState = (): FakeState => ({
   ddns: [],
   ssids: (populatedState().ssids as Rec[]).slice(0, 1),
   guestAdvance: [{ id: "ga1", tenantId: "t1", advanceSettingsEnabled: false }],
+  brandingProfile: "profiles",
   sso: null,
   clientConfigs: [],
   policySets: [
@@ -365,8 +370,22 @@ function handle(s: FakeState, req: PortalRequest): PortalReply {
     return reply(200);
   }
 
+  if (path === "/api/v1/cloud-profile/map/t1" && get) {
+    return reply(200, { name: s.brandingProfile });
+  }
   if (at("/api/v1/cloud-profile/value") && del) {
+    // Like the portal: only the profile's own name restores it; a tenant at
+    // the defaults, or a wrong name, answers 500 and changes nothing.
+    const name = new URLSearchParams(req.path.split("?")[1] ?? "").get(
+      "profile_name",
+    );
+    if (name !== s.brandingProfile || name === "profiles") {
+      return reply(500, {
+        errors: [{ message: "Failed to Delete Profile Value" }],
+      });
+    }
     s.brandingRestores += 1;
+    s.brandingProfile = "profiles";
     return reply(200);
   }
   return notFound();
