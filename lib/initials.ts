@@ -9,3 +9,11 @@ export function initials(name: string): string {
     .join("")
     .toUpperCase();
 }
+
+// The account menu avatar (spec 0005 AC-17): always two letters, so a one
+// word name repeats its letter ("John" is "JJ"), and a blank name is "?".
+export function initialsOf(name: string): string {
+  const letters = initials(name);
+  if (letters === "") return "?";
+  return letters.length === 1 ? `${letters}${letters}` : letters;
+}

@@ -23,12 +23,9 @@ const SESSION: CurrentSession = {
   },
 };
 
-const render = async (props: { readonly showSignOut?: boolean }) =>
+const render = async () =>
   renderToStaticMarkup(
-    await LearnerFrame({
-      children: createElement("p", null, "page body"),
-      ...props,
-    }),
+    await LearnerFrame({ children: createElement("p", null, "page body") }),
   );
 
 describe("LearnerFrame", () => {
@@ -40,30 +37,33 @@ describe("LearnerFrame", () => {
     vi.clearAllMocks();
   });
 
-  // covers: AC-1, the landing reads no session at all
-  it("never reads the session when showSignOut is off", async () => {
-    await render({ showSignOut: false });
-    expect(currentSession).not.toHaveBeenCalled();
-  });
-
-  // covers: AC-1, a signed in visitor on / sees no Sign out
-  it("hides Sign out when showSignOut is off, even with a session", async () => {
-    expect(await render({ showSignOut: false })).not.toContain("Sign out");
-  });
-
-  it("shows Sign out by default when a session exists", async () => {
-    expect(await render({})).toContain("Sign out");
+  // covers: AC-17, a signed in user always gets the avatar menu
+  it("shows the account menu with the user's initials when a session exists", async () => {
+    const html = await render();
+    expect(html).toContain('aria-label="Account menu for Lee Learner"');
+    expect(html).toContain(">LL<");
     expect(currentSession).toHaveBeenCalledTimes(1);
   });
 
-  it("hides Sign out by default when there is no session", async () => {
+  // covers: AC-17, a visitor sees no menu
+  it("shows no account menu when there is no session", async () => {
     vi.mocked(currentSession).mockResolvedValue(undefined);
-    expect(await render({})).not.toContain("Sign out");
+    const html = await render();
+    expect(html).not.toContain("Account menu");
+    expect(html).not.toContain("Sign out");
+  });
+
+  // covers: AC-1 (spec 0009), the landing still loads when the session read fails
+  it("renders as signed out when the session read throws", async () => {
+    vi.mocked(currentSession).mockRejectedValue(new Error("db down"));
+    const html = await render();
+    expect(html).not.toContain("Account menu");
+    expect(html).toContain("page body");
   });
 
   // covers: AC-5, AC-10, skip link first, one main, footer after it
   it("puts the skip link first, the page in main, and the footer last", async () => {
-    const html = await render({ showSignOut: false });
+    const html = await render();
     // React hoists the logo's preload <link> (it lands in <head> on a page),
     // so check the first anchor rather than the first tag.
     expect(html.match(/<a [^>]*>[^<]*/)?.[0]).toMatch(

@@ -1,6 +1,12 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./admin-session";
-import { ADMIN_ENTRY, haveSecrets, learner, signIn } from "./authentik";
+import {
+  accountMenu,
+  ADMIN_ENTRY,
+  haveSecrets,
+  learner,
+  signIn,
+} from "./authentik";
 
 // Spec 0009: the public landing at /.
 const DESCRIPTION =
@@ -61,7 +67,6 @@ async function expectLanding(page: Page) {
     ).toBeVisible();
     await expect(main.getByText(body)).toBeVisible();
   }
-  await expect(page.getByRole("button", { name: "Sign out" })).toHaveCount(0);
   const hrefs = await page
     .locator("a[href]")
     .evaluateAll((as) => as.map((a) => a.getAttribute("href") ?? ""));
@@ -79,6 +84,7 @@ test("an anonymous visitor sees the landing and can start a booking", async ({
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   await expectLanding(page);
+  await expect(accountMenu(page)).toHaveCount(0);
 
   const hero = page.locator('main img[src*="hol-hero.jpg"]');
   await expect(hero).toHaveAttribute("alt", "");
@@ -144,6 +150,7 @@ test("a signed in admin sees the same landing, not redirected", async ({
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
   await expectLanding(page);
+  await expect(accountMenu(page)).toBeVisible();
 });
 
 // covers: AC-1
@@ -152,10 +159,11 @@ test("a signed in learner sees the same landing, not redirected", async ({
 }) => {
   test.skip(!haveSecrets, "hol-test passwords are not on this machine");
   await signIn(page, "/reservations", learner);
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(accountMenu(page)).toBeVisible();
   await page.goto("/");
   await expect(page).toHaveURL(/\/$/);
   await expectLanding(page);
+  await expect(accountMenu(page)).toBeVisible();
 });
 
 // covers: AC-6
@@ -279,7 +287,7 @@ test("every learner page ends with the Nile footer", async ({ page }) => {
   }
   test.skip(!haveSecrets, "hol-test passwords are not on this machine");
   await signIn(page, "/reservations", learner);
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+  await expect(accountMenu(page)).toBeVisible();
   await expectFooter(page);
 });
 

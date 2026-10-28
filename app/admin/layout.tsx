@@ -17,7 +17,9 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
     <>
       <SkipLink />
       <AdminTimezoneSync timezone={user.timezone} />
-      <AdminShell>{children}</AdminShell>
+      <AdminShell name={user.name} email={user.email}>
+        {children}
+      </AdminShell>
     </>
   );
 }

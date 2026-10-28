@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initials } from "./initials";
+import { initials, initialsOf } from "./initials";
 
 // covers: AC-2 (the avatar on the user detail page)
 describe("initials (AC-2)", () => {
@@ -25,5 +25,29 @@ describe("initials (AC-2)", () => {
 
   it("returns an empty string for a blank name", () => {
     expect(initials("   ")).toBe("");
+  });
+});
+
+// covers: AC-17 (the account menu avatar, spec 0005)
+describe("initialsOf (spec 0005 AC-17)", () => {
+  it.each([
+    ["John Doe", "JD"],
+    ["John", "JJ"],
+    ["John Singh Pat", "JP"],
+  ])("%s is %s", (name, expected) => {
+    expect(initialsOf(name)).toBe(expected);
+  });
+
+  it("upper cases and ignores extra spaces", () => {
+    expect(initialsOf("  ada \t lovelace ")).toBe("AL");
+  });
+
+  it("keeps an accented first letter", () => {
+    expect(initialsOf("élodie")).toBe("ÉÉ");
+  });
+
+  it("gives ? for a blank name", () => {
+    expect(initialsOf("")).toBe("?");
+    expect(initialsOf("   ")).toBe("?");
   });
 });

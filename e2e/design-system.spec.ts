@@ -173,7 +173,7 @@ test.describe("keyboard", () => {
     await expect(
       page.locator('button[aria-label="Open navigation"]'),
     ).toHaveAttribute("aria-expanded", "true");
-    // Four links and Sign out, then focus wraps inside the drawer.
+    // Four links and the account menu, then focus wraps inside the drawer.
     for (let i = 0; i < 7; i++) {
       await page.keyboard.press("Tab");
       expect(

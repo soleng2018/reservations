@@ -164,6 +164,7 @@ on the container.
 | Badge | `components/ui/badge.tsx` | status pills. `tone` is `info`, `success`, `neutral`, or `accent`; get it from a word with `toneFor()` in `lib/badge-tones.ts`. |
 | Field | `components/field.tsx` | one labelled control: `<Field path="clients.0.url" label="URL"><Input name="clientUrl" /></Field>`. It wires the id, `aria-invalid`, `aria-describedby`, and `data-field`, and reads its error from the enclosing FormDialog (or `error`). |
 | FormSelect | `components/form-select.tsx` | a Base UI select that submits under `name`; works inside Field. |
+| UserMenu | `components/user-menu.tsx` | the account menu (spec 0005 AC-17): an avatar with the user's initials (`initialsOf` in `lib/initials.ts`, white on `bg-nile-cta`) that opens a popover with name, email and Sign out. `variant="sidebar"` is the bottom row of the admin nav, `"bar"` the avatar alone in the learner top bar. |
 | AdminShell | `components/admin/admin-shell.tsx` | mounted once by `app/admin/layout.tsx`. Nav from `ADMIN_NAV` in `lib/admin-nav.ts`. |
 | PageHeader | `components/admin/page-header.tsx` | the top of every admin page: `section="testbeds"` (title and subtitle from `ADMIN_NAV`) or `title` plus `subtitle`, and an optional `action`. |
 | PageBody | `components/admin/page-body.tsx` | the page's one `<main id="content">`, max 1180px. |
@@ -171,7 +172,7 @@ on the container.
 | FormDialog | `components/admin/form-dialog.tsx` | create and edit forms. `trigger`, `title`, `action` (an `AdminFormState` Server Action), and the fields as children. |
 | DeleteFlow | `components/admin/delete-flow.tsx` | a row's delete: `kind`, `id`, `label`, `check`, `remove` (see the contract below). |
 | ComingSoon | `components/admin/coming-soon.tsx` | an admin section not built yet. |
-| LearnerFrame | `components/learner-frame.tsx` | wraps every learner page: the top bar, the one `<main>`, and LearnerFooter. `showSignOut={false}` (the landing) reads no session. |
+| LearnerFrame | `components/learner-frame.tsx` | wraps every learner page: the top bar, the one `<main>`, and LearnerFooter. It shows the account menu (UserMenu) for a signed in user, and renders as signed out if the session read throws. |
 | LearnerFooter | `components/learner-footer.tsx` | the Nile sign off from the emails, rendered by LearnerFrame only. Its `nilesecure.com` link stays underlined (color alone fails AA against the text). |
 | SkipLink | `components/skip-link.tsx` | first in the admin layout and the learner frame. |
 | Calendar | `components/ui/calendar.tsx` | react-day-picker v9 month grid: outline square arrows, uppercase weekday heads, day squares white when free, `bg-inset` when not, Nile Blue when picked. Pass "floating" dates (local noon of a day key, `lib/calendar-days.ts`), never a `timeZone`. |
