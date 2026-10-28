@@ -9,6 +9,7 @@ const run = (id: string): ClaimedRun => ({
   mode: "live",
   labEndedAt: new Date(0),
   resumes: 0,
+  progress: {},
 });
 
 // covers: AC-5, AC-11

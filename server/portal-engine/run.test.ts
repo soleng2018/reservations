@@ -348,6 +348,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           await ctx.portal.call({ method: "GET", path: "/api/v1/x" });
           return "done";
         },
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -380,6 +381,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
         conn,
         signIn: async () => ok(fakePortal().portal),
         runStep: async () => "failed",
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -402,6 +404,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           return ok(fakePortal().portal);
         },
         runStep: async () => "done",
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -425,6 +428,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           steps += 1;
           return "done";
         },
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -444,6 +448,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
         conn,
         signIn: async () => ok(portal),
         runStep: async () => "done",
+        recheckStep: async () => true,
         shouldStop: () => true,
       });
       const row = await trx
@@ -466,6 +471,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
         conn,
         signIn: async () => ({ ok: false, error: "sign_in_failed" }),
         runStep: async () => "done",
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -499,6 +505,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           });
           return "done";
         },
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -537,6 +544,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           steps += 1;
           return "done";
         },
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       const row = await trx
@@ -563,6 +571,7 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
           });
           return "done";
         },
+        recheckStep: async () => true,
         shouldStop: () => false,
       });
       expect(tenant.writes).toHaveLength(0);

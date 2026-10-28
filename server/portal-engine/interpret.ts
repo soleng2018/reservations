@@ -81,6 +81,8 @@ export type StepEnv = {
 
 type Method = PortalRequest["method"];
 
+export const stepKeyOf = (step: ResetStep): string => step.seedKey ?? step.id;
+
 type Sent = {
   readonly cls: Exclude<Class, "retry">;
   readonly status: number | null;
@@ -472,13 +474,37 @@ async function readPart(
   return { ok: false, reads: ctx.reads };
 }
 
+function checkExpect(
+  part: Extract<Part, { kind: "expect" }>,
+  ctx: Ctx,
+): boolean {
+  const held = testValue(
+    Object.hasOwn(ctx.reads, part.read)
+      ? ctx.reads[part.read]?.[part.key]
+      : undefined,
+    part.op,
+    part.value,
+  );
+  if (!held) {
+    failed(ctx, {
+      method: "GET",
+      route: "",
+      status: null,
+      message: redactMessage(
+        `expected ${part.read}.${part.key} to be ${part.op}`,
+      ),
+    });
+  }
+  return held;
+}
+
 // Run the parts of one step in order. A part whose `when` does not hold is
 // skipped with no record (AC-20).
 export async function runStep(
   step: ResetStep,
   env: StepEnv,
 ): Promise<StepResult> {
-  const stepKey = step.seedKey ?? step.id;
+  const stepKey = stepKeyOf(step);
   const outcomes: boolean[] = [];
   // Reads are the one thing a part passes to the next, so they thread through
   // the loop; everything else is per part.
@@ -505,29 +531,10 @@ export async function runStep(
       case "wait":
         if (!dry(env)) await env.sleep(part.seconds * 1000);
         break;
-      case "expect": {
+      case "expect":
         // Nothing was written in a dry run, so the check would only fail.
-        if (dry(env)) break;
-        const held = testValue(
-          Object.hasOwn(reads, part.read)
-            ? reads[part.read]?.[part.key]
-            : undefined,
-          part.op,
-          part.value,
-        );
-        if (!held) {
-          failed(ctx, {
-            method: "GET",
-            route: "",
-            status: null,
-            message: redactMessage(
-              `expected ${part.read}.${part.key} to be ${part.op}`,
-            ),
-          });
-        }
-        outcomes.push(held);
+        if (!dry(env)) outcomes.push(checkExpect(part, ctx));
         break;
-      }
       default: {
         const unreachable: never = part;
         throw new Error(`Unhandled part ${JSON.stringify(unreachable)}`);
@@ -535,4 +542,124 @@ export async function runStep(
     }
   }
   return outcomes.every(Boolean) ? "done" : "failed";
+}
+
+const LEFT = redactMessage("still there after the step");
+
+// The delete path of one item, or null when a placeholder has no value.
+const deletePathFor = (
+  part: Extract<Part, { kind: "delete_each" }>,
+  ctx: Ctx,
+  item: Item,
+): string | null => {
+  if (part.delete.batch === true) return part.delete.path;
+  const path = fillPath(
+    part.delete.path,
+    fillFor(ctx, { id: item.id, parentId: item.parentId }),
+  );
+  return path.ok ? path.value : null;
+};
+
+// The final re-read of a list (spec 0023 AC-19): what the step would still
+// delete. A leftover is a failure, recorded with its label. `allowLeftover`
+// lists (a wired device can come back) and lists with expected refusals are
+// not checked.
+async function leftoverDelete(
+  part: Extract<Part, { kind: "delete_each" }>,
+  ctx: Ctx,
+): Promise<boolean> {
+  const items = await readList(ctx, part.list);
+  if (items === false) return false;
+  // A list with expected refusals keeps the items the portal refuses on
+  // purpose (AC-22), and re-reading cannot tell them from the rest.
+  if (part.allowLeftover === true || part.expectRefusals !== undefined) {
+    return true;
+  }
+  const left = selectForDelete(items, part).filter((item) => {
+    const path = deletePathFor(part, ctx, item);
+    return path === null || !ctx.env.isGuarded("DELETE", path, [item.id]);
+  });
+  left.forEach((item) =>
+    failed(ctx, {
+      item,
+      method: "DELETE",
+      route: part.delete.path,
+      status: null,
+      message: LEFT,
+    }),
+  );
+  return left.length === 0;
+}
+
+// The same for `update_record`: a record that still does not hold the value.
+async function leftoverUpdate(
+  part: Extract<Part, { kind: "update_record" }>,
+  ctx: Ctx,
+): Promise<boolean> {
+  const items = await readList(ctx, part.list);
+  if (items === false) return false;
+  const left = items.filter((item) => {
+    if (!evaluateRules(item.raw, part.match)) return false;
+    if (
+      JSON.stringify(getPortalPath(item.raw, part.set.at)) ===
+      JSON.stringify(part.set.value)
+    ) {
+      return false;
+    }
+    const path = fillPath(
+      part.put.path,
+      fillFor(ctx, { id: item.id, parentId: item.parentId }),
+    );
+    return !path.ok || !ctx.env.isGuarded("PUT", path.value, [item.id]);
+  });
+  left.forEach((item) =>
+    failed(ctx, {
+      item,
+      method: "PUT",
+      route: part.put.path,
+      status: null,
+      message: LEFT,
+    }),
+  );
+  return left.length === 0;
+}
+
+// The final re-read of one step (spec 0023 AC-19). Reads only: it sends no
+// write, so it needs no stop check. True when nothing is left.
+export async function recheckStep(
+  step: ResetStep,
+  env: StepEnv,
+): Promise<boolean> {
+  const stepKey = stepKeyOf(step);
+  const outcomes: boolean[] = [];
+  let reads: Reads = {};
+  for (const part of step.definition.parts) {
+    const ctx: Ctx = { env, stepKey, reads };
+    if (!evaluateConds(reads, part.when)) continue;
+    switch (part.kind) {
+      case "read": {
+        const r = await readPart(part, ctx);
+        reads = r.reads;
+        outcomes.push(r.ok);
+        break;
+      }
+      case "delete_each":
+        outcomes.push(await leftoverDelete(part, ctx));
+        break;
+      case "update_record":
+        outcomes.push(await leftoverUpdate(part, ctx));
+        break;
+      case "expect":
+        outcomes.push(checkExpect(part, ctx));
+        break;
+      case "call":
+      case "wait":
+        break;
+      default: {
+        const unreachable: never = part;
+        throw new Error(`Unhandled part ${JSON.stringify(unreachable)}`);
+      }
+    }
+  }
+  return outcomes.every(Boolean);
 }

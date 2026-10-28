@@ -2,7 +2,7 @@ import "server-only";
 import type { Kysely } from "kysely";
 import { err } from "@/lib/result";
 import type { DB } from "@/server/db/types";
-import { runStep } from "./interpret";
+import { recheckStep, runStep } from "./interpret";
 import type { RunDeps } from "./run";
 
 // The run's real dependencies. Until the real sign in lands (spec 0023 task
@@ -15,5 +15,6 @@ export const realRunDeps = (
   conn,
   signIn: async () => err("sign_in_failed"),
   runStep,
+  recheckStep,
   shouldStop,
 });

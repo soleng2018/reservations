@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { startingList } from "@/server/portal-reset/starting-list";
 import type { ResetStep } from "@/server/portal-reset/steps";
-import { runStep, type ItemRecord, type StepEnv } from "./interpret";
+import {
+  recheckStep,
+  runStep,
+  type ItemRecord,
+  type StepEnv,
+} from "./interpret";
 import { baselineState, makeFake, populatedState, type Fake } from "./testing";
 
 const steps: readonly ResetStep[] = startingList().steps.map((e, i) => ({
@@ -270,5 +275,37 @@ describe("dry run", () => {
     expect(new Set(groupDeletes.map((r) => r.itemId)).size).toBe(
       groupDeletes.length,
     );
+  });
+});
+
+// covers: AC-19 (the final re-read)
+describe("recheckStep", () => {
+  const recheckAll = async (fake: Fake) => {
+    const { env, records } = envFor(fake);
+    const results = [];
+    for (const step of steps) results.push(await recheckStep(step, env));
+    return { results, records };
+  };
+
+  it("finds nothing left on a reset tenant, records nothing, writes nothing", async () => {
+    const fake = makeFake(populatedState());
+    await runAll(fake);
+    const writes = fake.writes.length;
+    const { results, records } = await recheckAll(fake);
+    expect(results.every(Boolean)).toBe(true);
+    expect(records).toEqual([]);
+    expect(fake.writes.length).toBe(writes);
+  });
+
+  it("reports what is left on a populated tenant as failures, without a write", async () => {
+    const fake = makeFake(populatedState());
+    const { results, records } = await recheckAll(fake);
+    expect(results.some((r) => !r)).toBe(true);
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every((r) => r.kind === "failed")).toBe(true);
+    expect(
+      records.some((r) => r.message === "still there after the step"),
+    ).toBe(true);
+    expect(fake.writes).toEqual([]);
   });
 });

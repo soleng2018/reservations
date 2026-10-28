@@ -1,4 +1,5 @@
 import "server-only";
+import type { ResetReport } from "@/lib/portal-reset/report-email";
 import type { BookingEmailDetails, ClientLogin } from "@/lib/booking-email";
 import { setPasswordUrl, type WelcomeEmailDetails } from "@/lib/welcome-email";
 
@@ -70,3 +71,30 @@ export const SAMPLE_CLIENT_LOGINS: readonly ClientLogin[] = [
     password: null,
   },
 ];
+
+// Spec 0023 AC-31: a fixed report for the worker's start up render and the
+// template snapshot. Invented names, never a real tenant.
+export const SAMPLE_RESET_REPORT: ResetReport = {
+  testbedName: "Testbed 1",
+  domain: "nileworkshop-1.com",
+  event: "lab_ended",
+  mode: "live",
+  outcome: "incomplete",
+  reason: null,
+  labEndedAt: "2026-10-13T17:00:00.000Z",
+  startedAt: "2026-10-13T17:05:00.000Z",
+  finishedAt: "2026-10-13T17:21:00.000Z",
+  counts: { deleted: 14, changed: 2, failed: 1, resolved: 3 },
+  failures: [
+    {
+      stepKey: "segments",
+      label: "Lab segment",
+      method: "DELETE",
+      route: "/api/v1/segments/{id}",
+      status: 409,
+      message: "Segment is in use",
+    },
+  ],
+  moreFailures: 0,
+  routes: [],
+};

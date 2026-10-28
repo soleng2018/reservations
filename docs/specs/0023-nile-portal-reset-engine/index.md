@@ -281,9 +281,9 @@ Build approach: Tracer Bullet (the project default). The first thread is thin an
 3. [x] Tracer thread: `queue.ts` (`queueEndedResets`, `queuePortalReset` called from the cancel and move code), `claim.ts` (claim, lease, stop check), `lanes.ts` wired into `worker/index.ts` beside the tick, `run.ts` skeleton with the fake portal, the fake sign in, one step, and `finishRun`, satisfies **AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-11**
 4. [x] The in memory fake portal (`testing.ts`) with the reply shapes from the research, and the interpreter (`interpret.ts`) for all part kinds, with the 13 starting steps and the AC-24 baseline test, satisfies **AC-19, AC-20, AC-22, AC-23, AC-24**
 5. [x] Guards and the single call choke point: `guards.ts`, `client.ts` (deny list, redirect manual, timeout, size cap, retries), satisfies **AC-25, AC-26, AC-27**
-6. Resume, shutdown, passes, and the final re-read: lease and resume, the second pass, `allowLeftover`, the stop on SIGTERM, satisfies **AC-9, AC-10, AC-19, AC-23**
-7. Reporting: item records, run level audit rows, the `send_reset_report` handler and template, the purge, satisfies **AC-28, AC-29, AC-31**
-8. Dry run: the virtual deletes and `would_*` records, satisfies **AC-33**
+6. [x] Resume, shutdown, passes, and the final re-read: lease and resume, the second pass, `allowLeftover`, the stop on SIGTERM, satisfies **AC-9, AC-10, AC-19, AC-23**
+7. [x] Reporting: item records, run level audit rows, the `send_reset_report` handler and template, the purge, satisfies **AC-28, AC-29, AC-31**
+8. [x] Dry run: the virtual deletes and `would_*` records, satisfies **AC-33**
 9. Real sign in: the `authentik:setup` permission check and `portal:automation-check` (AC-44), then the automation account (`server/authentik/portal-automation.ts`, `guardAutomationWrite`, `automation-user.json`, the fake Authentik tests), the portal host allow list, `sign-in.ts` with Playwright against the prototype's selectors, the header capture, the tenant check, the failure reasons, retry, and the held state, satisfies **AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-39, AC-42, AC-43, AC-44**
 10. Discovery: `discovery-rules.ts` and `discovery.json`, then the browser collector and the delete and verify loop, satisfies **AC-34, AC-35, AC-36, AC-37, AC-38**
 11. Recent resets pages, satisfies **AC-32**

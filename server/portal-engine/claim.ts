@@ -17,6 +17,8 @@ export type ClaimedRun = {
   readonly mode: PortalResetRunMode;
   readonly labEndedAt: Date;
   readonly resumes: number;
+  // What the last attempt saved (keys only); parsed by the run.
+  readonly progress: unknown;
 };
 
 // A queued run whose `due_at` has passed, or a running run whose lease has
@@ -35,10 +37,11 @@ export async function claimDueRun(
       mode: PortalResetRunMode;
       lab_ended_at: Date;
       resumes: number;
+      progress: unknown;
       was_running: boolean;
     }>`
       select r.id, r.testbed_id, r.booking_id, r.mode, r.lab_ended_at,
-        r.resumes, r.state = 'running' as was_running
+        r.resumes, r.progress, r.state = 'running' as was_running
       from hol_app.portal_reset_runs r
       where (
           (r.state = 'queued' and r.due_at <= now()
@@ -80,6 +83,7 @@ export async function claimDueRun(
       mode: claimed.rows[0]?.mode ?? row.mode,
       labEndedAt: row.lab_ended_at,
       resumes: row.resumes + (row.was_running ? 1 : 0),
+      progress: row.progress,
     };
   });
 }
@@ -122,6 +126,18 @@ export async function stopCheck(
       : row.lab_active
         ? "lab_started"
         : "go";
+}
+
+// Where the run is, for a resume (AC-9). Keys only, no portal data.
+export async function saveProgress(
+  conn: Kysely<DB>,
+  runId: string,
+  progress: Readonly<Record<string, unknown>>,
+): Promise<void> {
+  await sql`
+    update hol_app.portal_reset_runs
+    set progress = ${JSON.stringify(progress)}::jsonb
+    where id = ${runId}::uuid and state = 'running'`.execute(conn);
 }
 
 // AC-10: hand the run back with its progress, for the next claim.

@@ -1,12 +1,18 @@
 import "server-only";
 import type { Kysely } from "kysely";
+import { z } from "zod";
 import type { Result } from "@/lib/result";
 import type { PortalResetAbortReason } from "@/lib/db-enums";
 import { guards as guardFile } from "@/lib/portal-reset/guards";
 import { readResetList, type ResetStep } from "@/server/portal-reset/steps";
 import type { DB } from "@/server/db/types";
-import { releaseRun, stopCheck, type ClaimedRun } from "./claim";
-import type { ItemRecord, StepEnv, StepResult } from "./interpret";
+import { releaseRun, saveProgress, stopCheck, type ClaimedRun } from "./claim";
+import {
+  stepKeyOf,
+  type ItemRecord,
+  type StepEnv,
+  type StepResult,
+} from "./interpret";
 import type { PortalClient } from "./portal";
 import {
   computeProtected,
@@ -14,15 +20,23 @@ import {
   isGuardedWrite,
   NO_PROTECTION,
 } from "./guards";
-import { finishRun, type Counts, type GuardNote } from "./report";
-import { GuardStop, StopRun } from "./stop";
+import { appendItems, finishRun, type Counts, type GuardNote } from "./report";
+import { GuardStop, Shutdown, StopRun } from "./stop";
 
 // One run, start to finish (spec 0023 "Run algorithm"): claim, stop check,
-// snapshot, sign in, the enabled steps in order with a stop check before each
-// step and before every write, one finish. The parts that grow later are
-// injected: the real sign in (task 9), the passes and discovery (tasks 6 and
-// 10). The guards (AC-25, AC-26) are read once after sign in; every call of
-// every step then goes through `guardedPortal`.
+// snapshot, sign in, four phases, one finish.
+//
+//   1  every enabled step, in order
+//   2  the final re-read of each step that did not fail (a leftover fails it)
+//   3  the second pass over the steps that failed
+//   4  the final re-read of the steps the second pass finished
+//
+// There is no third pass (AC-19). A stop check runs before each step and
+// before every write, and renews the lease. Progress is saved after each
+// step (keys only), so a resumed run starts at the step it was in (AC-9).
+// Item records are saved after each step too, so they outlive a crash. The
+// parts that grow later are injected: the real sign in (task 9) and
+// discovery (task 10, between phases 1 and 2).
 
 export type RunDeps = {
   readonly conn: Kysely<DB>;
@@ -31,19 +45,53 @@ export type RunDeps = {
     run: ClaimedRun,
   ) => Promise<Result<PortalClient, "sign_in_failed">>;
   readonly runStep: (step: ResetStep, env: StepEnv) => Promise<StepResult>;
+  readonly recheckStep: (step: ResetStep, env: StepEnv) => Promise<boolean>;
   readonly shouldStop: () => boolean;
   readonly sleep?: (ms: number) => Promise<void>;
+};
+
+const Phase = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
+
+// What `progress` holds: the phase, the step keys finished in it, the keys
+// that failed in phases 1 and 2, and the keys still bad after phases 3 and 4.
+const Progress = z.object({
+  phase: Phase,
+  done: z.array(z.string()),
+  failed: z.array(z.string()),
+  bad: z.array(z.string()),
+});
+type Progress = z.infer<typeof Progress>;
+
+const START: Progress = { phase: 1, done: [], failed: [], bad: [] };
+
+export const readProgress = (raw: unknown): Progress => {
+  const parsed = Progress.safeParse(raw);
+  return parsed.success ? parsed.data : START;
 };
 
 const allGuardsByKey = (key: string) => guardFile.find((g) => g.key === key);
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-const countRecords = (records: readonly ItemRecord[]): Counts =>
-  records.reduce<Record<string, number>>(
-    (acc, r) => ({ ...acc, [r.kind]: (acc[r.kind] ?? 0) + 1 }),
-    {},
-  );
+const without = (keys: readonly string[], drop: readonly string[]) =>
+  keys.filter((k) => !drop.includes(k));
+
+// The steps a phase works on, from the saved progress.
+const targets = (
+  phase: Progress["phase"],
+  p: Progress,
+  steps: readonly ResetStep[],
+): readonly ResetStep[] => {
+  const keep = (key: string) =>
+    phase === 1
+      ? true
+      : phase === 2
+        ? !p.failed.includes(key)
+        : phase === 3
+          ? p.failed.includes(key)
+          : p.failed.includes(key) && !p.bad.includes(key);
+  return steps.filter((s) => keep(stepKeyOf(s)));
+};
 
 export async function executeRun(
   run: ClaimedRun,
@@ -71,13 +119,18 @@ export async function executeRun(
   const parsed = list.steps.flatMap((s) => (s.ok ? [s.step] : []));
   if (parsed.length !== list.steps.length) return abort("invalid_list", {});
   const steps = parsed.filter((s) => s.enabled);
+  const skippedSteps = list.steps.length - steps.length;
 
   const signedIn = await deps.signIn(run);
   if (!signedIn.ok) return abort("sign_in_failed", {});
   const raw = signedIn.value;
   const sleep = deps.sleep ?? wait;
   const records: ItemRecord[] = [];
-  let stepKey: string | null = "guards";
+  const flush = () => appendItems(conn, run.id, records.splice(0));
+  const dry = run.mode === "dry_run";
+  let progress = readProgress(run.progress);
+  // The step in hand, for a guard stop's audit row (a readable name).
+  let stepName: string | null = "guards";
   try {
     const found = await computeProtected(
       guardedPortal(raw, NO_PROTECTION),
@@ -100,6 +153,8 @@ export async function executeRun(
       pass: 1,
       sleep,
       beforeWrite: async () => {
+        // The call in flight has finished; no new write starts (AC-10).
+        if (deps.shouldStop()) throw new Shutdown();
         const stop = await stopCheck(conn, run.id);
         if (stop !== "go") throw new StopRun(stop);
       },
@@ -107,36 +162,65 @@ export async function executeRun(
       record: (r) => records.push(r),
       hidden: new Set(),
     };
-    const results: StepResult[] = [];
-    for (const step of steps) {
-      if (deps.shouldStop()) {
-        await releaseRun(conn, run.id, { doneSteps: results.length });
-        return;
+
+    for (const phase of [1, 2, 3, 4] as const) {
+      if (phase < progress.phase) continue;
+      // Nothing was written in a dry run, so there is nothing to re-read.
+      const skip = dry && (phase === 2 || phase === 4);
+      for (const step of skip ? [] : targets(phase, progress, steps)) {
+        const key = stepKeyOf(step);
+        if (progress.done.includes(key)) continue;
+        if (deps.shouldStop()) throw new Shutdown();
+        const stop = await stopCheck(conn, run.id);
+        if (stop === "lost") return;
+        if (stop !== "go") throw new StopRun(stop);
+        stepName = step.seedKey ?? step.featureName;
+        const stepEnv = phase <= 2 ? env : { ...env, pass: 2 as const };
+        const clean =
+          phase === 1 || phase === 3
+            ? (await deps.runStep(step, stepEnv)) === "done"
+            : await deps.recheckStep(step, stepEnv);
+        progress = {
+          ...progress,
+          done: [...progress.done, key],
+          failed:
+            phase <= 2 && !clean ? [...progress.failed, key] : progress.failed,
+          bad: phase >= 3 && !clean ? [...progress.bad, key] : progress.bad,
+        };
+        await flush();
+        await saveProgress(conn, run.id, progress);
       }
-      const stop = await stopCheck(conn, run.id);
-      if (stop === "lost") return;
-      if (stop !== "go") return abort(stop, { steps: results.length });
-      stepKey = step.seedKey ?? step.featureName;
-      results.push(await deps.runStep(step, env));
+      progress = {
+        ...progress,
+        phase: phase === 4 ? 4 : ((phase + 1) as 2 | 3 | 4),
+        done: [],
+      };
+      // Phase 3 and 4 exist only for steps that failed.
+      if (phase === 2 && progress.failed.length === 0) break;
     }
-    const failed = results.filter((r) => r === "failed").length;
+
     await finishRun(conn, run.id, {
-      kind: failed === 0 ? "done" : "incomplete",
+      kind: progress.bad.length === 0 ? "done" : "incomplete",
       mode: run.mode,
       counts: {
-        steps: results.length,
-        failedSteps: failed,
-        skippedSteps: list.steps.length - steps.length,
-        ...countRecords(records),
+        steps: steps.length,
+        failedSteps: progress.bad.length,
+        skippedSteps,
       },
+      resolvedSteps: without(progress.failed, progress.bad),
     });
   } catch (e) {
+    if (e instanceof Shutdown) {
+      await flush();
+      await releaseRun(conn, run.id, progress);
+      return;
+    }
     if (!(e instanceof StopRun)) throw e;
     if (e.reason === "lost") return;
-    const counts = countRecords(records);
+    await flush();
     return e instanceof GuardStop
-      ? abort("guard_stop", counts, { stepKey, route: e.route })
-      : abort(e.reason, counts);
+      ? abort("guard_stop", {}, { stepKey: stepName, route: e.route })
+      : abort(e.reason, {});
   } finally {
     await raw.close();
   }

@@ -12,11 +12,16 @@ import {
 import { db } from "@/server/db";
 import { dbEnv, encryptionEnv, workerEnv } from "@/server/env";
 import { purgeSetPasswordLinks } from "@/server/auth/set-password-links";
-import { renderBookingEmail, renderWelcomeEmail } from "@/server/email/compose";
+import {
+  renderBookingEmail,
+  renderResetReport,
+  renderWelcomeEmail,
+} from "@/server/email/compose";
 import {
   SAMPLE_BOOKING_DETAILS,
   SAMPLE_CLIENT_LOGINS,
   SAMPLE_REMINDER_DETAILS,
+  SAMPLE_RESET_REPORT,
   SAMPLE_WELCOME,
 } from "@/server/email/sample";
 import {
@@ -29,6 +34,7 @@ import { runCleanupHooks } from "@/server/jobs/cleanup-hook";
 import { syncBookingEvent } from "@/server/jobs/calendar-sync";
 import { queueReminders } from "@/server/jobs/reminders";
 import { runSendEmail } from "@/server/jobs/send-email";
+import { runSendResetReport } from "@/server/jobs/send-reset-report";
 import { runSendWelcome } from "@/server/jobs/send-welcome";
 import { lockClient, tryWorkerLock } from "@/server/worker/lock";
 import {
@@ -42,6 +48,7 @@ import {
 import { claimDueRun } from "@/server/portal-engine/claim";
 import { realRunDeps } from "@/server/portal-engine/deps";
 import { runLanes } from "@/server/portal-engine/lanes";
+import { purgePortalResetRuns } from "@/server/portal-engine/purge";
 import { queueEndedResets } from "@/server/portal-engine/queue";
 import { executeRun } from "@/server/portal-engine/run";
 import { reconcileAccess } from "@/server/worker/reconcile";
@@ -61,6 +68,7 @@ const HANDLERS: Handlers = {
   calendar_upsert: syncBookingEvent,
   calendar_delete: syncBookingEvent,
   send_welcome: runSendWelcome,
+  send_reset_report: runSendResetReport,
 };
 
 const log = (line: string) =>
@@ -91,6 +99,7 @@ async function main(): Promise<number> {
       SAMPLE_WELCOME.email,
       SAMPLE_WELCOME.url,
     );
+    await renderResetReport(SAMPLE_RESET_REPORT);
   } catch (e) {
     log(
       `worker: the email renderer failed to load (${e instanceof Error ? e.message : String(e)}), exiting`,
@@ -230,6 +239,10 @@ async function main(): Promise<number> {
             {
               name: "purge set password links",
               run: () => purgeSetPasswordLinks(conn),
+            },
+            {
+              name: "purge portal reset runs",
+              run: () => purgePortalResetRuns(conn),
             },
           ]
         : []),

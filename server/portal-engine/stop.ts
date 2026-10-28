@@ -27,3 +27,13 @@ export class GuardStop extends StopRun {
     this.route = route;
   }
 }
+
+// The process was told to stop (SIGTERM or SIGINT): thrown by the same hook
+// before the next write, after the call in flight has finished (spec 0023
+// AC-10). The run goes back to the queue with its progress.
+export class Shutdown extends Error {
+  constructor() {
+    super("portal reset run released for shutdown");
+    this.name = "Shutdown";
+  }
+}
