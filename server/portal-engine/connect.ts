@@ -191,7 +191,12 @@ export const connect =
     const portal = withResignIn(signed.value, deps.fetchImpl, () =>
       attempt(deps, run, tb),
     );
-    const tenant = await checkTenant(portal, tb.domain);
+    // A dropped call is not a wrong tenant: read it once more.
+    const first = await checkTenant(portal, tb.domain);
+    const tenant =
+      !first.ok && first.error.kind === "sign_in"
+        ? await checkTenant(portal, tb.domain)
+        : first;
     if (!tenant.ok) {
       await portal.close();
       return tenant;
