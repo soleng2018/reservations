@@ -57,5 +57,15 @@ export const AuditAction = z.enum([
   // or a stored one was found taken in Authentik by another user.
   "user.nile_login_set",
   "user.nile_login_conflict",
+  // Feature 25 (spec 0022). `seeded` is the migrate process (system actor).
+  // The email address itself is never in an audit row, only that it changed.
+  "portal_reset.seeded",
+  "portal_reset.saved",
+  "portal_reset.step_added",
+  "portal_reset.step_updated",
+  "portal_reset.step_removed",
+  "portal_reset.steps_reordered",
+  "portal_reset.email_changed",
+  "portal_reset.mode_changed",
 ]);
 export type AuditAction = z.infer<typeof AuditAction>;

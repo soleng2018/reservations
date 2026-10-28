@@ -12,10 +12,12 @@ import {
   waitForToken,
   walkScreens,
 } from "./book-flow";
+import { resetDevBookingLimits } from "./db";
 
 // Spec 0005 AC-14: no serious or critical axe violation on the shell, the
 // sign in card, /book, and the gallery's dialogs.
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+test.beforeAll(resetDevBookingLimits);
 
 // covers: AC-14
 test("the shell at 1280px", async ({ adminPage: page }) => {

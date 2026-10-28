@@ -3,11 +3,13 @@ import { expect, type Page } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
 import { ADMIN_ENTRY, haveSecrets } from "./authentik";
 import { walkScreens } from "./book-flow";
+import { resetDevBookingLimits } from "./db";
 
 // Spec 0005 AC-15: the shots /check verify compares with the mock. Dialogs
 // and the toast come from the gallery, so they need no shared data. Written
 // to e2e/screenshots/ (gitignored).
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+test.beforeAll(resetDevBookingLimits);
 
 const WIDTHS = [
   { name: "1280", width: 1280, height: 800 },

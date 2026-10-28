@@ -186,6 +186,8 @@ async function groupsClaim(labs: Labs, code: string): Promise<string[]> {
 let labs: Labs;
 let groupPk = "";
 let plainPk = "";
+// By email: a booking renames the Authentik username to the testbed's domain
+// (spec 0017), but the learner's email stays the fixture's address.
 let learnerPk = 0;
 
 // The pk of the group with exactly this name, made if it is not there yet.
@@ -204,10 +206,10 @@ test.beforeAll(async () => {
   learnerPk =
     (
       await authentikGet(
-        results(z.looseObject({ pk: z.number(), username: z.string() })),
-        `/core/users/?username=${encodeURIComponent(learner.username)}`,
+        results(z.looseObject({ pk: z.number(), email: z.string() })),
+        `/core/users/?email=${encodeURIComponent(learner.username)}`,
       )
-    ).results.find((u) => u.username === learner.username)?.pk ?? 0;
+    ).results.find((u) => u.email === learner.username)?.pk ?? 0;
   groupPk = await ensureGroup(TEST_GROUP, true);
   plainPk = await ensureGroup(PLAIN_GROUP, false);
 });

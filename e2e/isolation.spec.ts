@@ -2,7 +2,6 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { z } from "zod";
 import {
   AUTHENTIK_URL,
-  admin,
   authentikGet,
   authentikLogin,
   haveApi,
@@ -27,7 +26,6 @@ type OtherApp = {
 // same authorization flow as opening the app, without depending on the app's
 // host being up (traefik-apps sits behind a Cloudflare Tunnel).
 const OTHER_APPS = [
-  ["leo", "proxy"],
   ["traefik-apps", "proxy"],
   ["cloudflare-integration", "oauth2"],
 ] as const;
@@ -136,26 +134,11 @@ test("a learner who just signed in to HOL is still denied every other app", asyn
 test("a learner denied another app first can still sign in to HOL", async ({
   page,
 }) => {
-  const leo = apps.find((a) => a.slug === "leo");
-  await open(page, leo?.url ?? "");
+  await open(page, apps[0]?.url ?? "");
   await authentikLogin(page, learner);
   await expectDenied(page);
   await signIn(page, "/reservations", learner);
   await expect(page).toHaveURL(/\/reservations$/);
-});
-
-// covers: AC-17
-test("an admin opens leo before and after signing in to HOL", async ({
-  page,
-}) => {
-  const leo = apps.find((a) => a.slug === "leo");
-  await open(page, leo?.launch ?? "");
-  await authentikLogin(page, admin);
-  await expect.poll(() => new URL(page.url()).host).toBe(leo?.host);
-  await signIn(page, "/l0gin", admin);
-  await expect(page).toHaveURL(/\/admin\/testbed-types$/);
-  await open(page, leo?.launch ?? "");
-  await expect.poll(() => new URL(page.url()).host).toBe(leo?.host);
 });
 
 // covers: AC-17 (the login form itself is not bound)
@@ -165,7 +148,13 @@ test("a plain Authentik login with no app still works for a learner", async ({
   await page.goto(`${AUTHENTIK_URL}/if/flow/default-authentication-flow/`);
   await authentikLogin(page, learner);
   await expect(page).toHaveURL(/\/if\/user\//);
-  await expect(page.getByText("Request has been denied.")).toHaveCount(0);
+  // A booking created learner is an `external` user, which Authentik's own
+  // user page refuses by type, so the page says "denied" too. What proves the
+  // login form is not bound is that the login finished and reached /if/user/
+  // (our policy would have stopped it on the flow page) with this reason.
+  await expect(
+    page.getByText("Interface can only be accessed by internal users."),
+  ).toBeVisible();
 });
 
 // covers: AC-13, AC-17

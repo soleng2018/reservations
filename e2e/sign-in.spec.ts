@@ -54,7 +54,9 @@ test("a learner signs in at /reservations, stays there, and signs out to /", asy
 }) => {
   await signIn(page, "/reservations", learner);
   await expect(page).toHaveURL(/\/reservations$/);
-  await expect(page.getByText(/signed in as/i)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /^Welcome back/ }),
+  ).toBeVisible();
 
   const visited: string[] = [];
   page.on("framenavigated", (f) => visited.push(f.url()));

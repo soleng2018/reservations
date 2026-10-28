@@ -70,20 +70,26 @@ export function asConn(trx: Transaction<DB>): Kysely<DB> {
   return new Proxy(trx, {
     get(target, prop, receiver) {
       if (prop === "transaction")
-        return () => ({
-          execute: async <T>(fn: (t: Transaction<DB>) => Promise<T>) => {
-            await sql`savepoint as_conn`.execute(target);
-            try {
-              const value = await fn(target);
-              await sql`release savepoint as_conn`.execute(target);
-              return value;
-            } catch (e) {
-              await sql`rollback to savepoint as_conn`.execute(target);
-              await sql`release savepoint as_conn`.execute(target);
-              throw e;
-            }
-          },
-        });
+        return () => {
+          const builder = {
+            // The rollback transaction is already open, so an isolation level
+            // cannot change; code that asks for one (`readResetList`) runs.
+            setIsolationLevel: () => builder,
+            execute: async <T>(fn: (t: Transaction<DB>) => Promise<T>) => {
+              await sql`savepoint as_conn`.execute(target);
+              try {
+                const value = await fn(target);
+                await sql`release savepoint as_conn`.execute(target);
+                return value;
+              } catch (e) {
+                await sql`rollback to savepoint as_conn`.execute(target);
+                await sql`release savepoint as_conn`.execute(target);
+                throw e;
+              }
+            },
+          };
+          return builder;
+        };
       const value: unknown = Reflect.get(target, prop, receiver);
       // Kysely uses private fields, so methods must run on the real object.
       return typeof value === "function" ? value.bind(target) : value;

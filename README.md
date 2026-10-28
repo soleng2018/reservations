@@ -8,7 +8,7 @@ Built with Next.js 16 (App Router), React 19, Kysely on its own Postgres contain
 
 Read this before you start: **everything here is dev, and Authentik is shared.** A worker you start on your machine changes real Authentik group membership, and test users you create there are real.
 
-Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10. Once the Nile Portal Reset features ship, also do [Nile Portal Reset setup](#nile-portal-reset-setup-planned) before any learner books a lab.
+Do the steps in order, in one terminal, from the repo root. Every command is in a code block, and every numbered item is something you do. A fresh install is steps 1 to 6, then you start the app (step 7 for the dev server, or the [Docker](#running-with-docker) section for the containers), then steps 8 to 10. Once the Nile Portal Reset engine ships, also do [Nile Portal Reset setup](#nile-portal-reset-setup) before any learner books a lab.
 
 Placeholders in `<angle brackets>` are values only you know. Write them as plain text, without the brackets.
 
@@ -533,20 +533,26 @@ The app checks the group when you save. Under the Name field you will see one of
 
 When a testbed is deleted, the group is left alone. The worker only records that the app is done with it (an audit entry named "Authentik group released").
 
-## Nile Portal Reset setup (planned)
+## Nile Portal Reset setup
 
-**Status: not built yet.** This section describes the setup that features 24 and 25 will need ([spec 0022](docs/specs/0022-nile-portal-reset-page.md) for the admin page; the reset engine itself is still to be designed). Nothing here is needed to run the app today. When those features ship, this section is the checklist to finish before any learner books a lab, and it will be updated with the exact names.
+The **Nile Portal Reset** page is built ([spec 0022](docs/specs/0022-nile-portal-reset-page.md)). The reset engine that reads this list and calls the portal after a lab ([spec 0023](docs/specs/0023-nile-portal-reset-engine)) is not built yet, so nothing runs against a portal today and the mode stays **Off**. Nothing here is needed to run the app. Do it before the engine ships, so it is ready before any learner books a lab.
 
-After every lab, the app resets that workshop's Nile Portal by signing in as its admin and deleting what the learner made. It needs three things set up first:
+After every lab, the app will reset that workshop's Nile Portal by signing in as its admin and deleting what the learner made. It needs three things set up first:
 
 1. **The portal password file.** The reset signs in as `admin@<testbed domain>` (for workshop N, `admin@nileworkshop-N.com`), with one shared password kept in a file, never in the database. In dev that file is `~/secrets/nileportal.pw`. Make it the same way as the other secrets (one value, mode `600`). In Docker, put the file in `SECRETS_DIR` too, and it will be mounted into the containers like the six files in [Secret files](#2-secret-files). The variable that points at it will be named when the engine is built. If the file is missing, the reset will fail and tell the abort address, so check it exists before you deploy.
 
 2. **Testbed domains.** The username comes from each testbed's domain, so every testbed that gets a reset needs its domain set (see [Testbed groups](#testbed-groups)). The domain must match the portal tenant, or the reset refuses to run.
 
 3. **The Nile Portal Reset page.** Sign in to the admin console and open **Nile Portal Reset**, then:
-   - Check the list of portal calls. A fresh install already holds the starting list from the repo, so you only review it. The order matters: a thing must come after everything that uses it.
-   - Click **Edit**, confirm the pop up, type the **abort email** (where an aborted or failed reset is reported), and press **Save**. Until this is saved, the page warns that aborted resets will not be emailed.
-   - Later deploys never overwrite your list or email. Only an admin changes them, and every change is in the Audit Log.
+   - Check the list of portal calls. The first `npm run db:migrate` (the `migrate` container in Docker) loads the starting list from [db/seed/portal-reset-starting-list.json](db/seed/portal-reset-starting-list.json) and prints `seeded: N Nile Portal Reset steps`, so a fresh install already has the full list and you only review it. The order matters: a thing must come after everything that uses it.
+   - Click **Edit**, confirm the pop up, type the **abort email** (where an aborted or failed reset is reported), and press **Save**. Until this is saved, the page warns "Aborted resets will not be emailed."
+   - Leave the **mode** on **Off** for now. The choices are **Off** (resets do not run), **Dry run** (a reset reads the portal and reports what it would delete, but deletes nothing), and **Live** (deletes on real Nile Portals after every lab). Choosing Live asks for a second confirm. Run a dry run first, then go live with the owner present.
+   - To change a step, use its row: drag the handle (mouse, touch, or the keyboard) to move it, switch it off with **Enabled**, or edit its JSON. A step you removed can be brought back under **Add from starting list**.
+   - Later deploys never overwrite your list or email, because the file is loaded once (an admin may empty the list on purpose and it stays empty). Only an admin changes them, and every change is in the Audit Log as a `portal_reset.*` entry.
+
+Two rules cannot be changed from the page, because they live in the repo: a deny list (Global Settings Identity and Network Setup Users are never called, and a Save that names them is refused) and the guards (the protected SSID, system policies, Nile RADIUS, Nile DHCP, and the Default Network Policy are never deleted).
+
+**Docker:** this feature adds no new file, variable, or service. The migration and the seed run in the existing `migrate` service (the starting list is bundled into `dist/migrate.mjs`), so `scripts/deploy.sh` is enough. Only the password file in step 1 will be new, once the engine ships.
 
 ## Running with Docker
 

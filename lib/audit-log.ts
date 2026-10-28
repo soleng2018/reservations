@@ -15,6 +15,7 @@ export const AuditArea = z.enum([
   "access_groups",
   "users",
   "bookings",
+  "portal_reset",
 ]);
 export type AuditArea = z.infer<typeof AuditArea>;
 
@@ -26,6 +27,7 @@ export const AUDIT_AREA_LABEL = {
   access_groups: "Access groups",
   users: "Users",
   bookings: "Bookings",
+  portal_reset: "Nile Portal Reset",
 } as const satisfies Record<AuditArea, string>;
 
 export type AuditActionInfo = {
@@ -116,6 +118,35 @@ export const AUDIT_ACTION_INFO = {
     label: "Booking refused (duplicate email)",
     area: "bookings",
   },
+  "portal_reset.seeded": {
+    label: "Reset list seeded",
+    area: "portal_reset",
+  },
+  "portal_reset.saved": { label: "Reset list saved", area: "portal_reset" },
+  "portal_reset.step_added": {
+    label: "Reset step added",
+    area: "portal_reset",
+  },
+  "portal_reset.step_updated": {
+    label: "Reset step updated",
+    area: "portal_reset",
+  },
+  "portal_reset.step_removed": {
+    label: "Reset step removed",
+    area: "portal_reset",
+  },
+  "portal_reset.steps_reordered": {
+    label: "Reset steps reordered",
+    area: "portal_reset",
+  },
+  "portal_reset.email_changed": {
+    label: "Reset abort email changed",
+    area: "portal_reset",
+  },
+  "portal_reset.mode_changed": {
+    label: "Reset mode changed",
+    area: "portal_reset",
+  },
 } as const satisfies Record<AuditAction, AuditActionInfo>;
 
 // Every action of one area, for the `area` filter's `action in (...)`.
@@ -199,6 +230,8 @@ export const TARGET_TYPE_LABEL = {
   user: "User",
   booking: "Booking",
   authentik_group: "Access group",
+  portal_reset_step: "Reset step",
+  portal_reset_settings: "Nile Portal Reset settings",
 } as const satisfies Record<AuditTargetType, string>;
 
 export const AUDIT_LOG_PATH = "/admin/audit-log";
@@ -266,6 +299,7 @@ const UUID_TARGETS: ReadonlySet<AuditTargetType> = new Set([
   "testbed",
   "api_key",
   "booking",
+  "portal_reset_step",
 ]);
 const SPECIAL_USER = /^(?:authentik:\d{1,18}|unknown)$/;
 const GROUP_ID = /^[A-Za-z0-9-]{1,64}$/;
@@ -281,7 +315,9 @@ export function parseTarget(raw: string): AuditTarget | undefined {
     ? isUuid(id)
     : type.data === "user"
       ? isUuid(id) || SPECIAL_USER.test(id)
-      : GROUP_ID.test(id);
+      : type.data === "portal_reset_settings"
+        ? id === "settings"
+        : GROUP_ID.test(id);
   return fits ? { type: type.data, id } : undefined;
 }
 

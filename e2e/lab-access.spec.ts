@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { haveSecrets, learner, signIn } from "./authentik";
 import { expectNoSeriousViolations } from "./axe";
 import { continueButton, pickStart, waitForToken } from "./book-flow";
+import { resetDevBookingLimits } from "./db";
 
 // Feature 14 (spec 0012) in the browser, against the real database and
 // Authentik, as hol-test-learner: book through signed in /book and see the
@@ -11,6 +12,7 @@ import { continueButton, pickStart, waitForToken } from "./book-flow";
 // failed run never leaves it blocked by the one active booking rule. Current
 // and Past cards need the clock to move, so verify.md covers those by hand.
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
+test.beforeAll(resetDevBookingLimits);
 test.describe.configure({ mode: "serial" });
 
 const TYPE = process.env.E2E_LAB_TYPE ?? "hol-test type";

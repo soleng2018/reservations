@@ -43,3 +43,20 @@ export async function withDb<T>(fn: (c: Client) => Promise<T>): Promise<T> {
     await client.end();
   }
 }
+
+// The booking limits (spec 0004 AC-4) are per IP and per email. In dev every
+// request shares the one `untrusted` IP bucket (server/request-ip.ts), so one
+// full run of the booking specs would trip the 5 per 10 minutes limit and fail
+// the later ones with "Please try again in a little while". The specs that
+// book clear it first. Only the dev bucket and the fixture learner's email
+// bucket go; a real address's bucket is never touched.
+export async function resetDevBookingLimits(): Promise<void> {
+  if (!haveDb) return;
+  await withDb((c) =>
+    c.query(
+      `delete from hol_app.rate_limits
+        where bucket_key like '%:ip:untrusted'
+           or bucket_key like '%:email:hol-test-learner@example.test'`,
+    ),
+  );
+}

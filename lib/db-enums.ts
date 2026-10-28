@@ -82,8 +82,15 @@ export const AuditTargetType = z.enum([
   "user",
   "booking",
   "authentik_group",
+  "portal_reset_step",
+  "portal_reset_settings",
 ]);
 export type AuditTargetType = z.infer<typeof AuditTargetType>;
+
+// Spec 0022 AC-22: whether a Nile Portal reset runs at all, runs read only, or
+// deletes for real.
+export const PortalResetMode = z.enum(["off", "dry_run", "live"]);
+export type PortalResetMode = z.infer<typeof PortalResetMode>;
 
 // Statuses that hold a testbed slot and count toward one live booking per user.
 export const LIVE_BOOKING_STATUSES = [
@@ -107,4 +114,5 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "email_messages.status": EmailStatus.options,
   "set_password_links.ended_reason": SetPasswordLinkEndReason.options,
   "audit_events.target_type": AuditTargetType.options,
+  "portal_reset_settings.mode": PortalResetMode.options,
 };

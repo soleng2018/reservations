@@ -39,6 +39,7 @@ import {
   type GroupChoice,
   type TestbedEditDefaults,
 } from "@/lib/testbeds";
+import { SAVE_MESSAGES } from "@/lib/portal-reset/messages";
 import { requireAdmin } from "@/server/auth/require";
 import { authentik } from "@/server/authentik/client";
 import { listTestbedGroupChoices } from "@/server/authentik/groups";
@@ -73,6 +74,7 @@ import {
   testbedTypeBlockers,
 } from "@/server/db/delete-blockers";
 import { assertEncryptionEnv } from "@/server/env";
+import { savePortalReset, type SaveOutcome } from "@/server/portal-reset/steps";
 import { newPkce } from "@/server/google/oauth";
 import {
   clearSignInCookie,
@@ -989,6 +991,51 @@ export async function deleteTestbedAction(
       return err(gone);
     default: {
       const never: never = deleted.error;
+      return never;
+    }
+  }
+}
+
+export type SavePortalResetError =
+  | { readonly kind: "invalid"; readonly fields: FieldErrors }
+  // Another admin saved first: the page offers Reload and keeps the draft.
+  | { readonly kind: "stale"; readonly message: string }
+  | { readonly kind: "failed"; readonly message: string };
+
+// Spec 0022: the one Save of the Nile Portal Reset page. The page binds the
+// version it showed; `input` is the email, the mode, and the whole list in
+// final order. It is untrusted and parsed in savePortalReset.
+export async function savePortalResetAction(
+  expectedVersion: number,
+  input: unknown,
+): Promise<Result<SaveOutcome, SavePortalResetError>> {
+  const { user } = await requireAdmin();
+  const fields =
+    typeof input === "object" && input !== null && !Array.isArray(input)
+      ? input
+      : {};
+  const saved = await savePortalReset(
+    db(),
+    { ...fields, expectedVersion },
+    user.id,
+  );
+  if (saved.ok) {
+    revalidatePath("/admin/nile-portal-reset");
+    return saved;
+  }
+  const { error } = saved;
+  switch (error.kind) {
+    case "invalid":
+      return err(error);
+    case "stale":
+      return err({ kind: "stale", message: SAVE_MESSAGES.stale });
+    case "unknown_step":
+    case "duplicate_step":
+    case "bad_seed_key":
+    case "duplicate_name":
+      return err({ kind: "failed", message: SAVE_MESSAGES[error.kind] });
+    default: {
+      const never: never = error;
       return never;
     }
   }

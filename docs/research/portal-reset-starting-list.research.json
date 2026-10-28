@@ -1,0 +1,818 @@
+{
+  "description": "Nile Portal reset: the exact portal API calls that return a workshop tenant to its baseline, in the order a reset runs them. Source of truth for spec 0022 (feature 25) and the engine in feature 24. The step shape is a draft, to be settled by /architect; the calls, bodies, rules, and order are what was tested.",
+  "testedOn": {
+    "tenant": "Nile Workshop 4",
+    "portal": "https://u1.nile-global.cloud",
+    "date": "2026-10-27"
+  },
+  "auth": {
+    "signIn": "Browser or scripted sign in to the portal as admin@<testbed domain> through Authentik (see feature 24). The portal then sends x-id-token on every API call.",
+    "headers": ["x-id-token", "x-nile-client", "x-requested-with"],
+    "bodyContentType": "application/json",
+    "note": "All paths are relative to the portal host. The tenant id is not needed in these paths; it comes from the list reads.",
+    "sharedPassword": "All five workshops share one portal password (owner decision, 2026-10-27), read from a file on disk.",
+    "onSignInFailure": "Do not continue and change nothing on the portal. Write an audit row and email the abort address from the Nile Portal Reset page. Never put the password, token, or the portal's raw reply in the audit row or the email."
+  },
+  "steps": [
+    {
+      "key": "integrations",
+      "order": 1,
+      "featureName": "Integrations",
+      "kind": "delete-each",
+      "location": "Global Settings, Integrations (/global-settings/integrations)",
+      "list": {
+        "method": "GET",
+        "path": "/api/v1/subscriptions/webhooks/config?size=2000",
+        "itemsAt": "content",
+        "idField": "id",
+        "labelField": "name",
+        "note": "Webhook integrations. Each record holds a webHookUrl and a token: both are secrets (a webhook URL is a capability) and must never reach a log, audit row, email, or this file."
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/subscriptions/webhooks/config/{id}",
+        "successStatus": 204,
+        "verified": true,
+        "note": "Deleting the webhook also removes its alert subscriptions (7 on Workshop 4, from GET /api/v1/subscriptions/webhooks?size=2000, linked by webHooksId): that list was empty afterwards, with no separate delete."
+      },
+      "otherIntegrationTypes": [
+        {
+          "type": "Email subscriptions",
+          "list": "GET /api/v1/subscriptions/email?size=2000",
+          "state": "Empty on Workshop 4; the delete call was NOT found."
+        },
+        {
+          "type": "SIEM",
+          "list": "GET /api/v1/siems?size=2000 (and GET /api/v1/siem-topics)",
+          "state": "Empty on Workshop 4; the delete call was NOT found."
+        }
+      ],
+      "note": "The page shows one card per integration, with Edit, Delete (a trash icon that appears on hover), and Test. Workshop 4 held one webhook, Webhook1, created by wks4-admin@nileworkshop-4.com, subscribed to six alert types (including MY_NILE_TICKET). The page asks 'Are you sure you want to delete this webhook?' and then shows 'No integrations found'. The Identity page (GET /api/v1/idps) is a different page and is never touched (see neverTouch). On the second run (API only) the webhook sdfsdfasd was deleted and a CrowdStrike SIEM was found, which was then deleted through the page (204); its call is DELETE /api/v1/siems/{id}.",
+      "systemDefined": "No system defined integration was seen; nothing is skipped. If one exists on other tenants, find its marker.",
+      "orderRule": "No ordering dependency was seen. DNS (Infoblox) servers are placed before segments and DHCP to be safe (creating one depends on a site using Nile DHCP; the delete worked with no segment present).",
+      "expectedAfter": "No webhook configs and no webhook subscriptions.",
+      "verified": "All three Integrations groups tested: webhook (3 times), SIEM (four vendors), email (8 rows), DNS/Infoblox (1 server). Each by DELETE <list path>/{id}, 204. Splunk, Snowflake, and Generic HTTP are untested.",
+      "pattern": "Every integration type is deleted the same way: read its list, then send DELETE on that type's own route with the record's id, no body, answer 204. The deletes of anything attached to it (its alert subscriptions) happen on their own. The ROUTE differs per type, so the engine holds one list route and one delete route per type, run in the order below. A new type is added as one more row, not a new step kind.",
+      "types": [
+        {
+          "type": "Webhook",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/subscriptions/webhooks/config?size=2000",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/subscriptions/webhooks/config/{id}",
+            "successStatus": 204,
+            "verified": true
+          },
+          "cascade": "Its alert subscriptions (GET /api/v1/subscriptions/webhooks?size=2000, linked by webHooksId) are removed with it.",
+          "secrets": "webHookUrl and token"
+        },
+        {
+          "type": "SIEM (all vendors share this route)",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/siems?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/siems/{id}",
+            "successStatus": 204,
+            "verified": true
+          },
+          "cascade": "Its topic subscriptions (GET /api/v1/siem-topics) were not checked after the delete.",
+          "secrets": "the SIEM's URL and credentials: treat the whole record as secret",
+          "vendorsTested": [
+            "crowdstrike",
+            "logic-monitor",
+            "sumo-logic",
+            "pull (SIEM Events Pull)"
+          ],
+          "vendorsNotTested": ["splunk", "snowflake", "generic HTTP"],
+          "note": "The vendor is the record's type value. CrowdStrike, LogicMonitor and Sumo Logic were each created by the owner and deleted with DELETE /api/v1/siems/{id}, 204, from the same list. The other vendors are expected to behave the same, but were not created. SIEM Events Pull is in this same list with type 'pull' (its name is in the 'instance' field); deleted with DELETE /api/v1/siems/{id}, 204 (2026-10-27)."
+        },
+        {
+          "type": "Email subscriptions",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/subscriptions/email?size=2000",
+            "itemsAt": "content",
+            "idField": "id"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/subscriptions/email/{id}",
+            "successStatus": 204,
+            "verified": true,
+            "note": "Tested 2026-10-27 on 8 rows, 204 each. Each row is ONE recipient for ONE alert type (fields: id, emailId, notificationType, subNotificationType, severities), so a recipient subscribed to several alert types has several rows, and each row is deleted by its own id. The recipient's address (emailId) is personal data: never put it in an audit row or email, only the alert type and a count."
+          }
+        },
+        {
+          "type": "DNS (Infoblox DNS servers, via DDNS servers)",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/dhcp/ddns/ddns-servers?page=0&size=500",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "fields": "id, name, type, server, enabled, geoScope (the TSIG secret is stored but is a secret: never read it into a log, audit row, or email)"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/dhcp/ddns/ddns-servers/{id}",
+            "successStatus": 204,
+            "verified": true,
+            "note": "Tested 2026-10-27 on an Infoblox DNS server the owner created: 204, list empty afterwards. It is the derived route by convention, now confirmed."
+          },
+          "pageNote": "Infoblox is NOT a card on the main Integrations page. It opens its own page, 'Integrations / Infoblox / DNS servers', a table (DNS Name, IP Address, Geo Scope) with add, delete, and edit controls, backed by this list. So name correlation against the main page's cards (discovery step 5) will not find it; the list route is found because the main page calls it on load.",
+          "createForm": "Add DNS Server: DNS Name*, IP Address*, Geo Scope (a site selector), Authentication TSIG with Key Name*, Secret Key*, Algorithm (HMAC-SHA256), a Test Connection button, and optional Domains. The TSIG secret is a secret: never log or store it.",
+          "geoScopeDependency": "Creating a DNS server needs a site that uses Nile DHCP (the Geo Scope panel lists only those), so one cannot be created once the segments and DHCP scopes are gone. Deleting one did not need anything. Whether the delete order against segments and DHCP scopes matters was not tested (the delete worked when no segment existed); running DNS servers first is the cautious order."
+        }
+      ],
+      "typesOffered": {
+        "seenOn": "Global Settings, Integrations, Setup Integration, 2026-10-27 (read only)",
+        "Alerts": ["Email", "Webhooks"],
+        "SIEM": [
+          "LogicMonitor",
+          "Splunk",
+          "Snowflake",
+          "CrowdStrike",
+          "Sumo Logic",
+          "Generic HTTP",
+          "SIEM Events Pull"
+        ],
+        "DNS": ["Infoblox"],
+        "coverage": {
+          "known": [
+            "Webhooks",
+            "SIEM: CrowdStrike, LogicMonitor, Sumo Logic, SIEM Events Pull (type 'pull')",
+            "Email subscriptions",
+            "DNS (Infoblox DNS servers)"
+          ],
+          "probablyCovered": "Splunk, Snowflake, and Generic HTTP most likely live in /api/v1/siems with their own type value (four vendors now confirmed on that route).",
+          "unknown": []
+        },
+        "gapRule": "An integration on a route the engine does not list is NOT deleted and NOT reported: the engine cannot tell it is there. It is not a failure. To close the gap, find each remaining type's list route by creating one on a scratch tenant and watching the page's calls; until then the step covers only the types in 'types'."
+      },
+      "pageLoadCalls": [
+        "GET /api/v1/siems?size=2000",
+        "GET /api/v1/subscriptions/webhooks/config?size=2000",
+        "GET /api/v1/subscriptions/webhooks?size=2000",
+        "GET /api/v1/subscriptions/email?size=2000",
+        "GET /api/v1/siem-topics",
+        "GET /api/v1/dhcp/ddns/ddns-servers?page=0&size=500"
+      ],
+      "pageLoadCallsNote": "The six integration related calls the Integrations page makes on load (2026-10-27, unfiltered). Everything else it calls is shared page furniture (userinfo, featureflags, tenant, sites, zones, and so on).",
+      "completeness": {
+        "script": "One loop over the types in 'types': list, delete each id on that type's route, wait, list again. The run is only 'clean' when every list is empty afterwards; anything left is reported with its type and name (never its URL or token).",
+        "deletesAll": [
+          "Webhooks",
+          "SIEM vendors in /api/v1/siems (four tested)",
+          "Email subscriptions",
+          "DNS (Infoblox) servers"
+        ],
+        "mayLeaveBehind": [
+          "Splunk, Snowflake, Generic HTTP SIEMs (same route, untested)",
+          "Any future type on a route not found by discovery"
+        ],
+        "checkAtEnd": "After the loop, re-read every list in 'types'. Leftovers are an unexpected failure (audited and emailed, D9), not silent."
+      }
+    },
+    {
+      "key": "ssids",
+      "order": 2,
+      "featureName": "SSIDs",
+      "kind": "delete-each",
+      "list": {
+        "method": "GET",
+        "path": "/api/v1/settings/ssids?size=2000",
+        "itemsAt": "data.content",
+        "idField": "id",
+        "labelField": "instanceName"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/settings/ssids/{id}",
+        "successStatus": 204
+      },
+      "skipWhen": {
+        "field": "ssid.popTunnelUsed",
+        "equals": true,
+        "reason": "The system guest service SSID. It can never be deleted (owner, 2026-10-27), so the skip is a hard guard in the engine, not an editable option. Do not match by name (Workshop 1: Pod-1-Guest, Workshop 4: BITS-LAB Secure Guest) and not by ssid.enableInternalGuest, which is also true for a deletable user made captive portal SSID.",
+        "mustNeverDelete": true
+      },
+      "orderInsideStep": "Any. No SSID depends on another.",
+      "expectedAfter": "Exactly one SSID is left (the one with ssid.popTunnelUsed true). A second pass finds nothing to delete.",
+      "note": "Workshop 4 held Guest, IOT, PSK, Cortp, and BITS-LAB Secure Guest (protected). The four others each deleted with 204. Cortp carries two referenceIds (probably segments or RADIUS), so segments and RADIUS must come after SSIDs.",
+      "verified": true
+    },
+    {
+      "key": "guest-service-auth-geo-control",
+      "order": 3,
+      "featureName": "Guest Service Auth and Geo Control",
+      "kind": "set-value",
+      "location": "Global Settings, Advanced, Guest Service Auth and Geo Control",
+      "read": {
+        "method": "GET",
+        "path": "/api/v1/guestpop/advance",
+        "responseShape": "[{ id, tenantId, advanceSettingsEnabled }]",
+        "recordAt": "[0]"
+      },
+      "write": {
+        "method": "PUT",
+        "path": "/api/v1/guestpop/advance/{id}",
+        "body": {
+          "id": "<record id from the read>",
+          "tenantId": "<record tenantId from the read>",
+          "advanceSettingsEnabled": "<true | false>"
+        },
+        "successStatus": 200,
+        "responseShape": "the same record with the new value"
+      },
+      "logic": [
+        "Read advanceSettingsEnabled.",
+        "If it is false (OFF): PUT true, wait 10 seconds, then PUT false.",
+        "If it is true (ON): PUT false only.",
+        "Read again; it must be false (OFF is the default)."
+      ],
+      "waitSeconds": 10,
+      "expectedAfter": "advanceSettingsEnabled is false. Turning it ON empties dnsServerIPs and shows an advAuthServerDTOs entry in GET /api/v1/guestpop; turning it OFF restores them.",
+      "note": "The portal UI ignores a click on this switch while it is ON and sends nothing, so the reset must use the API, not the page. A PUT true while already ON is accepted and harmless.",
+      "verified": true
+    },
+    {
+      "key": "wired-access-management",
+      "order": 4,
+      "featureName": "Wired Access Management and Wired SSO",
+      "kind": "branch-on-state",
+      "location": "Network Setup, Access Management, Wired tab and Wired SSO tab",
+      "stateRead": {
+        "method": "GET",
+        "path": "/api/v1/settings/sso-segment",
+        "wiredSsoEnabledWhen": "The response has ssoSegment.preTransactionSegment and ssoSegment.postTransactionSegment (a pre auth and a post auth segment). When disabled the reply is a 200 with no ssoSegment and no id: {encrypted:false,useTags:false,settingStatus:\"VALID\",referenceIds:[],tagIds:[]}."
+      },
+      "wiredList": {
+        "method": "GET",
+        "path": "/api/v1/client-configs?size=2000",
+        "itemsAt": "[].clientConfig",
+        "idField": "id",
+        "ruleTypeField": "ruleType",
+        "note": "The page itself lists through POST /api/v1/client-config-paginated?pageNumber=0&pageSize=10 with body {\"clientSearchProperties\":{\"searchProperties\":{}},\"clientSortProperties\":{\"sortProperties\":{\"state\":\"DESC\"}}}. ids look like <tenantId>-<mac or rule>, for example <tenantId>-00:11:33 or <tenantId>-Operating System/Windows OS, so ids contain spaces and slashes: send them in the JSON body, never in a URL path. ruleType values seen: OUI, INDIVIDUAL, ALL, and an Operating System rule. ruleType also takes FINGER_PRINT (a device type rule)."
+      },
+      "wiredDelete": {
+        "method": "DELETE",
+        "path": "/api/v1/client-configs",
+        "body": {
+          "ids": ["<clientConfig.id>", "..."]
+        },
+        "successStatus": 204,
+        "note": "Takes a list, so one call can delete several entries."
+      },
+      "ssoDelete": {
+        "method": "DELETE",
+        "path": "/api/v1/settings/sso-segment",
+        "successStatus": 204,
+        "note": "No id and no body. The page confirms with 'Disabling Wired SSO will delete the Wired SSO configuration.' and the config is one record per tenant."
+      },
+      "logic": [
+        "Read the state (stateRead).",
+        "If Wired SSO is enabled: (1) delete every Wired entry whose ruleType is not ALL (wiredDelete), (2) delete the Wired SSO config (ssoDelete), (3) delete the ALL entry (wiredDelete). The portal will not delete ALL while Wired SSO is enabled, so ALL goes last, after the SSO config.",
+        "If Wired SSO is not enabled: delete every entry in the Wired table, ALL included, in one wiredDelete call.",
+        "Read again: the Wired list is empty and the SSO read shows no ssoSegment."
+      ],
+      "orderRule": "Enabled case: non ALL entries, then the SSO config, then ALL (owner instruction; the portal refuses to delete ALL while Wired SSO is enabled). Both cases before Segments, because the SSO config and wired entries reference segments (the SSO config holds referenceIds to its two segments; each wired entry has a segment).",
+      "expectedAfter": "Both cases: no approved Wired entry is left and the SSO read shows no ssoSegment. A device that was deleted can re-onboard and show as Waiting for Approval afterwards; that is accepted (owner, 2026-10-27), so the final check must not demand an empty table.",
+      "verified": "Both branches tested on Workshop 4 (2026-10-27). Enabled, run twice: first three entries then the SSO config then ALL; second with new rules (an OUI rule, ALL, and a fingerprint rule named voip device) in the same order, all 204. Not enabled: ALL deleted on its own in one call (204).",
+      "note": "The portal UI warns that a deleted device onboards again if it matches an OUI rule or an ALL rule exists, so ALL goes last."
+    },
+    {
+      "key": "policies",
+      "order": 5,
+      "featureName": "Policies (inside Policy Sets)",
+      "kind": "delete-each",
+      "location": "Security, Trust Engine, Policy Sets, open a set, List view",
+      "list": {
+        "method": "GET",
+        "path": "/api/v3/policy/policysets",
+        "itemsAt": "content[].policies[]",
+        "idField": "id",
+        "parentIdField": "content[].id",
+        "labelField": "name"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v3/policy/policysets/{policySetId}/rules/{id}",
+        "body": {
+          "id": "<policy id>",
+          "policySetId": "<policy set id>"
+        },
+        "successStatus": 204,
+        "note": "The page sends the ids in the body as well as the path. Takes effect at once; the page's DONE button is not needed."
+      },
+      "skipWhen": {
+        "field": "policyAttribute.isDefault",
+        "equals": true,
+        "mustNeverDelete": true,
+        "reason": "System defined policies (Local to Local, Quarantine to Internet, and so on; 8 on Workshop 4). The page shows them in gold with a dimmed checkbox."
+      },
+      "note": "A policy set is not deleted, only the policies inside it (Global Default Policy Set holds the 8 system policies, ordering 99900 and above). The admin policy dfdsfds (sfsdf to sfsdf, ordering 1) was the only deletable one on Workshop 4.",
+      "orderRule": "Before service profiles (a profile cannot go while a policy uses it; policyCount on the profile) and before groups (a group in use by a policy cannot go).",
+      "verified": true
+    },
+    {
+      "key": "service-profiles",
+      "order": 6,
+      "featureName": "Service Profiles (admin defined)",
+      "kind": "delete-each",
+      "list": {
+        "method": "GET",
+        "path": "/api/v3/policy/service-profiles",
+        "idField": "id",
+        "labelField": "name"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v3/policy/service-profiles/{id}",
+        "successStatus": "unknown",
+        "verified": false,
+        "note": "GUESSED from the other routes. Not found: Workshop 4 held no admin defined service profile to delete, so the page's call was never seen."
+      },
+      "skipWhen": {
+        "field": "system defined",
+        "reason": "The owner says system defined profiles cannot be deleted. Workshop 4 has three (DNS Services, Essential Infra Services, Open Service Profile), all created at tenant creation (2025-12-03). The records carry no system flag: the first two have a description starting 'Default Service Profile'; Open Service Profile does not. The marker still has to be found, for example by creating an admin profile and comparing."
+      },
+      "orderRule": "After policies, before groups.",
+      "verified": false
+    },
+    {
+      "key": "policy-groups",
+      "order": 7,
+      "featureName": "Policy Groups: user, device, then app (admin defined)",
+      "kind": "delete-each",
+      "list": {
+        "method": "GET",
+        "path": "/api/v3/policy/groups?size=2000",
+        "itemsAt": "content",
+        "idField": "id",
+        "typeField": "groupType",
+        "labelField": "name"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v3/policy/groups/{id}",
+        "successStatus": 204,
+        "note": "Tested on a User group (sfsdf)."
+      },
+      "logic": [
+        "Delete every group whose groupType is User or Device.",
+        "Then delete App groups that are not system defined."
+      ],
+      "skipWhen": {
+        "field": "groupType App and system defined",
+        "reason": "The six App groups on Workshop 4 (External DNS, Intranet, Internet, Infra App Group, External, Local) are system defined: each belongs to one of the 8 system policies, and the portal refuses to delete any of them. Tested 2026-10-27: DELETE /api/v3/policy/groups/{id} answers 400 {\"errors\":[{\"code\":\"general\",\"message\":\"Cannot delete, Group belongs to a Policy\"}]} for all six (two through the page, four through the API), and nothing is deleted. The record has no system flag; the descriptions start 'Default App Group'.",
+        "engineRule": "Because the portal itself refuses, an App group delete that answers 400 'Cannot delete, Group belongs to a Policy' is an expected skip, not a failure. Do not count it against the retry or the second pass, and do not report it as an error."
+      },
+      "note": "The user group sfsdf matched on Segment IOT-Seg, and that is what blocked deleting the IOT-Seg segment ('Policy Groups are using IOT-Seg').",
+      "orderRule": "After policies and service profiles, before segments.",
+      "verified": "User group delete tested (204). App group delete tested: all six refused with 400 (system defined, belong to a policy). Device group delete not tested (none existed)."
+    },
+    {
+      "key": "segments",
+      "order": 8,
+      "featureName": "Segments",
+      "kind": "delete-each",
+      "list": {
+        "method": "GET",
+        "path": "/api/v1/settings/segments?size=2000",
+        "itemsAt": "data.content",
+        "idField": "id",
+        "labelField": "instanceName"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/settings/segments/{id}",
+        "successStatus": 204,
+        "body": "None needed. The page sends the whole segment record as the body, but the API accepts the id in the path alone (tested on guest, Contractor, PSK, Corp: 204 each).",
+        "verified": true
+      },
+      "blockedBy": [
+        "Policy groups: with a policy group matching the segment (sfsdf on IOT-Seg) the PAGE refused with 'Policy Groups are using IOT-Seg' and sent no request. Once that group was deleted, the delete went through. Whether the API alone refuses a segment that a group still uses is not tested.",
+        "Not blockers (tested): a DHCP client link (IOT-Seg, Corp, Contractor, PSK), a RADIUS link (Contractor, Corp), and a guest portal link (guest). All five segments deleted with 204 once no policy group used them."
+      ],
+      "orderRule": "After SSIDs (1), Wired SSO and wired entries (3), and policies and groups (4 to 6). Order against DHCP and RADIUS entries is not needed for the delete to succeed (segments with DHCP and RADIUS links deleted fine); whether DHCP and RADIUS should be deleted before or after segments is for those steps to settle.",
+      "verified": "All five segments on Workshop 4 deleted (IOT-Seg through the page; guest, Contractor, PSK, Corp through the API with the id only, 204 each). The list was empty afterwards.",
+      "expectedAfter": "The segment list is empty (Workshop 4: none left)."
+    },
+    {
+      "key": "authentication-admin-radius-and-guest-portals",
+      "order": 9,
+      "featureName": "Authentication: admin defined RADIUS servers and Guest Portals",
+      "kind": "delete-each",
+      "location": "Network Setup, Authentication",
+      "substeps": [
+        {
+          "name": "Admin defined RADIUS servers",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/radius?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/settings/radius/{id}",
+            "successStatus": 204,
+            "verified": true
+          },
+          "skipWhen": {
+            "field": "cloudRadius",
+            "equals": true,
+            "reason": "Nile RADIUS (the Nile hosted Cloud RADIUS, geo scope All). It is in the same list as the admin servers and is not deleted from here; its policies and certificates are handled in step 10 and 11. The cloud flag is the marker seen in the record (true for Nile RADIUS, false for the others); the exact property path was not pinned down.",
+            "mustNeverDelete": true
+          }
+        },
+        {
+          "name": "Guest Portals",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/portalconfig",
+            "itemsAt": "[]",
+            "idField": "id",
+            "labelField": "name"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/portalconfig/{id}",
+            "successStatus": 204,
+            "verified": true
+          },
+          "note": "The page lists RADIUS servers and Guest Portals in one Authentication table. Tested on Workshop 4 with the Guest Portal TEST (Nile Hosted, Guest - Click Through, geo scope HOL). Its id was the geo scoped portal config that showed in GET /api/v1/guestpop advAuthServerDTOs while Guest Service Auth and Geo Control was ON."
+        }
+      ],
+      "orderRule": "Owner's order (2026-10-27): admin defined RADIUS servers and Guest Portals first, then Nile RADIUS (steps 9 and 10).",
+      "expectedAfter": "The RADIUS list holds only Nile RADIUS (cloudRadius true) and the Guest Portal list is empty.",
+      "verified": "Tested twice on Workshop 4 through the API (204 each): the second run deleted two new RADIUS servers and two new Guest Portals. cloudRadius true is the marker for Nile RADIUS (the run stopped unless exactly one record had it)."
+    },
+    {
+      "key": "nile-radius-policies",
+      "order": 10,
+      "featureName": "Nile RADIUS: policies",
+      "kind": "delete-each",
+      "location": "Network Setup, Authentication, Nile RADIUS, Policy tab",
+      "list": {
+        "method": "GET",
+        "path": "/api/v1/cloudradius/policysets",
+        "itemsAt": "[].policies[]",
+        "idField": "id",
+        "parentIdField": "[].id",
+        "labelField": "name"
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/cloudradius/policysets/{policySetId}/policies/{id}",
+        "successStatus": 204,
+        "verified": true
+      },
+      "skipWhen": {
+        "field": "isDefault",
+        "equals": true,
+        "mustNeverDelete": true,
+        "reason": "Default Network Policy (default true, isDefault true, position 10000, expression 'true'). It cannot be deleted."
+      },
+      "setValue": {
+        "what": "The Default Network Policy must end as REJECT (authResult). If it is ACCEPT, change it to REJECT.",
+        "read": "authResult on the policy in the policysets list (REJECT on Workshop 4)",
+        "write": {
+          "method": "PUT",
+          "path": "/api/v1/cloudradius/policysets/{policySetId}/policies/{id}",
+          "body": "The policy's own record as read from the list (default, enabled, id, name, description, isDefault, isEnabled, tenantId, position, authResult, expression, userFriendlyExpression, actions) with authResult set to REJECT.",
+          "successStatus": 200,
+          "verified": true,
+          "note": "Found by trying the same route as the policy delete (the page's own edit call was not seen: opening Nile RADIUS in the page, once its certificates are gone, shows 'Confirm RADIUS Authentication Change' and CONTINUE would enable Nile Cloud RADIUS). Tested on Workshop 4: authResult went ACCEPT to REJECT and no other field changed. The record carries no secrets."
+        },
+        "logic": "Read the default policy after the deletes. If authResult is REJECT, do nothing (success). If it is ACCEPT, PUT the record back with REJECT, then read again."
+      },
+      "note": "Workshop 4 held one admin policy, 'Policy 1' (group NileWorkshop4Contractor in SCIM.Groups AND SSID.Name == BITS-LAB Secure Guest, ACCEPT), in the policy set 'Nile Policy Set'. Deleted through the page, 204. The page's policy list is not an HTML table. On the second run the default had been set to ACCEPT by the owner's test data and the PUT put it back to REJECT.",
+      "orderRule": "Before certificates (step 10), per the owner.",
+      "verified": "Delete tested (204). Setting the default to REJECT tested (PUT, 200, only authResult changed). The REJECT-already case tested on the first run."
+    },
+    {
+      "key": "nile-radius-certificates",
+      "order": 11,
+      "featureName": "Nile RADIUS: certificates and PEAP config",
+      "kind": "delete-config",
+      "location": "Network Setup, Authentication, Nile RADIUS, Authentication tab (Auth type EAP-TLS or PEAP-MSCHAPv2)",
+      "read": [
+        {
+          "method": "GET",
+          "path": "/api/v1/cloudradius/config",
+          "use": "eapTLSConfig.complete, eapPeapConfig.complete, usable; serverCertificate and caChain are empty when cleared. Private keys and certificates are secrets: never log them."
+        },
+        {
+          "method": "GET",
+          "path": "/api/v2/cloudradius/config/{configId}/eaptlsconfig/keys",
+          "use": "serverCertMetadata (null when none) and trustedCertMetadata ([] when none)"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/cloudradius/config/demo/keys",
+          "use": "clientCertificateDetails (demo client certificates); 404 when none"
+        }
+      ],
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/cloudradius/config/demo/keys",
+        "successStatus": 200,
+        "response": "'Demo certificates deleted successfully'",
+        "verified": true,
+        "note": "One call removes ALL the certificate material, not one certificate: the three demo client certificates (marketing, sales, hr), the server certificate and its private key, and the trusted CA (NileDemoRootCA). Afterwards the config reads usable false and eapTLSConfig.complete false, and the demo keys list answers 404. The page shows a delete icon on each demo certificate but each press calls this same route."
+      },
+      "peap": {
+        "state": "On Workshop 4 PEAP was never configured (eapPeapConfig.complete false), so there was nothing to delete.",
+        "delete": {
+          "method": "unknown",
+          "path": "unknown",
+          "verified": false,
+          "note": "NOT FOUND. The PEAP configuration delete call needs a tenant where PEAP is set up (the Auth type dropdown on the Authentication tab chooses EAP-TLS or PEAP-MSCHAPv2; feature flag ff_nile_radius_peap)."
+        }
+      },
+      "sideEffect": "After the delete the page shows 'Confirm RADIUS Authentication Change: Enabling Nile Cloud RADIUS will override your existing wired authentication with external RADIUS...' when Nile RADIUS is opened. It is a page prompt, no request is made until CONTINUE is pressed, and the API does not send it.",
+      "orderRule": "After the Nile RADIUS policies (step 9), per the owner.",
+      "expectedAfter": "eapTLSConfig.complete false, no server certificate, no trusted CA, no demo certificates; eapPeapConfig.complete false.",
+      "verified": "Tested twice on Workshop 4 (200 each): all demo client certificates, the server certificate, and the trusted CA were cleared in one call each time. PEAP not tested (never configured)."
+    },
+    {
+      "key": "dhcp",
+      "order": 12,
+      "featureName": "DHCP: admin defined servers and the Nile DHCP scopes",
+      "kind": "delete-each",
+      "location": "Network Setup, DHCP",
+      "substeps": [
+        {
+          "name": "Admin defined DHCP servers",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/dhcp-clients?size=2000",
+            "itemsAt": "data.content",
+            "idField": "id",
+            "labelField": "instanceName"
+          },
+          "delete": {
+            "method": "DELETE",
+            "path": "/api/v1/settings/dhcp-clients/{id}",
+            "successStatus": 204,
+            "verified": true
+          },
+          "skipWhen": {
+            "field": "dhcpClient.cloudDHCP",
+            "equals": true,
+            "mustNeverDelete": true,
+            "reason": "Nile DHCP (the Nile hosted DHCP, geo scope Any). It is in the same list as the admin servers. Do not match by name."
+          },
+          "note": "Tested on Workshop 4 with EXTERNAL DHCP (172.106.253.2, geo scope HOL, one subnet): 204.",
+          "verified": "Tested twice on Workshop 4: EXTERNAL DHCP through the page and myDHCP through the API (204 each). The run stopped unless exactly one record had cloudDHCP true."
+        },
+        {
+          "name": "Nile DHCP scopes (subnets)",
+          "list": {
+            "method": "GET",
+            "path": "/api/v1/settings/dhcp-clients?size=2000",
+            "itemsAt": "data.content[] where dhcpClient.cloudDHCP is true",
+            "scopesAt": "dhcpClient.servers[0].subnets[]",
+            "scopeFields": "prefix (for example 192.168.11.0/24), router, pool, leases",
+            "scopeNames": "The page shows a name per scope (PSK-SSO-Scope, IOT-Scope, Employee, Contractor); the name field was not pinned down."
+          },
+          "delete": {
+            "method": "PUT",
+            "path": "/api/v1/settings/dhcp-clients/{id}",
+            "body": "The Nile DHCP record exactly as read from the list, with dhcpClient.servers[0].subnets set to an empty list ([]). One PUT removes ALL scopes. The id is the DHCP record's id, not a scope's.",
+            "successStatus": 200,
+            "verified": true,
+            "note": "Tested through the API on Workshop 4 (2 scopes, one PUT, 200, zero left). The page itself deletes one scope per PUT because its list allows one selection at a time; the engine does not need to."
+          },
+          "pageLimit": "The page lets only ONE scope be selected at a time and so deletes them one by one (owner, 2026-10-27). The API does not have that limit: a single PUT with an empty subnets list removed all scopes (tested). If that PUT is ever refused, fall back to one PUT per scope, removing one subnet each time and re-reading the record first (its version changes on every PUT).",
+          "keep": "The Nile DHCP record itself stays, with zero scopes. Only the scopes are deleted.",
+          "verified": "Tested on Workshop 4 twice: through the page, four scopes one at a time (200 each); then through the API, two new scopes in one PUT (200)."
+        }
+      ],
+      "orderRule": "Owner's order (2026-10-27): admin defined DHCP servers first, then the Nile DHCP scopes (the same shape as Authentication, step 9). Segments (step 8) were deleted fine while DHCP entries still existed, so DHCP does not have to come first.",
+      "expectedAfter": "The DHCP list holds only Nile DHCP (cloudDHCP true), and its subnets list is empty.",
+      "verified": "Both substeps tested twice on Workshop 4 (page, then API only)."
+    },
+    {
+      "key": "guest-portal-branding",
+      "order": 13,
+      "featureName": "Guest Portal branding: restore to default",
+      "kind": "set-value",
+      "location": "Global Settings, Guest Portal (/global-settings/guest-portal)",
+      "read": {
+        "method": "GET",
+        "path": "/api/v1/cloud-profile/map/{tenantId}?profile_type=app_profile&scope_type=tenant",
+        "responseShape": "{name:'profiles', variables:[{id:'my_nile', type:'json', values:[...]}, ...], create_time, last_update, updated_by}",
+        "note": "The page's branding is stored here: variables[id=my_nile].values[0] holds logo, fonts, palettes, background, tenantName and displayName. A tenant at default returns a profile whose my_nile values are empty. Customised: values hold the branding and the profile name is '<tenantId>_V1'. The read is only an after check; it does not decide whether to restore."
+      },
+      "defaults": {
+        "themeName": "Default",
+        "primaryColor": "#0996EE",
+        "secondaryColor": "#F39A4E",
+        "background": "Image",
+        "logo": "none (the tenant name is shown when no logo is set)"
+      },
+      "write": {
+        "method": "DELETE",
+        "path": "/api/v1/cloud-profile/value",
+        "successStatus": 204,
+        "verified": "partly",
+        "body": "UNKNOWN. The page's call was seen (DELETE /api/v1/cloud-profile/value, 204) but its request body and query were not captured (the logging missed them). Capture them by restoring a customised tenant again with full request logging.",
+        "effect": "After it, GET /api/v1/cloud-profile/map/{tenantId}?profile_type=app_profile&scope_type=tenant returns the pristine profile (name 'profiles', my_nile values empty, last_update 2023-12-09) and the page shows the defaults. Before it, the profile was named '<tenantId>_V1' and my_nile held logo, fonts, palettes (primary, secondary and more), background, tenantName and displayName."
+      },
+      "logic": [
+        "ALWAYS call the restore (DELETE /api/v1/cloud-profile/value). Do not read first and do not skip when the branding looks like the default: the engine cannot know whether a learner used the Guest Portal, so it restores every time (owner, 2026-10-27).",
+        "The restore on an already default tenant is harmless (tested: the page sent no request and nothing changed; whether the API call itself answers 204 on a default tenant is not tested).",
+        "Optionally read the profile afterwards (GET /api/v1/cloud-profile/map/{tenantId}?profile_type=app_profile&scope_type=tenant) and expect empty my_nile values; a profile that still has branding is an unexpected failure (D9)."
+      ],
+      "orderRule": "No ordering dependency was seen. Independent of every other step. Always runs.",
+      "expectedAfter": "Theme name Default, colors #0996EE and #F39A4E, no custom logo, default background.",
+      "verified": "Restore seen once on a customised Workshop 4 (the owner changed the colors; the page's call answered 204 and the page and profile went back to default). The request body is not captured, so the engine cannot yet send it. A later attempt to change and save a color through the page did not enable SAVE, so that save call was not captured."
+    }
+  ],
+  "notYetFound": [
+    {
+      "featureName": "More",
+      "hint": "The owner will send the rest of the list."
+    }
+  ],
+  "reporting": {
+    "decidedBy": "owner, 2026-10-27",
+    "systemDefinedItems": {
+      "rule": "A system defined item is never audited and never emailed. It is not a failure and not news.",
+      "covers": [
+        "The protected SSID (ssid.popTunnelUsed is true): skipped before any call.",
+        "System policies (policyAttribute.isDefault is true): skipped before any call.",
+        "System App groups and system Service Profiles: the portal refuses with 400 'Cannot delete, Group belongs to a Policy' (or its Service Profile equivalent); that refusal is expected.",
+        "The ALL wired rule and any other thing the logic of a step says to keep."
+      ],
+      "noRetry": "An expected refusal is not retried, not counted in the second pass, and not counted toward an abort."
+    },
+    "unexpectedRefusals": {
+      "rule": "Any other refusal, error, or pop up message the portal gives for an item the reset tried to delete or change IS recorded, in the audit row and in the email to the abort address, with the portal's own message text.",
+      "example": "IOT-Seg could not be deleted: 'Policy Groups are using IOT-Seg' (a segment still used by a Trust Engine policy group).",
+      "fields": [
+        "step key and feature name",
+        "item name and id",
+        "the call made (method and path)",
+        "HTTP status",
+        "the portal's message text, as received"
+      ],
+      "neverInclude": [
+        "the password",
+        "x-id-token and the other auth headers",
+        "any secret value in the portal's reply (for example a PSK or shared secret): redact keys that look like secrets, as the research scripts do"
+      ],
+      "note": "Message text that came from the portal's page and not from its API (see the research note, D9) is not available to an engine that calls the API; the engine records the API's own error."
+    },
+    "nothingToDo": {
+      "decidedBy": "owner, 2026-10-27",
+      "rule": "The reset must work on a lab that was never started or only partly done. For ANY step, if there is nothing to delete, the step succeeds and the run goes on to the next one. This is not special to the Trust Engine: it holds for every feature in the list (SSIDs, Wired, policies, groups, segments, DHCP, RADIUS, integrations, and any added later). It is not an error, not retried, not audited, and not emailed.",
+      "covers": [
+        "The list holds only system defined items (all skipped, per systemDefinedItems).",
+        "The list is empty because the learner never created anything of that kind.",
+        "A feature was only partly set up: for example Wired SSO never enabled, an SSID but no segment, a segment but no policy group, a set value already at its default (Guest Service Auth and Geo Control already OFF).",
+        "An item is already gone when the delete is sent (a 404 or 'not found' on delete): the result the step wanted is already true, so it counts as done. Do not treat it as a failure.",
+        "A step's read call finds the feature absent or switched off, if the portal answers that as an empty or not found result (see unknown)."
+      ],
+      "mustNotHang": "The engine must never wait on, poll for, or retry a step that has nothing to delete, and a missing item or feature must never stop the run or hold up a later step. Each step reads its list once, deletes what it may delete, and goes on.",
+      "unknown": "What each list or read call answers on a tenant where that feature was never set up or is switched off or not licensed (an empty list, 403, or 404) was only seen for features that were present on Workshop 4. Decide in the spec which answers count as 'nothing to do' for each step; the default should be that an empty list or a 404 is.",
+      "onlyRealErrorsStop": "Only an unexpected error (a 5xx, a timeout, a refusal that is not a system defined one) is a failure; it is audited and emailed (unexpectedRefusals), the run still moves to the next step, and the second pass retries what is left. A sign in failure is the one case that stops the whole run (D5)."
+    }
+  },
+  "neverTouch": {
+    "decidedBy": "owner, 2026-10-27",
+    "rule": "The reset never reads for the purpose of changing, never changes, and never deletes anything on these two pages or behind these two routes. No step may be added for them, now or later, and no admin edit of the list may add one.",
+    "why": "Deleting either one can lock the reset (and the owner) out of the portal. The sign in to the portal goes through the identity provider, and the admin user the reset signs in as lives under Users.",
+    "items": [
+      {
+        "page": "Global Settings, Identity (identity providers)",
+        "paths": [
+          "/global-settings/identity",
+          "/api/v1/idps",
+          "/api/v1/idps/*"
+        ],
+        "reason": "Identity providers carry the sign in. Deleting one locks everyone out."
+      },
+      {
+        "page": "Network Setup, Users",
+        "paths": ["/network-setup/users", "/api/v1/users", "/api/v1/users/*"],
+        "reason": "Portal users include the admin the reset signs in as. Deleting or changing one can lock the engine out. (The page route and the user API paths are inferred; confirm the exact API paths when the engine is built.)"
+      }
+    ],
+    "engineGuard": "A deny list in the engine, checked on every call just before it is sent, independent of the saved list: refuse any method other than a plain read on a path under these prefixes, and treat an attempt as a bug (throw, audit, and email), not as a skip. A saved step whose list or delete path matches a prefix is refused when the page saves it as well (spec 0022 AC-9 validation).",
+    "note": "This guard is separate from the 'system defined' skips: those are expected and silent (reporting.systemDefinedItems); this one is a safety stop and is loud."
+  },
+  "discovery": {
+    "decidedBy": "owner, 2026-10-27: no hardcoded types; the script must understand the structure and handle a newly added type by itself.",
+    "status": "Design from a prototype run on Workshop 4 (read only). The calls and rules in 'steps' stay the tested source of truth; discovery finds what 'steps' does not list.",
+    "algorithm": [
+      "1. Load each reset page in a FRESH browser context (the portal caches lists between pages, so a second page in one session makes no calls) reusing the saved sign in, and wait for the network to go idle.",
+      "2. Record every API response on that page that parses as a list of records (a bare array, content[], data.content[], or data[]). Keep the first successful parse of a path: the portal can fetch the same list twice and the second may be cut off.",
+      "3. Normalise paths (ids become {id}) and drop page furniture: calls the page makes that are not its own content (user info, feature flags, tenant, sites, zones, buildings, floors, tags, alerts, metrics) and lists that appear on many pages as a dependency.",
+      "4. Apply the never touch deny list (neverTouch) to every candidate. It matters: /api/v1/idps shows up on the Wireless, Wired, and Authentication pages and would otherwise be a candidate.",
+      "5. Confirm a candidate is the page's own content by checking that its record names appear in the page's visible text.",
+      "6. Derive the delete route by convention: DELETE <list path without the query>/{id}, no body, expect 204. This holds for ssids, segments, radius, dhcp-clients, portalconfig, siems, subscriptions/webhooks/config, policy groups (/api/v3/policy/groups/{id}).",
+      "7. Delete each id, wait, re-read every candidate list, and treat anything left as an unexpected failure (audited and emailed, D9). A 404 or 405 on a derived route means the convention does not hold: report the route, do not retry it.",
+      "8. Anything the data file marks as a system item (skipWhen), as a child list, or as an exception is handled by that data, not by code."
+    ],
+    "findings": {
+      "foundByDiscovery": {
+        "/network-setup/wireless": ["/api/v1/settings/ssids"],
+        "/network-setup/dhcp": [
+          "/api/v1/settings/dhcp-clients (Nile DHCP shown)"
+        ],
+        "/network-setup/authentication": [
+          "/api/v1/settings/radius (Nile RADIUS shown)",
+          "/api/v1/portalconfig"
+        ],
+        "/network-setup/segments": ["/api/v1/settings/segments"],
+        "/global-settings/integrations": [
+          "/api/v1/siems",
+          "/api/v1/subscriptions/webhooks/config",
+          "/api/v1/subscriptions/email",
+          "/api/v1/dhcp/ddns/ddns-servers",
+          "/api/v1/siem-topics",
+          "/api/v1/subscriptions/webhooks"
+        ]
+      },
+      "needsDenyList": [
+        "/api/v1/idps appears on three pages (Wireless, Wired, Authentication)"
+      ],
+      "breaksConvention": [
+        {
+          "item": "Wired entries (page /network-setup/access-management/wired)",
+          "why": "The page lists them with POST /api/v1/client-config-paginated (a search call, not a GET) and deletes with DELETE /api/v1/client-configs and a body {ids:[...]}; discovery that looks only at GET lists misses it, and ids hold spaces and slashes."
+        },
+        {
+          "item": "Wired SSO config",
+          "why": "One record per tenant: DELETE /api/v1/settings/sso-segment with no id."
+        },
+        {
+          "item": "DHCP scopes",
+          "why": "Inside a record; removed by a PUT of the record with subnets [] (no per scope route)."
+        },
+        {
+          "item": "Policies (Trust Engine and Nile RADIUS)",
+          "why": "Nested under a policy set: DELETE .../policysets/{setId}/rules/{id} and .../policies/{id}."
+        },
+        {
+          "item": "Certificates, Guest Portal restore, the guest toggle",
+          "why": "Single calls or a PUT/DELETE with a body, not one delete per listed item."
+        }
+      ],
+      "riskyForBlindDelete": [
+        "/api/v1/siem-topics: shown on the page (as chips) so name matching would accept it, but its items cascade from a SIEM; deleting them directly is wrong. /api/v1/subscriptions/webhooks is likewise a child of subscriptions/webhooks/config (its path extends the parent's).",
+        "The Nile system records inside /api/v1/settings/radius and /api/v1/settings/dhcp-clients (cloud flag) and the protected SSID (ssid.popTunnelUsed) are in the same lists as admin records; the skip rules in 'steps' must apply to discovered lists too."
+      ]
+    },
+    "rules": {
+      "newType": "A newly discovered list that passes steps 3 to 5 is added to the run automatically, deleted by the convention in step 6, and verified by step 7 (owner decision: automatic). It is never silent: the run reports 'new route found' in the audit row and the email so the owner can add it to the data file.",
+      "childLists": "A list whose path extends another candidate's path is treated as a child and is not deleted directly (it should empty when its parent goes); leftovers after the parent is gone are reported.",
+      "dataNotCode": "System skips, exceptions, child lists, and the deny list live in this data file, never as type names in the engine."
+    },
+    "decision": {
+      "decidedBy": "owner, 2026-10-27",
+      "newTypes": "DELETE AND RECORD (owner, 2026-10-27): a newly discovered type is deleted automatically, and the run records that it did so, in the audit row and in the email to the abort address.",
+      "stillApplies": [
+        "The never touch deny list (Identity, Users) always wins: a discovered route on it is never deleted and is a loud stop (neverTouch).",
+        "A child list (its path extends another candidate's) is not deleted directly.",
+        "The system defined skips apply (reporting.systemDefinedItems).",
+        "A derived route that answers 404 or 405 is reported, not retried.",
+        "The run re-reads every list afterwards; a leftover is an unexpected failure (D9)."
+      ],
+      "record": {
+        "where": [
+          "An audit row for each deleted item (kept about a month, D9)",
+          "A 'new route found' line in the email to the abort address"
+        ],
+        "fields": [
+          "the page it was found on",
+          "the route (method and path, ids as {id})",
+          "the record type and name or label of each item deleted",
+          "how many were deleted and the HTTP status",
+          "whether the end of run re-read found anything left"
+        ],
+        "neverInclude": [
+          "the item's URL, token, password, key, or any secret in its record (D9)",
+          "the portal's raw reply"
+        ],
+        "why": "So the owner sees exactly what the engine found and removed on its own, and can add the route to this data file."
+      }
+    }
+  },
+  "runOrderNote": "The 'order' on each step is the run order, after the sign in (step 0) and before the discovery pass and the final re-read. Integrations run first (owner, 2026-10-27)."
+}
