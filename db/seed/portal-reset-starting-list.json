@@ -460,7 +460,7 @@
     {
       "key": "authentication-admin-radius-and-guest-portals",
       "featureName": "Authentication: RADIUS servers and Guest Portals",
-      "note": "Admin defined RADIUS servers and Guest Portals. Nile RADIUS (cloudRadius true) stays and is held by the guards file.",
+      "note": "Admin defined RADIUS servers and Guest Portals. Nile RADIUS (radius.cloudRadius true) stays and is held by the guards file.",
       "pages": ["/network-setup/authentication"],
       "parts": [
         {
@@ -477,7 +477,7 @@
           },
           "skipWhen": [
             {
-              "field": "cloudRadius",
+              "field": "radius.cloudRadius",
               "op": "eq",
               "value": true
             }

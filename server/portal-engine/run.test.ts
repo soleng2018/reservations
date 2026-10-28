@@ -80,6 +80,7 @@ const insertRun = (
 describe.skipIf(!hasDb)("queueing (AC-1 to AC-3)", () => {
   it("queues nothing while the mode is off", () =>
     inRollback(async (trx) => {
+      await setMode(trx, "off");
       const w = await world(trx);
       await w.book(-1.5, -0.5, { status: "completed" });
       expect(await queueEndedResets(trx)).toBe(0);

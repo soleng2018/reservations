@@ -100,8 +100,12 @@ export const populatedState = (): FakeState => ({
   ],
   segments: [{ id: "seg1", instanceName: "Seg" }],
   radius: [
-    { id: "rad-nile", instanceName: "Nile RADIUS", cloudRadius: true },
-    { id: "rad1", instanceName: "Mine", cloudRadius: false },
+    {
+      id: "rad-nile",
+      instanceName: "Nile RADIUS",
+      radius: { cloudRadius: true },
+    },
+    { id: "rad1", instanceName: "Mine", radius: { cloudRadius: false } },
   ],
   portals: [{ id: "gp1", name: "Portal" }],
   nileRadiusSets: [

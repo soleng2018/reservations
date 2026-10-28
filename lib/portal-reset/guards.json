@@ -26,11 +26,13 @@
     },
     {
       "key": "nile-radius",
-      "line": "The RADIUS server where cloudRadius is true (Nile RADIUS) is never deleted.",
+      "line": "The RADIUS server where radius.cloudRadius is true (Nile RADIUS) is never deleted.",
       "listPath": "/api/v1/settings/radius",
       "itemsAt": "data.content",
       "idField": "id",
-      "keepWhen": [{ "field": "cloudRadius", "op": "eq", "value": true }],
+      "keepWhen": [
+        { "field": "radius.cloudRadius", "op": "eq", "value": true }
+      ],
       "deleteRoutePrefix": "/api/v1/settings/radius",
       "expectKept": "exactlyOne"
     },

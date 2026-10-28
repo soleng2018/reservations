@@ -3,7 +3,7 @@ import {
   AUTOMATION_PERMISSIONS,
   missingPermissions,
   permissionLine,
-} from "@/server/portal-engine/permission-check";
+} from "@/server/authentik/permission-check";
 
 describe("missingPermissions", () => {
   it("is empty when every permission is held", () => {

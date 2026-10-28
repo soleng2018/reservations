@@ -46,7 +46,7 @@ import {
   type Step,
 } from "@/server/worker/loop";
 import { checkBrowser } from "@/server/portal-engine/browser-check";
-import { checkAutomationPermissions } from "@/server/portal-engine/permission-check";
+import { checkAutomationPermissions } from "@/server/authentik/permission-check";
 import { claimDueRun } from "@/server/portal-engine/claim";
 import { realRunDeps } from "@/server/portal-engine/deps";
 import { runLanes } from "@/server/portal-engine/lanes";
