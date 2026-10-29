@@ -7,6 +7,7 @@ import {
   type ItemRecord,
   type StepEnv,
 } from "./interpret";
+import { computeProtected, guardedPortal, isGuardedWrite } from "./guards";
 import { baselineState, makeFake, populatedState, type Fake } from "./testing";
 
 const steps: readonly ResetStep[] = startingList().steps.map((e, i) => ({
@@ -66,6 +67,20 @@ describe("the 13 starting steps", () => {
   it("bring a populated tenant to the baseline", async () => {
     const fake = makeFake(populatedState());
     const { results } = await runAll(fake);
+    expect(results.every((r) => r === "done")).toBe(true);
+    expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
+  });
+
+  it("reach the baseline with the hard guards on, as a real run does", async () => {
+    // The 2026-10-29 Workshop 4 run: with guards a custom policy in the set
+    // of the system policies, and the Nile DHCP scopes, were skipped.
+    const fake = makeFake(populatedState());
+    const found = await computeProtected(fake.portal, async () => undefined);
+    if (!found.ok) throw new Error(found.error.why);
+    const { results } = await runAll(fake, {
+      portal: guardedPortal(fake.portal, found.value),
+      isGuarded: isGuardedWrite(found.value),
+    });
     expect(results.every((r) => r === "done")).toBe(true);
     expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
   });
@@ -156,6 +171,21 @@ describe("silent cases", () => {
     const { env, records } = envFor(gone);
     await runStep(stepNamed("integrations"), env);
     expect(records.some((r) => r.itemId === "wh1")).toBe(false);
+  });
+
+  it("accepts a Nile RADIUS never set up, whose TLS config is null", async () => {
+    // Workshop 1, 2026-10-29: `eapTLSConfig` is null until someone configures
+    // EAP-TLS, so the key delete answers 404 and the check has no value.
+    const fake = makeFake(baselineState());
+    fake.intercept = (req) =>
+      req.path === "/api/v1/cloudradius/config" && req.method === "GET"
+        ? { status: 200, body: { usable: false, eapTLSConfig: null } }
+        : undefined;
+    const { env, records } = envFor(fake);
+    expect(await runStep(stepNamed("nile-radius-certificates"), env)).toBe(
+      "done",
+    );
+    expect(records.filter((r) => r.kind === "failed")).toEqual([]);
   });
 
   it("treats a named refusal as expected and keeps the group", async () => {

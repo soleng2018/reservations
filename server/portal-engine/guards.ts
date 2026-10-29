@@ -20,6 +20,9 @@ export type Protection = {
   readonly guard: Guard;
   // Lower case, so a differently cased id in a path still matches.
   readonly ids: ReadonlySet<string>;
+  // The parents of kept nested records. A parent is protected as itself (its
+  // own delete route), not as a place its other children live in.
+  readonly parentIds: ReadonlySet<string>;
 };
 
 export type Protected = readonly Protection[];
@@ -63,8 +66,9 @@ const keptCountOk = (guard: Guard, listed: number, kept: number): boolean => {
 };
 
 // Read every guard's list and keep the ids of the records it protects. A
-// nested record also protects its parent, so the parent cannot be deleted
-// with it inside. An `expectKept` mismatch (two protected SSIDs, or none while
+// nested record also protects its parent from being deleted with it inside,
+// but not the parent's other children: a custom policy sits in the same set as
+// the system policies and must stay deletable (found 2026-10-29). An `expectKept` mismatch (two protected SSIDs, or none while
 // the list is not empty) is an error: the run ends before any write.
 export async function computeProtected(
   portal: PortalClient,
@@ -76,7 +80,7 @@ export async function computeProtected(
     const body = await readGuardList(portal, sleep, guard.listPath);
     if (!body.ok) return err({ guardKey: guard.key, why: "unreadable" });
     if (body.value === undefined) {
-      found.push({ guard, ids: new Set() });
+      found.push({ guard, ids: new Set(), parentIds: new Set() });
       continue;
     }
     const items = listItems(body.value, guard);
@@ -87,10 +91,15 @@ export async function computeProtected(
     if (!keptCountOk(guard, items.value.length, kept.length)) {
       return err({ guardKey: guard.key, why: "expect_kept" });
     }
-    const ids = kept.flatMap((i) =>
-      i.parentId === null ? [i.id] : [i.id, i.parentId],
-    );
-    found.push({ guard, ids: new Set(ids.map((id) => id.toLowerCase())) });
+    found.push({
+      guard,
+      ids: new Set(kept.map((i) => i.id.toLowerCase())),
+      parentIds: new Set(
+        kept
+          .flatMap((i) => (i.parentId === null ? [] : [i.parentId]))
+          .map((id) => id.toLowerCase()),
+      ),
+    });
   }
   return ok(found);
 }
@@ -114,17 +123,24 @@ const underPrefix = (
 // path (after the route prefix) or `extra` holds, or undefined.
 function hitOf(
   prot: Protected,
+  method: "DELETE" | "PUT",
   path: string,
   extra: readonly string[],
 ): Protection | undefined {
   const route = normalizePortalRoute(path);
-  return prot.find(({ guard, ids }) => {
+  return prot.find(({ guard, ids, parentIds }) => {
+    // A guard that allows a `PUT` guards only the delete.
+    if (method === "PUT" && guard.allowPut === true) return false;
     const prefix = normalizePortalRoute(guard.deleteRoutePrefix);
     if (!underPrefix(route, prefix)) return false;
-    return [
-      ...route.slice(prefix.length),
-      ...extra.map((e) => e.toLowerCase()),
-    ].some((part) => ids.has(part));
+    const rest = route.slice(prefix.length);
+    const bodyIds = extra.map((e) => e.toLowerCase());
+    // A kept record, wherever the path or the body carries its id.
+    if ([...rest, ...bodyIds].some((part) => ids.has(part))) return true;
+    // A kept record's parent, only when the write is aimed at the parent
+    // itself: its own route, or a route with no id that carries it.
+    const aimedAt = rest.length === 1 ? rest : rest.length === 0 ? bodyIds : [];
+    return aimedAt.some((part) => parentIds.has(part));
   });
 }
 
@@ -135,7 +151,7 @@ export const isGuardedWrite =
   (prot: Protected) =>
   (method: "DELETE" | "PUT", path: string, ids: readonly string[]): boolean =>
     (method === "DELETE" || method === "PUT") &&
-    hitOf(prot, path, ids) !== undefined;
+    hitOf(prot, method, path, ids) !== undefined;
 
 // The last line of defence, in front of every call of every step and of
 // discovery (AC-25, AC-26): a denied path of any method, or a write that
@@ -150,7 +166,7 @@ export function guardedPortal(
   const check = (req: PortalRequest): void => {
     if (isDenied(req.path)) throw new GuardStop(routePattern(req.path));
     if (req.method !== "DELETE" && req.method !== "PUT") return;
-    const hit = hitOf(prot, req.path, stringLeaves(req.body));
+    const hit = hitOf(prot, req.method, req.path, stringLeaves(req.body));
     if (hit !== undefined) {
       throw new GuardStop(`${hit.guard.deleteRoutePrefix}/{id}`);
     }
