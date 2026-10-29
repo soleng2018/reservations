@@ -1,5 +1,5 @@
 import { sql, type Insertable, type Kysely, type Transaction } from "kysely";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { PortalResetRunMode } from "@/lib/db-enums";
 import { ok } from "@/lib/result";
 import { cancelBooking, rescheduleBooking } from "@/server/db/bookings";
@@ -14,7 +14,7 @@ import {
   slot,
 } from "@/server/db/testing";
 import type { Bookings, DB } from "@/server/db/types";
-import { claimDueRun, stopCheck } from "./claim";
+import { claimDueRun, keepingLease, stopCheck } from "./claim";
 import type { PortalClient } from "./portal";
 import { queueEndedResets } from "./queue";
 import { makeFake, populatedState } from "./testing";
@@ -280,6 +280,55 @@ describe.skipIf(!hasDb)("stop check (AC-6)", () => {
         trx,
       );
       expect(await stopCheck(conn, id)).toBe("deadline");
+    }));
+
+  it("has no hard cap for a run that was held (AC-14)", () =>
+    inRollback(async (trx) => {
+      await setMode(trx, "live");
+      const w = await world(trx);
+      const id = await insertRun(trx, w.testbed.id, { state: "running" });
+      await sql`update hol_app.portal_reset_runs
+        set lab_ended_at = now() - interval '3 hours',
+          sign_in_reason = 'idp_rejected'
+        where id = ${id}::uuid`.execute(trx);
+      expect(await stopCheck(asConn(trx), id)).toBe("go");
+    }));
+
+  it("keepingLease renews the lease while the work runs and clears its timer", () =>
+    inRollback(async (trx) => {
+      await setMode(trx, "live");
+      const w = await world(trx);
+      const conn = asConn(trx);
+      const id = await insertRun(trx, w.testbed.id, {
+        state: "running",
+        lease: "now() - interval '1 minute'",
+      });
+      const timers: Array<() => void> = [];
+      const realSet = globalThis.setInterval;
+      const set = vi.spyOn(globalThis, "setInterval").mockImplementation(((
+        fn: () => void,
+      ) => {
+        timers.push(fn);
+        return realSet(() => undefined, 1e9);
+      }) as unknown as typeof setInterval);
+      const clear = vi.spyOn(globalThis, "clearInterval");
+      try {
+        const out = await keepingLease(conn, id, async () => {
+          timers.forEach((tick) => tick());
+          await new Promise((r) => setTimeout(r, 50));
+          const row = await trx
+            .selectFrom("portal_reset_runs")
+            .select(sql<boolean>`lease_until > now()`.as("renewed"))
+            .where("id", "=", id)
+            .executeTakeFirstOrThrow();
+          return row.renewed;
+        });
+        expect(out).toBe(true);
+        expect(clear).toHaveBeenCalledTimes(1);
+      } finally {
+        set.mockRestore();
+        clear.mockRestore();
+      }
     }));
 
   it("ignores a lab that starts later", () =>

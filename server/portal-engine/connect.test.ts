@@ -322,4 +322,24 @@ describe.skipIf(!hasDb)("connect (AC-12 to AC-17, AC-42, AC-43)", () => {
         result.value.call({ method: "GET", path: "/api/x" }),
       ).rejects.toBeInstanceOf(SessionLost);
     }));
+
+  it("ends as a sign in failure, with the browser closed, when the tenant check loses its session", () =>
+    inRollback(async (trx) => {
+      const { run } = await setup(trx);
+      const closed: string[] = [];
+      let n = 0;
+      const fetchImpl = (async () => json(401, {})) as typeof fetch;
+      const result = await connect({
+        conn: trx,
+        api: authentikWith().api,
+        browserSignIn: async () => ok(signedIn(closed, `s${(n += 1)}`)),
+        sleep: async () => undefined,
+        fetchImpl,
+      })(run);
+      expect(result).toEqual({
+        ok: false,
+        error: { kind: "sign_in", reason: "token_missing" },
+      });
+      expect(closed).toHaveLength(n);
+    }));
 });

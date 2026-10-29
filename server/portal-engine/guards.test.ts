@@ -100,6 +100,33 @@ describe("guardedPortal", () => {
     expect(fake.writes).toHaveLength(0);
   });
 
+  it("refuses a write that names a protected id in the query string", async () => {
+    const { fake, prot } = await protectedFor();
+    const portal = guardedPortal(fake.portal, prot);
+    for (const method of ["DELETE", "PUT"] as const) {
+      await expect(
+        portal.call({
+          method,
+          path: "/api/v1/settings/ssids?id=SSID-PROTECTED",
+        }),
+      ).rejects.toBeInstanceOf(GuardStop);
+    }
+    await expect(
+      portal.call({
+        method: "DELETE",
+        path: "/api/v1/settings/ssids?ids=ssid-guest,ssid-protected",
+      }),
+    ).rejects.toBeInstanceOf(GuardStop);
+    expect(fake.writes).toHaveLength(0);
+    expect(
+      isGuardedWrite(prot)(
+        "DELETE",
+        "/api/v1/settings/ssids?id=ssid-protected",
+        [],
+      ),
+    ).toBe(true);
+  });
+
   it("lets a delete of an unprotected record through", async () => {
     const { fake, prot } = await protectedFor();
     const sent = await guardedPortal(fake.portal, prot).call({

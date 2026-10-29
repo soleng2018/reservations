@@ -119,6 +119,19 @@ const underPrefix = (
   prefix: readonly string[],
 ): boolean => prefix.every((part, i) => part === route[i]);
 
+// The values in a path's query string, lowercased. A write such as
+// `/api/v1/settings/ssids?id=<protected>` names its target there, and the
+// route normalizer drops the query.
+const queryValues = (path: string): readonly string[] => {
+  const at = path.indexOf("?");
+  if (at < 0) return [];
+  const hash = path.indexOf("#", at);
+  const query = path.slice(at + 1, hash < 0 ? undefined : hash);
+  return [...new URLSearchParams(query).values()]
+    .flatMap((v) => v.split(","))
+    .map((v) => v.toLowerCase());
+};
+
 // The guard whose delete route `path` falls under and whose protected ids the
 // path (after the route prefix) or `extra` holds, or undefined.
 function hitOf(
@@ -134,7 +147,10 @@ function hitOf(
     const prefix = normalizePortalRoute(guard.deleteRoutePrefix);
     if (!underPrefix(route, prefix)) return false;
     const rest = route.slice(prefix.length);
-    const bodyIds = extra.map((e) => e.toLowerCase());
+    const bodyIds = [
+      ...extra.map((e) => e.toLowerCase()),
+      ...queryValues(path),
+    ];
     // A kept record, wherever the path or the body carries its id.
     if ([...rest, ...bodyIds].some((part) => ids.has(part))) return true;
     // A kept record's parent, only when the write is aimed at the parent

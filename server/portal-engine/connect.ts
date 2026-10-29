@@ -191,12 +191,19 @@ export const connect =
     const portal = withResignIn(signed.value, deps.fetchImpl, () =>
       attempt(deps, run, tb),
     );
-    // A dropped call is not a wrong tenant: read it once more.
-    const first = await checkTenant(portal, tb.domain);
-    const tenant =
-      !first.ok && first.error.kind === "sign_in"
-        ? await checkTenant(portal, tb.domain)
-        : first;
+    // A dropped call is not a wrong tenant: read it once more. A session lost
+    // while checking is a sign in failure, with the browser closed.
+    const tenant = await checkTenant(portal, tb.domain)
+      .then((first) =>
+        !first.ok && first.error.kind === "sign_in"
+          ? checkTenant(portal, tb.domain)
+          : first,
+      )
+      .catch((e: unknown) => {
+        if (e instanceof SessionLost)
+          return err<SignInError>({ kind: "sign_in", reason: e.signInReason });
+        throw e;
+      });
     if (!tenant.ok) {
       await portal.close();
       return tenant;
