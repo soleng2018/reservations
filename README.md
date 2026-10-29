@@ -18,10 +18,46 @@ Placeholders in `<angle brackets>` are values only you know. Write them as plain
 | --- | --- |
 | Node 24 or newer, and npm | `package.json` requires Node 24 or newer |
 | Docker with Compose v2 | The app's Postgres runs as the `db` container from `docker/compose.yaml` |
-| An Authentik admin account and its master token | One time setup of the sign in apps; the app never uses the master token itself |
+| An Authentik admin account and its master token | Used once, by `npm run authentik:setup`, to create the sign in apps, the `hol-admins` group, and the provisioning account. The app never uses it at runtime (it runs on the restricted provisioning token), so you can delete the token file after setup |
 | A Cloudflare account with Zero Trust (team domain `<team>.cloudflareaccess.com`) | Turnstile on public forms, and lab VM access |
 | Optional: a Google account for the HOL mailbox and calendar | Booking emails and the shared "HOL bookings" calendar |
 | Docker, Traefik, and a Cloudflare Tunnel on the host (only to run the containers) | See [Running with Docker](#running-with-docker) |
+
+**What must already exist in Authentik.** Setup creates the apps, `hol-admins`, and the provisioning account, but not the people or the workshop groups. Have these ready before you start:
+
+- **One group per workshop (testbed), made by you.** The app never creates, renames, or deletes a group. Each one needs the attribute `hol_testbed_group` set to the boolean `true`, and the attribute `hol_testbed_domain` set to the workshop's Nile tenant domain (for example `nileworkshop-1.com`). It must be flat (no parent group, no role) and not a superuser group. The group name is what an admin types when adding the testbed, and what Cloudflare Access checks for the lab VMs. Without a marked group with a domain, you cannot add a testbed. Details in [Testbed groups](#testbed-groups).
+- **Your admins as Authentik users.** After setup, add each one to `hol-admins` (step 5, item 8) and turn on MFA. Anyone not in that group is a learner.
+- **Per-workshop automation users are not yours to make.** For Nile Portal Reset, the worker creates `automation@<testbed domain>` itself and adds it to that workshop's group, so you only need the group above. This is optional and described in [Nile Portal Reset setup](#nile-portal-reset-setup).
+- **The Cloudflare side of the lab VMs**, if you use it: the lab VM Access apps use the HOL Labs identity provider and allow the workshop group by name.
+
+**Secret files checklist.** Every secret file lives in `~/secrets/` (the Docker setup reads `SECRETS_DIR` from `docker/.env`, `.secrets/` in the repo by default; use that folder instead if you set it). Tick each one off as you make it. The check command below prints `ok` or `MISSING` for each, so you never have to guess.
+
+| Done | File | What it is | Made in | Needed |
+| --- | --- | --- | --- | --- |
+| [ ] | `~/secrets/postgres_password` | Postgres superuser password | Step 3 (`npm run db:up`) | Always |
+| [ ] | `~/secrets/hol_app_password` | Database password for the app | Step 3 (`npm run db:up`) | Always |
+| [ ] | `~/secrets/auth_secret` | Signs session cookies | Step 4 | Always |
+| [ ] | `~/secrets/hol_encryption_keys.json` | Keyring that encrypts stored API keys (back it up) | Step 4 | Always |
+| [ ] | `~/secrets/authentik_master_token` | Your Authentik admin API token, for `authentik:setup` only | Step 1, item 2 | Setup only; delete afterwards, never mounted |
+| [ ] | `~/secrets/authentik_client_secret` | Client secret of the `hol` sign in app | Step 5 | Always |
+| [ ] | `~/secrets/hol_labs_client_secret` | Client secret of the HOL Labs app; you paste it into Cloudflare, the app never reads it | Step 5 | Only if you use lab VMs |
+| [ ] | `~/secrets/authentik_provisioning_token` | API token of the `hol-webapp-provisioning` account | Step 5, item 7 | Always |
+| [ ] | `~/secrets/gmail_desktop` | Google OAuth Desktop client (id and secret) | [Google sign in](#google-sign-in-personal-gmail-for-testing) | Only if booking emails use Google sign in (you upload it in the console) |
+| [ ] | `~/secrets/cloudflare_access_revoke_token` and `~/secrets/cloudflare_account_id` | Cloudflare API token and account ID; you paste them into the console's API Keys page (step 8), the app does not read the files | Cloudflare dashboard | Only to revoke lab VM access |
+
+Not secret files: `TURNSTILE_SECRET_KEY` is an env value (or `TURNSTILE_SECRET_KEY_FILE`), see step 6. The `hol-test-*.pw` files are for `npm run test:e2e` only. A Workspace service account key is uploaded in the console and then deleted, so it does not need to stay in `~/secrets`.
+
+Check which files exist (run it at any time; it prints names only, never contents):
+
+```bash
+for f in postgres_password hol_app_password auth_secret hol_encryption_keys.json \
+  authentik_client_secret authentik_provisioning_token hol_labs_client_secret \
+  authentik_master_token gmail_desktop cloudflare_access_revoke_token cloudflare_account_id; do
+  [ -s ~/secrets/$f ] && echo "ok       $f" || echo "MISSING  $f"
+done
+```
+
+The first six lines (through `authentik_provisioning_token`) are required for the app to start. The others depend on the Needed column. Right after you finish step 5, every required file should say `ok`.
 
 1. Make the secrets folder. Keep every secret in `~/secrets/`, one value per file, with mode `600`. The app reads each secret from the file that a `*_FILE` variable points to. Run this in the terminal you will use for all the steps, because `umask` applies only to that shell:
 
@@ -283,7 +319,7 @@ The token does not expire, so rotate it yourself if it leaks (a pasted log, a sh
    ls -l ~/secrets
    ```
 
-   Every secret file should show `-rw-------`. If one doesn't (files you copied in, such as `google.json`), run `chmod 600` on it. You should see `auth_secret`, `authentik_client_secret`, `authentik_provisioning_token`, `hol_app_password`, `hol_encryption_keys.json`, `hol_labs_client_secret`, and `postgres_password`.
+   Every secret file should show `-rw-------`. If one doesn't (files you copied in, such as `gmail_desktop`), run `chmod 600` on it. You should see `auth_secret`, `authentik_client_secret`, `authentik_provisioning_token`, `hol_app_password`, `hol_encryption_keys.json`, `hol_labs_client_secret`, and `postgres_password`.
 
 ### 7. Start it (dev server)
 
