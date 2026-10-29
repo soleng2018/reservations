@@ -336,7 +336,7 @@ Keep the AGENTS.md rule that a saved path stays under `/api/`, never a full URL,
 - **DHCP:** the PUT body is the record as read with the subnets emptied; whether the portal ever refuses that is not known (the per scope fallback is in the note).
 - **PEAP:** the delete call for the PEAP configuration is not found; PEAP was never configured on Workshop 4.
 - **Device groups:** the delete was not tested (none existed). App group delete is known to be refused for the six system groups.
-- **Whether the API alone refuses a segment that a policy group uses:** not tested (the page checked first and sent nothing).
+- **Whether the API alone refuses a segment that a policy group uses:** tested 2026-10-29 on Workshop 1. It does not: `DELETE /api/v1/settings/segments/{id}` answered 204 while a policy group still matched on that segment. The page's refusal is a client side check, so the engine's order (groups before segments) is what matters.
 - **What list and read calls answer where a feature was never set up, switched off, or unlicensed** (empty list, 403, 404): only features that were present on Workshop 4 were seen (D10).
 - **What the default page size is without `?size=2000`.**
 - **Workshops 2, 3, and 5:** nothing was tested there (the password is decided to be shared, D5).

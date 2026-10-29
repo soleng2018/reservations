@@ -174,7 +174,16 @@ async function drive(page: Page, input: SignInInput): Promise<void> {
 
 export async function signIn(
   input: SignInInput,
-  launch: Launch = () => chromium.launch({ headless: true }),
+  // Playwright closes its browser on SIGINT, SIGTERM, and SIGHUP by default,
+  // which cuts the call in flight; the worker's own stop path (AC-10) must
+  // finish the call and close the browser itself.
+  launch: Launch = () =>
+    chromium.launch({
+      headless: true,
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
+    }),
 ): Promise<Result<SignedIn, PortalResetSignInReason>> {
   const browser = await launch().catch(() => undefined);
   if (browser === undefined) return err("browser_unavailable");

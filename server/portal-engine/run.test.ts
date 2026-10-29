@@ -422,6 +422,68 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
       expect(signedIn).toBe(false);
     }));
 
+  it("a list that deletes segments before policy groups ends invalid_list with no sign in (decision D7)", () =>
+    inRollback(async (trx) => {
+      const { conn, run } = await start(trx);
+      const del = (list: string, path: string) =>
+        JSON.stringify({
+          parts: [
+            {
+              kind: "delete_each",
+              list: {
+                method: "GET",
+                path: list,
+                itemsAt: "content",
+                idField: "id",
+              },
+              delete: { path },
+            },
+          ],
+        });
+      await trx.deleteFrom("portal_reset_steps").execute();
+      await trx
+        .insertInto("portal_reset_steps")
+        .values([
+          {
+            position: 1,
+            feature_name: "Segments",
+            enabled: true,
+            definition: del(
+              "/api/v1/settings/segments",
+              "/api/v1/settings/segments/{id}",
+            ),
+          },
+          {
+            position: 2,
+            feature_name: "Groups",
+            enabled: true,
+            definition: del(
+              "/api/v3/policy/groups",
+              "/api/v3/policy/groups/{id}",
+            ),
+          },
+        ])
+        .execute();
+      let signedIn = false;
+      await executeRun(run, {
+        conn,
+        signIn: async () => {
+          signedIn = true;
+          return ok(fakePortal().portal);
+        },
+        runStep: async () => "done",
+        recheckStep: async () => true,
+        shouldStop: () => false,
+      });
+      const row = await trx
+        .selectFrom("portal_reset_runs")
+        .select(["state", "abort_reason"])
+        .where("id", "=", run.id)
+        .executeTakeFirstOrThrow();
+      expect(row).toEqual({ state: "aborted", abort_reason: "invalid_list" });
+      expect(signedIn).toBe(false);
+    }));
+
   it("a lab that starts aborts with no further step", () =>
     inRollback(async (trx) => {
       const { w, conn, run } = await start(trx);

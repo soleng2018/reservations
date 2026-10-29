@@ -24,6 +24,7 @@ import {
   type StepEnv,
   type StepResult,
 } from "./interpret";
+import { unsafeDeleteOrder } from "@/lib/portal-reset/order-rules";
 import type { PortalClient } from "./portal";
 import {
   computeProtected,
@@ -162,6 +163,9 @@ export async function executeRun(
   const parsed = list.steps.flatMap((s) => (s.ok ? [s.step] : []));
   if (parsed.length !== list.steps.length) return abort("invalid_list", {});
   const steps = parsed.filter((s) => s.enabled);
+  // Decision D7: the portal's API lets a segment go while a group still uses
+  // it, so a list that deletes segments first is stopped, not run.
+  if (unsafeDeleteOrder(steps).length > 0) return abort("invalid_list", {});
   const skippedSteps = list.steps.length - steps.length;
 
   const signedIn = await deps.signIn(run);
