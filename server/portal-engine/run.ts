@@ -12,6 +12,7 @@ import { readResetList, type ResetStep } from "@/server/portal-reset/steps";
 import type { DB } from "@/server/db/types";
 import {
   discoveryWindowOpen,
+  keepingLease,
   releaseRun,
   saveProgress,
   stopCheck,
@@ -168,7 +169,7 @@ export async function executeRun(
   if (unsafeDeleteOrder(steps).length > 0) return abort("invalid_list", {});
   const skippedSteps = list.steps.length - steps.length;
 
-  const signedIn = await deps.signIn(run);
+  const signedIn = await keepingLease(conn, run.id, () => deps.signIn(run));
   if (!signedIn.ok) {
     const failure = signedIn.error;
     if (failure.kind !== "sign_in") return abort(failure.kind, {});
@@ -251,14 +252,15 @@ export async function executeRun(
         await flush();
         await saveProgress(conn, run.id, progress);
       }
-      if (phase === 1 && deps.discover !== undefined && !progress.discovered) {
+      const discover = deps.discover;
+      if (phase === 1 && discover !== undefined && !progress.discovered) {
         if (deps.shouldStop()) throw new Shutdown();
         const stop = await stopCheck(conn, run.id);
         if (stop === "lost") return;
         if (stop !== "go") throw new StopRun(stop);
         stepName = "discovery";
         const found = (await discoveryWindowOpen(conn, run.id))
-          ? await deps.discover(raw, env, steps)
+          ? await keepingLease(conn, run.id, () => discover(raw, env, steps))
           : { failed: false, counts: { discoverySkippedForTime: 1 } };
         progress = {
           ...progress,

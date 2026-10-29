@@ -116,7 +116,9 @@ export async function stopCheck(
     returning
       coalesce((select s.mode = 'off' from hol_app.portal_reset_settings s),
         true) as mode_off,
-      now() >= r.lab_ended_at + make_interval(secs => ${secs(HARD_CAP)})
+      -- AC-14: a run that was ever held (sign_in_reason set) has no cap.
+      (r.sign_in_reason is null
+        and now() >= r.lab_ended_at + make_interval(secs => ${secs(HARD_CAP)}))
         as past_cap,
       exists (
         select 1 from hol_app.bookings b
@@ -133,6 +135,29 @@ export async function stopCheck(
       : row.lab_active
         ? "lab_started"
         : "go";
+}
+
+// A phase with no stop check inside it (the sign in, discovery's page reads)
+// can outlast the lease, and a second lane would take a live run over. Renew
+// the lease on a timer while `work` runs; the timer is always cleared.
+export async function keepingLease<T>(
+  conn: Kysely<DB>,
+  runId: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const renew = () =>
+    sql`
+      update hol_app.portal_reset_runs
+      set lease_until = now() + make_interval(secs => ${secs(LEASE)})
+      where id = ${runId}::uuid and state = 'running'`
+      .execute(conn)
+      .catch(() => undefined);
+  const timer = setInterval(() => void renew(), LEASE / 3);
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 // Where the run is, for a resume (AC-9). Keys only, no portal data.
