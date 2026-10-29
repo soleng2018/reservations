@@ -26,6 +26,9 @@ export const Guard = z.strictObject({
   keepWhen: z.array(Rule).min(1).max(5),
   deleteRoutePrefix: route,
   expectKept: z.enum(["exactlyOne", "atLeastOne"]).optional(),
+  // The kept record may be changed by a `PUT` (a step that empties its scopes
+  // or sets its default), never deleted. Without it a `PUT` is guarded too.
+  allowPut: z.boolean().optional(),
 });
 export type Guard = z.infer<typeof Guard>;
 

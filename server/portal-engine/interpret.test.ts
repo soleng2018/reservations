@@ -7,6 +7,7 @@ import {
   type ItemRecord,
   type StepEnv,
 } from "./interpret";
+import { computeProtected, guardedPortal, isGuardedWrite } from "./guards";
 import { baselineState, makeFake, populatedState, type Fake } from "./testing";
 
 const steps: readonly ResetStep[] = startingList().steps.map((e, i) => ({
@@ -66,6 +67,20 @@ describe("the 13 starting steps", () => {
   it("bring a populated tenant to the baseline", async () => {
     const fake = makeFake(populatedState());
     const { results } = await runAll(fake);
+    expect(results.every((r) => r === "done")).toBe(true);
+    expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
+  });
+
+  it("reach the baseline with the hard guards on, as a real run does", async () => {
+    // The 2026-10-29 Workshop 4 run: with guards a custom policy in the set
+    // of the system policies, and the Nile DHCP scopes, were skipped.
+    const fake = makeFake(populatedState());
+    const found = await computeProtected(fake.portal, async () => undefined);
+    if (!found.ok) throw new Error(found.error.why);
+    const { results } = await runAll(fake, {
+      portal: guardedPortal(fake.portal, found.value),
+      isGuarded: isGuardedWrite(found.value),
+    });
     expect(results.every((r) => r === "done")).toBe(true);
     expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
   });

@@ -110,6 +110,77 @@ describe("guardedPortal", () => {
     expect(fake.writes).toHaveLength(1);
   });
 
+  it("lets a custom policy go in the set that holds a system policy, and keeps the set", async () => {
+    // Workshop 4, 2026-10-29: the custom policy sits in the same set as the
+    // system policies. Its delete route and body carry the set id.
+    const { fake, prot } = await protectedFor();
+    const guarded = isGuardedWrite(prot);
+    expect(
+      guarded("DELETE", "/api/v3/policy/policysets/ps1/rules/pol1", ["pol1"]),
+    ).toBe(false);
+    expect(
+      guarded("DELETE", "/api/v3/policy/policysets/ps1/rules/pol-sys", [
+        "pol-sys",
+      ]),
+    ).toBe(true);
+    expect(guarded("DELETE", "/api/v3/policy/policysets/ps1", ["ps1"])).toBe(
+      true,
+    );
+    const sent = await guardedPortal(fake.portal, prot).call({
+      method: "DELETE",
+      path: "/api/v3/policy/policysets/ps1/rules/pol1",
+      body: { id: "pol1", policySetId: "ps1" },
+    });
+    expect(sent.ok).toBe(true);
+    const stop = await guardedPortal(fake.portal, prot)
+      .call({ method: "DELETE", path: "/api/v3/policy/policysets/ps1" })
+      .catch((e: unknown) => e);
+    expect(stop).toBeInstanceOf(GuardStop);
+  });
+
+  it("lets a step change Nile DHCP and the Default Network Policy, never delete them", async () => {
+    // A PUT is how a step empties the Nile DHCP scopes and sets the default
+    // policy to REJECT; the guards say never deleted (2026-10-29: both steps
+    // were skipped on Workshop 4 because a PUT was guarded too).
+    const { fake, prot } = await protectedFor();
+    const guarded = isGuardedWrite(prot);
+    expect(
+      guarded("PUT", "/api/v1/settings/dhcp-clients/dh-nile", ["dh-nile"]),
+    ).toBe(false);
+    expect(
+      guarded("DELETE", "/api/v1/settings/dhcp-clients/dh-nile", ["dh-nile"]),
+    ).toBe(true);
+    expect(
+      guarded(
+        "PUT",
+        "/api/v1/cloudradius/policysets/nps1/policies/np-default",
+        ["np-default"],
+      ),
+    ).toBe(false);
+    expect(
+      guarded(
+        "DELETE",
+        "/api/v1/cloudradius/policysets/nps1/policies/np-default",
+        ["np-default"],
+      ),
+    ).toBe(true);
+    // a protected SSID still cannot be written with a PUT
+    expect(
+      guarded("PUT", "/api/v1/settings/ssids/ssid-protected", [
+        "ssid-protected",
+      ]),
+    ).toBe(true);
+    const put = await guardedPortal(fake.portal, prot).call({
+      method: "PUT",
+      path: "/api/v1/settings/dhcp-clients/dh-nile",
+      body: {
+        id: "dh-nile",
+        dhcpClient: { cloudDHCP: true, servers: [{ subnets: [] }] },
+      },
+    });
+    expect(put.ok).toBe(true);
+  });
+
   it("never calls a denied path, of any method, and names a route pattern only", async () => {
     const fake = makeFake();
     const portal = guardedPortal(fake.portal, NO_PROTECTION);
