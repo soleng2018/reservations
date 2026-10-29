@@ -17,7 +17,7 @@ const unseeded = async (trx: Transaction<DB>) => {
   await trx.deleteFrom("portal_reset_steps").execute();
   await trx
     .updateTable("portal_reset_settings")
-    .set({ seeded_at: null, version: 1, mode: "off" })
+    .set({ seeded_at: null, version: 1, mode: "off", abort_email: null })
     .execute();
 };
 
