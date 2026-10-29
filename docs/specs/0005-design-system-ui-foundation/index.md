@@ -365,3 +365,4 @@ Tracer Bullet: first one real admin screen runs through the new tokens, shell, t
 - [ ] Revisit search, sorting and pagination when an admin list passes about 200 rows (Users is the likely first).
 - [ ] Feature 11: extract the hero image (1920×1080 JPEG) from the mock when the landing page is built.
 - [ ] Feature 15: email templates copy the Nile hex values from `design.md`, since mail clients ignore CSS variables.
+- [ ] The "Not authorized" page ("You don't have access to this page.", from `lib/auth-errors.ts`) shows no account menu: no avatar and no Sign out, so a signed in user who lands on it, for example an admin on a learner page, has no way to sign out. Found 2026-10-28 from an owner screenshot. AC-11 lists `/auth/error` in the learner frame and AC-17 says every signed in user sees the menu; find which route renders this page, wrap it in `LearnerFrame` with the session read, and add an e2e check.
