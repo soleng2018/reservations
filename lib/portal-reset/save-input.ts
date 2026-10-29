@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PortalResetMode } from "@/lib/db-enums";
 import { nameKey, normalizeEmail, nullIfEmpty, trimmed } from "./normalize";
+import { ORDER_MESSAGE, unsafeDeleteOrder } from "./order-rules";
 import { MAX_STEPS, StepDefinition } from "./step-schema";
 
 // What a Save sends and what it must satisfy (spec 0022 AC-9). Normalized
@@ -84,6 +85,13 @@ export const SaveRequest = z
         path: ["steps"],
       });
     }
+    unsafeDeleteOrder(request.steps).forEach((i) => {
+      ctx.addIssue({
+        code: "custom",
+        message: ORDER_MESSAGE,
+        path: ["steps", i, "featureName"],
+      });
+    });
     request.steps.forEach((step, i) => {
       const first = request.steps.findIndex(
         (s) => nameKey(s.featureName) === nameKey(step.featureName),
