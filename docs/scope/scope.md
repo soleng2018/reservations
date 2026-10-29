@@ -59,7 +59,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 21 | Testbed friendly name | Slice 6 | done |
 | 22 | Cleanup gap between labs | Slice 6 | done |
 | 23 | Cleanup hook for labs that end early | Slice 6 | done |
-| 24 | Nile Portal reset when a lab ends | Slice 6 | in-progress |
+| 24 | Nile Portal reset when a lab ends | Slice 6 | done |
 | 25 | Admin: Nile Portal Reset page | Slice 6 | done |
 
 ## Foundations
@@ -418,7 +418,7 @@ Follow up from spec 0020. A Current booking that is cancelled (by anyone) or mov
 Enhancement closed, not needed (2026-10-27): the app resets the Nile Portal itself after every lab (feature 24), so the hook stays early end and move only.
 spec [0021](../specs/0021-cleanup-hook-early-end/index.md) · code in `server/db/bookings.ts`, `server/jobs/`, `server/catalog/api-keys.ts`, `worker/index.ts`, `db/migrations/0017_cleanup_hook.sql`
 
-### 24. Nile Portal reset when a lab ends · in-progress · Full
+### 24. Nile Portal reset when a lab ends · done · Full
 Follow up from features 22 and 23. After every lab, whether it ends at its booked time or early (cancel or move), the worker resets that workshop's Nile Portal to a clean baseline through the portal's own API, so the next learner starts on an empty tenant. The run starts 5 minutes after the lab ends and should finish within 25, inside the 30 minute gap (feature 22). It signs in as its own Authentik account for that workshop, `automation@<testbed domain>`, which the app creates and gives a fresh random password before each sign in (no admin sets up a user or password, nothing is stored), runs the saved step list from feature 25 in order (D17: Integrations, SSIDs, Guest Service Auth and Geo Control, Wired, Policies, Service Profiles, Policy Groups, Segments, Authentication, Nile RADIUS policies and certificates, DHCP, Guest Portal branding), retries a failed call, makes a second pass, then a discovery pass that finds and removes kinds of things the list does not know yet and records that it did, and a final re-read of every list. It never touches Global Settings Identity or Network Setup Users, never deletes the protected SSID, system policies, Nile RADIUS, Nile DHCP, or the Default Network Policy, and stops the moment a lab starts on that testbed. It deletes things on tenants the app does not own, so it is Full tier, and a mode (off, dry run, live) saved on the feature 25 page starts at off.
 **Done when:** with the mode on `live`, every lab that ends, at its booked time or early, resets that workshop's portal inside the 30 minute gap (the 13 steps bring a populated tenant to the baseline and a repeat run changes nothing); the run starts 5 minutes after the lab ends, retries a failed call 3 times, makes one second pass, and finishes or aborts before the next session starts, emailing the address from feature 25 on a failed sign in, an abort, an unfinished reset, or a newly found route; an empty or missing step is a success and the run goes on; system defined items, empty steps, already gone items, and expected refusals are silent, while every deleted item, changed value, and unexpected failure is recorded with the portal's own message (a run record kept 30 days, plus permanent run level audit rows), never with a password, token, header, webhook URL, SIEM credential, key, certificate, recipient address, or raw reply; Identity and Users are impossible to call and the protected items impossible to delete; a dry run sends no write; a call that fails shows in the run record; no portal password, token, or hook secret appears in a log, payload, or error. (D5's shared password file is superseded by this on 2026-10-27.)
 - [x] Design it (spec): `/architect nile portal reset when a lab ends` (spec 0023 from the research D1 to D17; accepted by the owner 2026-10-27)
@@ -430,7 +430,7 @@ Follow up from features 22 and 23. After every lab, whether it ends at its booke
 - [x] Verify it: `/check verify nile portal reset when a lab ends` (a dry run and then a live run on the scratch tenant, Workshop 4, with the owner present)
 - [x] Test it: `/test nile portal reset when a lab ends`
 - [x] Review it (fresh model): `/check review nile portal reset when a lab ends`
-- [ ] Document it: `/document nile portal reset when a lab ends`
+- [x] Document it: `/document nile portal reset when a lab ends`
 spec [0023](../specs/0023-nile-portal-reset-engine/index.md) · research [findings](../research/nile-portal-reset-findings.md) · code in `server/portal-engine/`, `lib/portal-reset/`, `worker/index.ts`, `db/migrations/0019_portal_reset_runs.sql`
 > Owner requirements (2026-10-26, second round), for `/architect`. Build feature 25 first, because the engine reads the ordered list it saves:
 > - Timing: the reset starts 5 minutes after the lab ends and should finish within 25 minutes (so inside the 30 minute gap). If no booking follows on that testbed, it may keep going, but it must finish or abort before the next session starts.
