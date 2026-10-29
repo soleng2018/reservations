@@ -158,6 +158,21 @@ describe("silent cases", () => {
     expect(records.some((r) => r.itemId === "wh1")).toBe(false);
   });
 
+  it("accepts a Nile RADIUS never set up, whose TLS config is null", async () => {
+    // Workshop 1, 2026-10-29: `eapTLSConfig` is null until someone configures
+    // EAP-TLS, so the key delete answers 404 and the check has no value.
+    const fake = makeFake(baselineState());
+    fake.intercept = (req) =>
+      req.path === "/api/v1/cloudradius/config" && req.method === "GET"
+        ? { status: 200, body: { usable: false, eapTLSConfig: null } }
+        : undefined;
+    const { env, records } = envFor(fake);
+    expect(await runStep(stepNamed("nile-radius-certificates"), env)).toBe(
+      "done",
+    );
+    expect(records.filter((r) => r.kind === "failed")).toEqual([]);
+  });
+
   it("treats a named refusal as expected and keeps the group", async () => {
     const fake = makeFake(populatedState());
     const { env, records } = envFor(fake);
