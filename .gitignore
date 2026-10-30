@@ -47,3 +47,6 @@ next-env.d.ts
 /playwright-report/
 /e2e/screenshots/
 /.secrets
+
+# backup host config (names the servers and the age key); the .example is committed
+/backup/backup.conf

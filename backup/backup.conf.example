@@ -1,0 +1,38 @@
+# Copy to backup/backup.conf (gitignored) on the BACKUP host and edit.
+# Read by scripts/backup.sh. README: "Backups and disaster recovery".
+#
+# Lines before the first [section] are defaults for every server. One
+# [section] per app server; the name is used in the archive file names, so
+# letters, digits, - and _ only. Add a second block to back up a second server.
+# A # starts a comment.
+
+# How many backups to keep per server; older ones are deleted after a new one
+# is saved and checked.
+keep = 5
+# Back up at least this often even when nothing seems changed (the safety net).
+force_after_days = 7
+# Optional: a command to run when a server's backup fails; it gets
+# BACKUP_SERVER in its environment. For example a mail or a webhook call.
+# on_failure_cmd = echo "backup of $BACKUP_SERVER failed" | mail -s backup you@example.com
+
+[prod]
+# user@host of the app server. The key must be installed there with the forced
+# command line from the README, and the host key already accepted (known_hosts).
+ssh_host = nova@reservations.example
+# The private key made only for backups. No passwords: ssh runs in batch mode.
+ssh_key = ~/.ssh/hol_backup_ed25519
+ssh_port = 22
+# The repo checkout on the app server (it runs scripts/backup-remote.sh).
+repo_dir = /home/nova/reservations
+# Where this host keeps the encrypted archives (absolute path).
+dest_dir = /srv/hol-backups/prod
+# The PUBLIC age key (age-keygen prints it). The private key never goes on a
+# server that holds backups.
+age_recipient = age1replacewithyourpublickeyfromagekeygen
+
+# [staging]
+# ssh_host = nova@staging.example
+# ssh_key = ~/.ssh/hol_backup_ed25519
+# repo_dir = /home/nova/reservations
+# dest_dir = /srv/hol-backups/staging
+# age_recipient = age1replacewithyourpublickeyfromagekeygen
