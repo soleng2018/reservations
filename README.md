@@ -37,13 +37,15 @@ Placeholders in `<angle brackets>` are values only you know. Write them as plain
 | [ ] | `~/secrets/postgres_password` | Postgres superuser password | Step 3 (`npm run db:up`) | Always |
 | [ ] | `~/secrets/hol_app_password` | Database password for the app | Step 3 (`npm run db:up`) | Always |
 | [ ] | `~/secrets/auth_secret` | Signs session cookies | Step 4 | Always |
-| [ ] | `~/secrets/hol_encryption_keys.json` | Keyring that encrypts stored API keys (back it up) | Step 4 | Always |
+| [ ] | `~/secrets/hol_encryption_keys.json` | Keyring that encrypts stored API keys (back it up: see [Backups](#backups-and-disaster-recovery)) | Step 4 | Always |
 | [ ] | `~/secrets/authentik_master_token` | Your Authentik admin API token, for `authentik:setup` only | Step 1, item 2 | Setup only; delete afterwards, never mounted |
 | [ ] | `~/secrets/authentik_client_secret` | Client secret of the `hol` sign in app | Step 5 | Always |
 | [ ] | `~/secrets/hol_labs_client_secret` | Client secret of the HOL Labs app; you paste it into Cloudflare, the app never reads it | Step 5 | Only if you use lab VMs |
 | [ ] | `~/secrets/authentik_provisioning_token` | API token of the `hol-webapp-provisioning` account | Step 5, item 7 | Always |
 | [ ] | `~/secrets/gmail_desktop` | Google OAuth Desktop client (id and secret) | [Google sign in](#google-sign-in-personal-gmail-for-testing) | Only if booking emails use Google sign in (you upload it in the console) |
 | [ ] | `~/secrets/cloudflare_access_revoke_token` and `~/secrets/cloudflare_account_id` | Cloudflare API token and account ID; you paste them into the console's API Keys page (step 8), the app does not read the files | Cloudflare dashboard | Only to revoke lab VM access |
+
+[Backups and disaster recovery](#backups-and-disaster-recovery) saves these files (encrypted) with the database.
 
 Not secret files: `TURNSTILE_SECRET_KEY` is an env value (or `TURNSTILE_SECRET_KEY_FILE`), see step 6. The `hol-test-*.pw` files are for `npm run test:e2e` only. A Workspace service account key is uploaded in the console and then deleted, so it does not need to stay in `~/secrets`.
 
@@ -723,11 +725,12 @@ All commands run from the repo root.
 | Stop everything | `docker compose -f docker/compose.yaml down` (the database is not touched) |
 | Roll back to an earlier image | `IMAGE_TAG=sha-<commit> docker compose -f docker/compose.yaml up -d web worker` (list the tags with `docker images reservations`) |
 
-A rollback changes only the code. Migrations are never undone, which is why each migration must also work with the previous release. To restore the data itself, stop `web` and `worker`, then load the dump from before the deploy. This overwrites the current data, so be sure first:
+A rollback changes only the code. Migrations are never undone, which is why each migration must also work with the previous release. To restore the data itself, stop `web` and `worker`, then load the dump from before the deploy. This overwrites the current data, so be sure first. It runs as `postgres`, not `hol_app`, because the restore drops and recreates the two schemas and `hol_app` may not create them (as `hol_app` it fails halfway and leaves the schemas missing). The same command loads a dump from [Backups and disaster recovery](#backups-and-disaster-recovery) too:
 
 ```bash
 docker compose -f docker/compose.yaml exec -T db \
-  pg_restore -U hol_app -d reservations --clean --if-exists < ~/backups/<dump file>
+  pg_restore -U postgres -d reservations --clean --if-exists --single-transaction --exit-on-error \
+  < ~/backups/<dump file>
 ```
 
 ### 6. Troubleshooting
@@ -744,6 +747,590 @@ docker compose -f docker/compose.yaml exec -T db \
 | `reconciler: testbed … is stale and no usable group has the testbed's name` every tick | The testbed's Authentik group was deleted, renamed, or unmarked. Make or rename a marked group with exactly the testbed's name and the next tick finds it again. If the testbed is no longer used, delete it in the console (see "Testbed groups") |
 | Sign in fails with a redirect URI error | Add the public URL to the provider with `npm run authentik:setup` (step 5) |
 | Guest bookings and adding learners fail, and Authentik answers `403 Token invalid/expired` | The provisioning account or its token is gone or was edited, or the saved token has intent App password instead of API. See "Replacing the provisioning account or token" under step 5 of Getting the webapp running |
+
+## Backups and disaster recovery
+
+This section is the whole story of backing up the app and bringing it back. Read "How it works" once, then follow part A to set the backups up and part B when you need to rebuild. Spec: [0024](docs/specs/0024-backup-and-restore.md).
+
+- [How it works](#how-it-works)
+- [What is in a backup, and what is not](#what-is-in-a-backup-and-what-is-not)
+- [Part A: Set up the backups](#part-a-set-up-the-backups)
+- [Part B: Bring the app up on a new server from a backup](#part-b-bring-the-app-up-on-a-new-server-from-a-backup)
+- [Part C: Get one deleted row back](#part-c-get-one-deleted-row-back-without-restoring-everything)
+- [Reference: commands, files, messages](#reference-commands-files-and-messages)
+- [Security notes and key rotation](#security-notes-and-key-rotation)
+
+### How it works
+
+There are two machines, and each has a different job.
+
+| Machine | Called in this guide | What runs there | What it does |
+| --- | --- | --- | --- |
+| The server that runs the app (here `nova`, `10.1.255.18`) | **the app host** | [scripts/backup-remote.sh](scripts/backup-remote.sh) (part of this repo) | Passive. It runs only when the backup host connects, answers one of three questions, and exits. It only reads: it changes nothing on the app host. |
+| A different machine that keeps the copies (here `nile`, `10.1.250.110`) | **the backup host** | [scripts/backup.sh](scripts/backup.sh) and [scripts/restore.sh](scripts/restore.sh) | Active. It decides when to back up, connects to the app host over SSH, pulls the data, encrypts it, stores it, and deletes old copies. |
+
+The backup host **pulls**. The app host holds no key to the backups, so someone who breaks into the app host cannot delete or read them.
+
+Nothing runs by itself until you add a cron job (part A, step 12). `backup.sh` does nothing except when someone, or cron, starts it.
+
+**What one run of `backup.sh` does, for each server in the config:**
+
+1. Takes a lock for that server, so two runs cannot overlap. If another run holds it, this one logs `another backup is running, skipping` and moves on.
+2. Connects with the backup SSH key and runs `backup-remote.sh fingerprint` on the app host. The app host answers with two hashes: one of the secret files and `docker/.env`, and one of the database's write counters (insert, update, and delete counts per real table).
+3. Compares them with the saved ones from the last backup (the file `.state` in the backup folder).
+   - Both the same, and the last backup is younger than `force_after_days`: logs `unchanged` and stops. This takes about a second and moves no data. Most runs end here.
+   - The secret files changed: it goes to step 4 (a secret changing is always a reason to back up).
+   - Only the write counters changed: it goes to step 4 to find out if it matters.
+   - No saved state, `--force`, or the last backup is `force_after_days` (7) days old or older: it backs up without asking more questions. (It still takes the content hash of step 4 on the way, only to save it for next time.)
+4. Runs `backup-remote.sh contenthash`: a stable hash of the actual database contents, leaving out four tables that change all the time without anyone doing anything (`rate_limits`, `jobs`, `session`, `verification`). If it equals the saved one and the secret files did not change, it logs `unchanged (only noise changed)` and stops. So a worker tick or a sign in does not create a backup, but a new booking or an admin edit does.
+5. Runs `backup-remote.sh archive`. The app host streams back one tar file: the database dump, the secret files, `docker/.env`, and a `MANIFEST` listing a checksum for each.
+6. On the backup host, unpacks that tar into a temporary folder and checks it: the dump, the manifest, and the `secrets` folder are there, and every checksum matches. If not, it logs `the archive failed its check, nothing saved` and keeps nothing.
+7. Encrypts the tar with age (using the public key from the config) to a temporary file, checks that file is not empty, then renames it to `hol-<server>-<UTC time>.tar.age`. The rename is last, so a half written file never looks like a backup.
+8. Saves the new hashes in `.state`.
+9. Deletes all but the newest `keep` (5) files for that server. Only files named exactly `hol-<server>-<time>.tar.age` are ever deleted.
+
+Old backups are never overwritten: every backup is a new file with its own time in the name, and the oldest is deleted only after the new one is safely saved. The one exception is two backups in the same second (the name has one second resolution): the second would replace the first. Cron runs 15 minutes apart, so this can only happen if you run `--force` twice within a second. The small `.state` file is the only thing rewritten on every backup; it holds hashes, not data.
+
+**Why two steps (2 to 4) before the dump?** The app is busy: the worker writes to the database every few seconds. A cheap question first (step 2) keeps the 15 minute checks light, and the content hash (step 4) is the final word on whether a real change happened.
+
+### What is in a backup, and what is not
+
+One backup is one file, for example `hol-prod-20261030T033026Z.tar.age` (the time is UTC). It is encrypted. Inside:
+
+| In the backup | Detail |
+| --- | --- |
+| `db.dump` | A `pg_dump` (custom format) of the two schemas `hol_app` and `hol_auth`: bookings, users, testbeds and their types, API keys (the secret parts are already encrypted by the app), the audit log, jobs, email records, sign in sessions, Nile Portal reset settings and runs. |
+| `secrets/` | **Every file** in the app host's secrets folder (`SECRETS_DIR`) except the skip list below. The six files the app cannot start without must exist, or the run fails with `required secret file missing`: `postgres_password`, `hol_app_password`, `auth_secret`, `hol_encryption_keys.json`, `authentik_client_secret`, `authentik_provisioning_token`. A new file you add to the folder is saved automatically and counts as a change. |
+| `docker.env` | The app host's `docker/.env` (host name, `APP_URL`, `ADMIN_ENTRY_PATH`, Turnstile keys, Authentik client id, and so on). |
+| `MANIFEST` | When it was made, the git commit the app was running, the web, worker, and database image names, the last migration applied, the secrets folder path, and a SHA-256 checksum of every file above. |
+
+**Skip list** (in `scripts/backup-remote.sh`, the `skip` array): `authentik_master_token` (delete it after setup anyway), `hol-test-*` (end to end test logins), `*.stale`, `*.old-*`, and any file starting with a dot. **Everything else in the folder is saved**, so do not keep unrelated passwords (for other machines, for example) in the secrets folder.
+
+**Not in a backup, because they live outside this app:**
+
+| Not backed up | What to do on a new server |
+| --- | --- |
+| **Authentik itself**: the `hol` app and providers, the `hol_testbed_group` groups, the learners' accounts and passwords, the provisioning account | Point the new server at the same Authentik. If Authentik is also gone, rebuild it first (step 5 of "Getting the webapp running"), recreate your groups, and expect new client secret files. |
+| **Cloudflare**: the Tunnel, DNS, Access apps, the HOL Labs login method | Point the Tunnel's host name at the new Traefik (see "Running with Docker", step 1). |
+| **Traefik** and the Docker network named `traefik` | Install Traefik, or at least create the network. |
+| **The Turnstile widget** | Its keys are in `docker/.env` (so they are in the backup). The widget must allow the new host name. |
+| **The Docker images** | Rebuilt by `scripts/deploy.sh` from the git commit. |
+
+### Part A: Set up the backups
+
+You do this once. It takes about 20 minutes. The example values are this project's; replace them with yours.
+
+| Name used below | Example | Meaning |
+| --- | --- | --- |
+| app host | `nova` at `10.1.255.18`, user `nova` | The server running the app. |
+| backup host | `nile` at `10.1.250.110`, user `nile` | The machine that keeps the backups. It must be able to reach the app host on port 22. |
+| `<app-user>` | `nova` | The Linux user that owns the repo on the app host and can run `docker compose`. |
+| `<backup-user>` | `nile` | The Linux user on the backup host that runs the backups. |
+
+**Step 1. Check what each machine needs.**
+
+On the **backup host**, run:
+
+```bash
+for c in bash ssh tar flock sha256sum age age-keygen; do command -v $c >/dev/null && echo "ok       $c" || echo "MISSING  $c"; done
+bash --version | head -1
+```
+
+You need bash 4 or later (any current Linux has it). If `age` is missing, install it from your package manager (`sudo apt install age` on Ubuntu or Debian). If you want to run the restore check (step 14) on this machine, it also needs Docker (`docker --version`).
+
+On the **app host**, `<app-user>` must be able to run Docker without sudo, which `scripts/deploy.sh` already needs:
+
+```bash
+docker compose -f ~/reservations/docker/compose.yaml ps     # lists the containers, with no permission error
+```
+
+**Step 2. Put the scripts on the backup host.** The backup host needs only the repo's `scripts/backup.sh`, `scripts/restore.sh`, and `backup/backup.conf.example`. The easiest way is to clone the repo there:
+
+```bash
+git clone <repo url> ~/hol
+cd ~/hol
+```
+
+(If you do not want a full clone, copy just those three files, keeping the folders `scripts/` and `backup/`, and run `chmod +x scripts/*.sh`.) All the commands from here on, "on the backup host", run from this folder.
+
+**Step 3. Make the age key pair (on the backup host).** age is the encryption. The *public* key encrypts and can sit on any machine. The *private* key decrypts and is the only thing that can open a backup.
+
+```bash
+age-keygen -o ~/hol-backup-age.key
+chmod 600 ~/hol-backup-age.key
+```
+
+It prints one line, like `Public key: age1rqurpwtq9hyc82n5hpwtfs0u3ha63t0ldjam2j9mcz4cd8w5pfgqzgd2dd`. **Copy that `age1...` value**: it goes into the config in step 9. The file `~/hol-backup-age.key` holds the private key (a line starting `AGE-SECRET-KEY-`).
+
+> **Do this now, before you rely on any backup:** copy `~/hol-backup-age.key` somewhere safe and offline in at least two places (a password manager entry plus an offline copy, for example). If you lose it, **every backup is unreadable and nothing can recover them**. If it leaks, every backup can be opened. For real use, then delete it from the backup host; the host only needs the public key. You will bring the private key back only for a restore.
+
+**Step 4. Make the SSH key used only for backups (on the backup host).**
+
+```bash
+ssh-keygen -t ed25519 -N '' -C hol-backup -f ~/.ssh/hol_backup_ed25519
+cat ~/.ssh/hol_backup_ed25519.pub
+```
+
+`-N ''` means no passphrase, because cron cannot type one. That is why step 5 locks the key down hard. The command creates two files: the private key `~/.ssh/hol_backup_ed25519` (never copy it anywhere) and the public key `~/.ssh/hol_backup_ed25519.pub`, which is the single line `ssh-ed25519 AAAA... hol-backup` that `cat` printed. Copy that line.
+
+**Step 5. Allow that key on the app host, with a lock on it.** On the **app host**, as `<app-user>`, add one line to the end of `~/.ssh/authorized_keys` (create the file with mode `600` if it is not there). The line is the word list below, then the public key from step 4:
+
+```text
+restrict,command="/home/nova/reservations/scripts/backup-remote.sh" ssh-ed25519 AAAA... hol-backup
+```
+
+```bash
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys
+# then paste the line above (with your real path and key) as the last line of the file
+```
+
+What the two words in front do:
+
+- `command="..."`: whatever the key's owner asks to run, the server runs *this script instead*. The script accepts only `fingerprint`, `contenthash`, or `archive` (it reads the last word of what was asked) and prints a usage line for anything else.
+- `restrict`: turns off a shell, terminals, port forwarding, and agent forwarding for this key.
+
+The path in `command=` must be the real absolute path of `backup-remote.sh` on the app host, and it must be the same repo folder you put in `repo_dir` in step 9.
+
+**Step 6. Trust the app host's identity (on the backup host).** The backup host must know the app host's host key, so a stranger answering on that address cannot receive your data. Fetch it, and *check the fingerprint* against the app host itself before saving:
+
+```bash
+ssh-keyscan -t ed25519 10.1.255.18 > /tmp/apphost.key
+ssh-keygen -lf /tmp/apphost.key           # the fingerprint the backup host sees
+```
+
+On the **app host**, run `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. The two lines must show the same `SHA256:...` value. If they match:
+
+```bash
+cat /tmp/apphost.key >> ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
+rm /tmp/apphost.key
+```
+
+(The backup script uses `StrictHostKeyChecking=yes`: if the host is not in `known_hosts`, or its key changed, it refuses to connect.)
+
+**Step 7. Test the key (on the backup host).** Run these three tests. Replace `nova@10.1.255.18` and the path with yours.
+
+```bash
+K="-i $HOME/.ssh/hol_backup_ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+
+# 1. The allowed question. Expect two lines, secrets=<64 hex digits> and stats=<64 hex digits>:
+ssh $K nova@10.1.255.18 /home/nova/reservations/scripts/backup-remote.sh fingerprint
+
+# 2. Any other command. Expect only: usage: backup-remote.sh fingerprint | contenthash | archive
+ssh $K nova@10.1.255.18 "ls /"
+
+# 3. A shell. Expect the same usage line, and no prompt:
+ssh $K nova@10.1.255.18
+```
+
+If test 1 fails, see "Messages and what they mean" at the end. Do not go on until it prints the two hashes.
+
+**Step 8. Make the folder that will hold the backups (on the backup host).** Pick an absolute path with room for roughly 5 files per server (about 250 KB each today; they grow with the data):
+
+```bash
+mkdir -p ~/hol-backups && chmod 700 ~/hol-backups
+```
+
+**Step 9. Write the config (on the backup host).**
+
+```bash
+cp backup/backup.conf.example backup/backup.conf
+chmod 600 backup/backup.conf
+```
+
+Edit `backup/backup.conf` so it has one block for the server. The file is gitignored (it names your servers). Lines starting with `#` are comments. Keys before the first `[section]` are defaults for every server; a key inside a block wins over a default.
+
+```text
+keep = 5
+force_after_days = 7
+
+[prod]
+ssh_host = nova@10.1.255.18
+ssh_key = ~/.ssh/hol_backup_ed25519
+repo_dir = /home/nova/reservations
+dest_dir = /home/nile/hol-backups/prod
+age_recipient = age1rqurpwtq9hyc82n5hpwtfs0u3ha63t0ldjam2j9mcz4cd8w5pfgqzgd2dd
+```
+
+| Key | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `[name]` | yes | | The server's name: letters, digits, `-` and `_` only. It is part of every file name (`hol-<name>-<time>.tar.age`), so do not rename it later or the old files stop counting toward `keep`. |
+| `ssh_host` | yes | | `user@address` of the app host. |
+| `ssh_key` | yes | | The private key from step 4. `~` means the backup user's home. |
+| `ssh_port` | no | `22` | The app host's SSH port. |
+| `repo_dir` | yes | | The repo folder **on the app host**. The script runs `<repo_dir>/scripts/backup-remote.sh` there. |
+| `dest_dir` | yes | | Where this server's backups go, **on the backup host**. Must be an absolute path (starting with `/` or `~`). Made with mode `700` if it does not exist. Give each server its own folder. |
+| `age_recipient` | yes | | The *public* key from step 3 (starts `age1`). Anything else is refused. |
+| `keep` | no | `5` | How many backups to keep per server. A whole number from 1. |
+| `force_after_days` | no | `7` | Back up at least this often even if nothing seems to have changed. `0` means every run. |
+| `on_failure_cmd` | no | none | A shell command to run when this server's backup fails (to send an email or a message). The variable `BACKUP_SERVER` holds the server's name. |
+
+To back up a **second server**, add another block below the first, with its own name, address, `repo_dir`, and `dest_dir`. Repeat steps 4 to 7 for it (you can reuse the same SSH key and age key, or make new ones).
+
+**Step 10. Dry run (on the backup host).** This asks the app host what changed and saves nothing:
+
+```bash
+scripts/backup.sh --dry-run
+```
+
+```text
+2026-10-30T03:22:45Z prod: would back up (first run)
+```
+
+If it prints an error instead, go to "Messages and what they mean".
+
+**Step 11. First real backup, and a repeat.**
+
+```bash
+scripts/backup.sh
+scripts/backup.sh
+scripts/backup.sh --list
+```
+
+```text
+2026-10-30T03:22:47Z prod: backing up (first run)
+2026-10-30T03:22:48Z prod: saved hol-prod-20261030T032247Z.tar.age (246008 bytes)
+2026-10-30T03:22:49Z prod: unchanged
+prod (/home/nile/hol-backups/prod):
+  hol-prod-20261030T032247Z.tar.age  246008 bytes
+```
+
+The first run saves a file. The second one must say `unchanged` and add nothing. Now prove it notices changes: add or edit a file in the app host's secrets folder, or change something in the admin console, and run `scripts/backup.sh` again. It logs `backing up (secret files changed)` or `backing up (database changed)` and saves a new file. A forced backup ignores all checks:
+
+```bash
+scripts/backup.sh --force
+```
+
+**Step 12. Schedule it (on the backup host).** Open the crontab with `crontab -e` and add:
+
+```cron
+*/15 * * * * cd /home/nile/hol && scripts/backup.sh >> /home/nile/hol-backup.log 2>&1
+```
+
+This runs a check every 15 minutes. Almost all of them end in `unchanged` after a second. Use your real path. Cron has a short `PATH`: if `age` is not in `/usr/bin` (you put it in `~/bin`, say), add a line `PATH=/home/nile/bin:/usr/local/bin:/usr/bin:/bin` above the job. Confirm the job is saved with `crontab -l`, and after 15 minutes look at the end of the log:
+
+```bash
+tail -n 20 /home/nile/hol-backup.log
+```
+
+**Does it survive a reboot?** Yes. The crontab is saved on disk and the `cron` service starts at boot. Check that the service is set to start on this machine with `systemctl is-enabled cron` (it should print `enabled`) and `systemctl is-active cron` (`active`). Two limits to know: cron does **not** catch up on runs missed while the machine was off or `cron` was stopped (the next scheduled run simply does a normal check, and if the last backup is `force_after_days` old or older it forces one), and a machine that is down cannot pull anything. To remove the schedule later, run `crontab -e` and delete the line (`crontab -r` removes the whole crontab).
+
+Every log line starts with a UTC time. To stop the log growing forever, add a rotation file, for example `/etc/logrotate.d/hol-backup` with `weekly`, `rotate 8`, `compress`, `missingok`, and `notifempty` for `/home/nile/hol-backup.log`.
+
+**Step 13. Know it is working.** A failed server logs a line with the reason and the whole run exits with status 1 (cron mails the owner if mail is set up on the box). Set `on_failure_cmd` for something louder. Every few days, glance at the list:
+
+```bash
+scripts/backup.sh --list
+```
+
+Healthy means the newest file is at most `force_after_days` old, since a backup is forced that often. Newest file older than that means backups have stopped: look at the log.
+
+**Step 14. Prove a restore works (monthly, on any machine with Docker).** A backup you have never restored is a guess. Put the age private key and one backup file on a machine with Docker and run:
+
+```bash
+scripts/restore.sh hol-prod-<time>.tar.age --identity /path/to/hol-backup-age.key --verify
+```
+
+It decrypts the file, checks the checksums, starts a temporary Postgres (the exact image named in the manifest, so the first run downloads it), loads the dump, prints each table's row count, and removes the container. It changes nothing else on the machine. The last line must say `verify ok`. Compare a table's count (say `hol_app.bookings`) with the real app. Then delete the private key from that machine again.
+
+### Part B: Bring the app up on a new server from a backup
+
+Use this when the app host is gone, or you are moving to a new one. You need three things in hand: **the backup file** (on the backup host, in `dest_dir`), **the age private key** (from your offline copy), and **access to the same Authentik**. Allow about an hour.
+
+> **Never run `restore.sh` on a server that is serving traffic right now, and never with `--yes` unless you mean it.** A real restore stops `web` and `worker` and *replaces* the whole database on the machine where it runs. The only safe command on a live server is `--verify`.
+
+**Step 1. Decide about the old server.** If the old app host is still running, stop its worker **before** you start the new one:
+
+```bash
+docker compose -f docker/compose.yaml stop worker      # on the OLD server
+```
+
+Why: the worker's lock is per database. Two workers on two databases both run, so you get duplicate booking emails and calendar events, two Nile Portal resets, and two programs changing the same Authentik groups. Better still, stop the old `web` too, so nobody books into the old copy.
+
+**Step 2. Prepare the new server.** It needs:
+
+| Need | How to check |
+| --- | --- |
+| Docker Engine with Compose v2, and your user able to run `docker` without sudo | `docker compose version` and `docker ps` |
+| A user with uid `1000` (the containers run as uid 1000 and must read the secret files) | `id -u` |
+| Node 24 and npm (the restore starts the database with `npm run db:up`) | `node --version` |
+| git | `git --version` |
+| `age` (the restore decrypts with it) | `age --version` |
+| A Traefik container on an external Docker network named `traefik` | `docker network inspect traefik`; if it is missing, `docker network create traefik` (the app will not be reachable until Traefik is really running) |
+
+**Step 3. Get the code.**
+
+```bash
+git clone <repo url> reservations
+cd reservations
+npm install
+```
+
+Use a checkout that is the backup's git commit **or newer**. Migrations only go forward: newer code upgrades older data when it starts, but older code refuses newer data. The restore tells you the backup's commit and whether this checkout includes it.
+
+**Step 4. Bring the backup file and the key to the new server.** From a machine that can reach both (the age key from your offline copy):
+
+```bash
+scp backuphost:/home/nile/hol-backups/prod/hol-prod-<newest>.tar.age ~/
+# on the backup host, "ls -t /home/nile/hol-backups/prod" lists newest first
+```
+
+Put the age private key at `~/hol-backup-age.key` and run `chmod 600 ~/hol-backup-age.key`. You will delete both at the end (step 13).
+
+**Step 5. Look inside first (changes nothing).**
+
+```bash
+scripts/restore.sh ~/hol-prod-<time>.tar.age --identity ~/hol-backup-age.key --verify
+```
+
+You should see the header with the backup's details, then a table of row counts, then `verify ok`. This needs Docker (it runs a throwaway Postgres):
+
+```text
+decrypting hol-prod-20261030T033026Z.tar.age
+checking every file against the manifest
+
+backup made    2026-10-30T03:30:26Z
+git commit     18b9fba7fcabd381ae411162f963a49b5d4bcdaf
+web image      reservations:sha-c3bb72a
+database       postgres:18.6-bookworm@sha256:bbf83594...
+last migration 0019_portal_reset_runs
+secrets were   /home/nova/secrets
+...
+verify ok: the archive decrypts, matches its manifest, and the dump restores.
+```
+
+If it says `could not decrypt (wrong key, or a damaged file)`, the key is the wrong one or the file is damaged: try the other backups on the backup host. If it says `a file does not match the manifest`, the file was damaged in transit: copy it again, or use the previous one.
+
+**Step 6. Restore for real.**
+
+```bash
+scripts/restore.sh ~/hol-prod-<time>.tar.age --identity ~/hol-backup-age.key --secrets-dir ~/secrets
+```
+
+Use `--secrets-dir` to say where the secret files should go on this server. Leave it out to use the folder the old server had (`SECRETS_DIR` in the backed-up `docker/.env`). What happens, in order:
+
+1. Decrypts and checks the checksums, and prints the backup's details (as in step 5).
+2. Writes `docker/.env` from the backup. If you gave `--secrets-dir`, it sets the `SECRETS_DIR=` line to that path. It prints `wrote docker/.env`.
+3. Creates the secrets folder (mode `700`) and writes every secret file into it with mode `600`. It prints `wrote N secret files to <folder>`.
+4. If a file already exists with different contents, it stops with `<file> already exists and differs. Check it, then rerun with --overwrite`. Look at the file first. Add `--overwrite` only if replacing it is right. Rerunning with the same options when files already match is fine.
+5. Prints `ok: this checkout includes the backup's commit`, or a `WARNING` that it does not (then run `git pull` before deploying).
+6. Prints a note if `docker/compose.yaml` pins a different Postgres image than the backup came from.
+7. Prints `This replaces everything in the hol_app and hol_auth schemas...` and waits. **Type `restore` and press Enter** to go on (anything else cancels; the files written above stay). `--yes` skips this question.
+8. Stops `web` and `worker` if they are running, starts the database (`npm run db:up`: it also creates the `hol_app` role from the `hol_app_password` file), then loads the dump with `pg_restore` as the `postgres` user inside the container, in one transaction.
+9. Prints `database restored.` and the next steps. **It never starts web or the worker.**
+
+If `pg_restore` fails, nothing was changed (it runs in a single transaction and rolls back), so you can fix the cause and rerun.
+
+**Step 7. Fix the settings that depend on this server.** Open `docker/.env` and check:
+
+| Variable | Set it to |
+| --- | --- |
+| `SECRETS_DIR` | The folder from step 6 (absolute path). |
+| `APP_HOST` | The public host name of the new server, if it changed. |
+| `APP_URL` | `https://` plus `APP_HOST`, exactly as visitors type it. If this is wrong, sign in fails with `state_mismatch`. |
+| `DB_HOST_PORT` | Only if port 5432 is already taken on this machine. |
+
+**Step 8. Check the secret files are there (names only, never contents).**
+
+```bash
+for f in postgres_password hol_app_password auth_secret hol_encryption_keys.json \
+  authentik_client_secret authentik_provisioning_token; do
+  [ -s ~/secrets/$f ] && echo "ok       $f" || echo "MISSING  $f"
+done
+```
+
+Use your real secrets folder in place of `~/secrets`. All six must say `ok`.
+
+**Step 9. Make sure the code is new enough, then build and start the web app.**
+
+```bash
+git pull
+npm install
+scripts/deploy.sh web
+```
+
+`deploy.sh web` builds the two images (a few minutes: the worker image includes Chromium), applies any new migrations, and starts `migrate` and `web` but **not the worker**. It also writes a fresh pre deploy dump into `~/backups`.
+
+**Step 10. Start the worker, only when step 1 is true.**
+
+```bash
+docker compose -f docker/compose.yaml up -d worker
+```
+
+**Step 11. Point traffic at the new server.** In Cloudflare Zero Trust, change the Tunnel's public host name to the new Traefik, or update DNS. If `APP_URL` changed, add the new URL to the Authentik provider's redirect URIs by running step 5 of "Getting the webapp running" again with `APP_URLS=<new url>`; without it, sign in fails with a redirect URI error. Check the Turnstile widget allows the new host name.
+
+**Step 12. Check that it works.**
+
+```bash
+docker compose -f docker/compose.yaml ps          # web shows (healthy); worker is Up
+curl -s https://<APP_HOST>/api/health             # {"status":"ok","db":"ok"}
+docker logs reservations-migrate-1 | tail         # "nothing to apply", or the migrations it applied
+docker logs reservations-worker-1 | tail          # "worker: started"
+```
+
+Then in a browser: sign in as an admin at `https://<APP_HOST><ADMIN_ENTRY_PATH>`; open the bookings list and confirm the newest booking is there; open the API Keys page and confirm every key still shows as saved (if the keyring file is wrong, saving or testing a key says it cannot be decrypted); and make one test booking to see that the email arrives.
+
+**Step 13. Clean up.** Delete the temporary copies from the new server, so the key is not left lying around:
+
+```bash
+rm -f ~/hol-prod-<time>.tar.age ~/hol-backup-age.key
+```
+
+Then set up backups for this new server (part A) so it is protected too.
+
+**If something goes wrong halfway.** The old server and the backup file are untouched, so you can start again. To wipe a half finished restore on the new machine and begin at step 6: `docker compose -f docker/compose.yaml down` (keeps the volume) and rerun `restore.sh` (it replaces the whole database each time). To throw the new machine's database away completely, `docker compose -f docker/compose.yaml down -v`, which also deletes the volume `hol_pgdata`: only do that on a machine that has nothing of value.
+
+**Restoring into the same server** (for example a bad migration, or an admin deleted a lot): use the same steps 5 and 6, skipping 1 to 4, but remember a real restore replaces *all* data back to the time of the backup: bookings made since are lost. For a single deleted row, use part C instead.
+
+### Part C: Get one deleted row back (without restoring everything)
+
+Example: an admin deleted a testbed type and wants it back. The newest backup before the deletion still has it. This is manual and read only for the live app: you load the backup into a throwaway database, find the row, and copy it back by hand.
+
+1. Copy the backup file from *before* the deletion and the age private key to a scratch folder on a machine with Docker, then decrypt and unpack:
+
+   ```bash
+   mkdir -p ~/scratch && cd ~/scratch
+   age -d -i ~/hol-backup-age.key -o plain.tar ~/hol-prod-<time>.tar.age
+   tar -xf plain.tar ./db.dump ./MANIFEST
+   grep -E '^db_image=' MANIFEST
+   ```
+
+2. Start a throwaway Postgres from the image in that last line (replace `<db_image>` with the part after `db_image=`), and load the dump:
+
+   ```bash
+   docker run -d --rm --name hol-scratch -e POSTGRES_PASSWORD=x -e POSTGRES_DB=reservations \
+     --tmpfs /var/lib/postgresql <db_image>
+   sleep 8
+   docker exec -i hol-scratch psql -h 127.0.0.1 -U postgres -d reservations \
+     -c "create role hol_app login; create extension if not exists btree_gist;"
+   docker exec -i hol-scratch pg_restore -h 127.0.0.1 -U postgres -d reservations < db.dump
+   ```
+
+3. Look at the row (here the soft deleted testbed types; `deleted_at` is set when an admin deletes one):
+
+   ```bash
+   docker exec -it hol-scratch psql -h 127.0.0.1 -U postgres -d reservations \
+     -c "select * from hol_app.testbed_types order by name;"
+   ```
+
+4. Re create the row in the live app using the admin console with the values you see (this is safest, since the app also writes the audit log), or, if you must, copy the row with SQL into the live database. If a soft deleted row simply still exists in the live database with `deleted_at` set, an admin may be able to restore it without any of this.
+
+5. Remove the scratch pieces:
+
+   ```bash
+   docker stop hol-scratch
+   rm -rf ~/scratch
+   ```
+
+### Reference: commands, files, and messages
+
+**`scripts/backup.sh`** (backup host)
+
+| Option | Meaning |
+| --- | --- |
+| *(none)* | Back up every server in the config that needs it. |
+| `--config FILE` | Use this config instead of `backup/backup.conf`. |
+| `--server NAME` | Only that server. An unknown name is an error. |
+| `--force` | Back up even if nothing changed. |
+| `--dry-run` | Ask the app host what changed, say what it would do, save nothing. |
+| `--list` | List the saved backups per server and their sizes. |
+
+Exit status: `0` all fine (including `unchanged`), `1` at least one server failed (or a config or option problem), `2` bad option.
+
+**`scripts/restore.sh BACKUP.tar.age --identity KEY`** (the machine being rebuilt)
+
+| Option | Meaning |
+| --- | --- |
+| `--verify` | Restore into a throwaway Postgres and print row counts. Changes nothing else. |
+| `--secrets-dir DIR` | Where to put the secret files (also written into `docker/.env`). |
+| `--overwrite` | Replace secret files or `docker/.env` that already exist and differ. |
+| `--yes` | Do not ask you to type `restore`. |
+
+**`scripts/backup-remote.sh`** (app host, called over SSH by the backup key): `fingerprint`, `contenthash`, `archive`. It reads only.
+
+**Where things live**
+
+| Path | Machine | What |
+| --- | --- | --- |
+| `scripts/backup.sh`, `scripts/restore.sh`, `backup/backup.conf` | backup host | The active scripts and the config |
+| `<dest_dir>/hol-<server>-<UTC time>.tar.age` | backup host | The encrypted backups (newest `keep` kept) |
+| `<dest_dir>/.state` | backup host | The hashes of the last backup (delete it to force the next run) |
+| `<dest_dir>/.lock` | backup host | The lock file; harmless |
+| `~/.ssh/hol_backup_ed25519` | backup host | The backup SSH private key |
+| age private key (offline) | **not on a server** | The only thing that opens a backup |
+| `scripts/backup-remote.sh` | app host (in the repo) | The three read only questions |
+| the `restrict,command=` line in `~/.ssh/authorized_keys` | app host | The locked down backup key |
+
+**Everything on the backup host, at a glance** (example for user `nile`, with the scripts cloned or copied to `~/hol`):
+
+```text
+/home/nile
+├── hol/                              the scripts and config
+│   ├── scripts/backup.sh             does the backups (cron runs it)
+│   ├── scripts/restore.sh            restore and verify (you run it)
+│   ├── backup/backup.conf            your config (mode 600, gitignored, no secrets in it)
+│   └── backup/backup.conf.example    the template it was copied from
+├── hol-backups/                      mode 700
+│   └── prod/                         one folder per server (its dest_dir)
+│       ├── hol-prod-<UTC time>.tar.age   the encrypted backups, newest 5 kept
+│       ├── .state                    4 lines of hashes and the last backup time
+│       └── .lock                     empty file that stops two runs at once
+├── hol-backup.log                    what cron's runs printed (rotate it)
+├── hol-backup-age.key                the age PRIVATE key: keep it offline, not here, for real use
+└── .ssh/
+    ├── hol_backup_ed25519            the backup SSH private key (mode 600)
+    ├── hol_backup_ed25519.pub        its public half (also in the app host's authorized_keys)
+    └── known_hosts                   includes the app host's host key
+```
+
+Not on the backup host: the app, the database, the Docker containers, the live secrets, and any unencrypted copy of the data (a working copy exists only during a run and is deleted). Anyone who gets the `.tar.age` files alone has nothing useful; anyone who also has the age private key can read everything.
+
+**Messages and what they mean**
+
+| Message | Meaning and fix |
+| --- | --- |
+| `prod: unchanged` | Nothing changed since the last backup. Normal. |
+| `prod: unchanged (only noise changed)` | Only the busy tables moved. Normal. |
+| `prod: backing up (first run)` or `(forced)` or `(weekly safety net)` or `(secret files changed)` or `(database changed)` | The reason a backup was taken. |
+| `prod: saved hol-...tar.age (N bytes)` | Success. |
+| `prod: removed old backup ...` | Pruning to `keep`. |
+| `Permission denied (publickey)` | The public key line is not in `authorized_keys` on the app host (for that user), or `ssh_key` points to the wrong file, or `authorized_keys` has the wrong permissions (`600`; the `.ssh` folder `700`). |
+| `Host key verification failed` | The app host is not in `known_hosts` on the backup host (redo step 6), or its key changed. If the server was rebuilt, confirm that, then remove the old line with `ssh-keygen -R <address>` and redo step 6. |
+| `Connection timed out` | A firewall: the backup host cannot reach the app host on the SSH port. |
+| `prod: fingerprint failed` | The SSH call failed: run the step 7 test by hand to see the real error. |
+| `usage: backup-remote.sh ...` printed when you expected hashes | The command sent was not exactly `fingerprint`, `contenthash`, or `archive`; check `repo_dir`. |
+| `backup-remote: required secret file missing: X` | One of the six required files is gone from the app host's secrets folder. The backup is skipped until it is back. |
+| `backup-remote: pg_dump wrote nothing` | The database container is down or unhealthy on the app host. Check `docker compose ps`. |
+| `prod: the archive failed its check, nothing saved` | The data pulled was incomplete or damaged. Nothing was kept; the next run tries again. |
+| `prod: encryption failed` | `age` is missing, not in cron's `PATH`, or the `age_recipient` is not a real public key. |
+| `prod: age_recipient must be an age public key (age1...)` | The config value is wrong. Use the `Public key:` line from step 3. |
+| `prod: dest_dir must be an absolute path` | Write the full path starting with `/`. |
+| `prod: another backup is running, skipping` | A previous run still holds the lock. Normal if one is slow; if it never ends, check for a stuck `backup.sh` process. |
+| `backup: cannot read config ...` | The config path is wrong or the file is not readable. |
+| `backup: bad config line: ...` | A line in the config is not `key = value`, `[section]`, or a comment. |
+| `backup: no server named 'X'` | `--server` does not match any `[section]`. |
+| `restore: could not decrypt (wrong key, or a damaged file)` | Wrong age private key, or the file is damaged. Try another backup. |
+| `restore: a file does not match the manifest: the backup is damaged` | The file changed after it was made. Copy it again or use an older one. |
+| `restore: <file> already exists and differs...` | See part B, step 6, item 4. |
+| `restore: pg_restore failed: the dump is not restorable` | (`--verify`) The dump is broken; use another backup and tell the owner. |
+| `WARNING: this checkout does not include the backup's commit` | `git pull` before you deploy, or `migrate` will refuse the newer database. |
+| `state_mismatch` at sign in | `APP_URL` does not match the address in the browser, or the new URL is not in the Authentik redirect URIs. |
+| A saved API key cannot be decrypted | `hol_encryption_keys.json` is not the one from the backup, or `APP_ENCRYPTION_ACTIVE_KEY_ID` in `docker/.env` is wrong. |
+| `bind: address already in use` for port 5432 | Another Postgres is on the machine. Set `DB_HOST_PORT` in `docker/.env`. |
+| `network traefik declared as external, but could not be found` | `docker network create traefik`, or start your Traefik first. |
+
+### Security notes and key rotation
+
+- **Plaintext only in transit and briefly in temporary folders.** The backup is encrypted before it is stored. While it is being pulled it is inside the SSH connection, and for a moment it sits unencrypted in a mode `700` temporary folder on the app host and one on the backup host; both are removed when the run ends.
+- **The backup SSH key can only run three read only questions** on the app host, because of the `restrict,command=` line. If it is stolen, the thief can read the data the backup would contain (they can ask for `archive`), so treat the backup host like the app host: keep it patched, limit who can log in, and protect `~/.ssh/hol_backup_ed25519` (mode `600`).
+- **The age private key is the crown jewel.** Nothing in the repo or on any server needs it except during a restore.
+- **No secret value is written to either script's log.** Secret file *names* appear in errors, never contents.
+- **`backup/backup.conf` is gitignored** and holds server addresses and the *public* age key. A test checks that only the `.example` is tracked.
+- **Rotate the age key** (suspected leak, or a person leaves): make a new key pair (step 3), put the new public key in `age_recipient`, run `scripts/backup.sh --force`. New backups use the new key. **Old backups still need the old private key**, so keep it until those files are gone (5 backups later), then destroy it.
+- **Rotate the SSH key**: make a new one (step 4), add its line to `authorized_keys` on the app host (step 5), change `ssh_key` in the config, run `scripts/backup.sh --dry-run`, then delete the old line from `authorized_keys`.
+- **If you move the backup host**, copy `backup/backup.conf`, the SSH key, and the backup folder, and redo step 6 on the new host.
+- **If a secret in the folder is rotated** (for example a new `authentik_provisioning_token`), the next run sees the file changed and takes a new backup within 15 minutes, with no action from you.
 
 ## Appendix A: Creating the Google service account (hand-off for a Workspace admin)
 

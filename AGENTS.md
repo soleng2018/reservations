@@ -39,6 +39,8 @@ npm run test:e2e     # Playwright against the running dev server on the LAN IP; 
 npm run authentik:setup   # dry run; master token and APP_URLS passed for that run only, --apply writes (owner approves shared changes)
 npm run secrets:keygen    # prints a new encryption keyring entry (key id plus a 32 byte key) to stdout; writes no file
 npm run build:bundle      # esbuild bundles of the worker and migrate into dist/ (the image runs these)
+scripts/backup.sh         # on the BACKUP host: pulls encrypted backups over SSH from the servers in backup/backup.conf, keeps 5, only when something changed (--force, --dry-run, --list)
+scripts/restore.sh        # puts a backup back on a new server (--verify restores into a throwaway Postgres and changes nothing)
 scripts/deploy.sh         # build the image, pg_dump, then compose up migrate, web, worker (docker/compose.yaml)
 ```
 
