@@ -17,6 +17,7 @@ import {
   APP_NAME,
   APP_SLUG,
   AUTHORIZATION_FLOWS,
+  cloudflareLoginSettings,
   DEFAULT_INVALIDATION_FLOW_SLUG,
   HOL_AUTHORIZATION_FLOW_SLUG,
   ISOLATION_BINDING_SETTINGS,
@@ -1056,13 +1057,21 @@ async function main(): Promise<number> {
     // The client id goes into Cloudflare's "Reservations HOL Labs" login.
     say(`\nHOL Labs client id: ${labs.provider.client_id}`);
     // Its secret only when this run made the provider, never on a rerun.
+    let secretNote = "not shown again; use the file saved when it was made";
     if (labs.created) {
       const labsOut = args["labs-secret-out"];
       if (labsOut) {
         writeFileSync(labsOut, labs.provider.client_secret, { mode: 0o600 });
         say(`HOL Labs client secret written to ${labsOut}`);
-      } else say(`HOL Labs client secret: ${labs.provider.client_secret}`);
+        secretNote = `the contents of ${labsOut}`;
+      } else {
+        say(`HOL Labs client secret: ${labs.provider.client_secret}`);
+        secretNote = "the HOL Labs client secret printed above";
+      }
     }
+    say(
+      `\n${cloudflareLoginSettings(env.AUTHENTIK_URL, team.domain, labs.provider.client_id, secretNote).join("\n")}`,
+    );
   }
 
   if (!provider || !apply) {

@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CALLBACK_PATH,
+  cloudflareLoginSettings,
   LAB_AUTHORIZATION_FLOW_SLUG,
   LABS_PROVIDER_NAME,
   PROVISIONING_PERMISSIONS,
@@ -187,6 +188,29 @@ describe("HOL Labs", () => {
       "soleng2018.cloudflareaccess.com.evil.example",
     ])
       expect(parseTeamDomain(bad).ok).toBe(false);
+  });
+
+  it("lists every Cloudflare login field, with the secret kept out", () => {
+    const text = cloudflareLoginSettings(
+      "https://authentik.example",
+      "team.cloudflareaccess.com",
+      "client-id-1",
+      "the contents of /tmp/secret-file",
+    ).join("\n");
+    expect(text).toContain(
+      "https://team.cloudflareaccess.com/cdn-cgi/access/callback",
+    );
+    expect(text).toContain("App ID:           client-id-1");
+    expect(text).toContain(
+      "https://authentik.example/application/o/authorize/",
+    );
+    expect(text).toContain("https://authentik.example/application/o/token/");
+    expect(text).toContain(
+      "https://authentik.example/application/o/hol-labs/jwks/",
+    );
+    expect(text).toContain("PKCE:             On");
+    expect(text).toContain("add groups");
+    expect(text).toContain("the contents of /tmp/secret-file");
   });
 
   it("gives HOL Labs its own empty authorization flow, like HOL's", () => {
