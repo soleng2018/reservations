@@ -182,13 +182,26 @@ A new keyring cannot open secrets saved under the old one. After you delete the 
 
 4. Copy the printed `AUTHENTIK_CLIENT_ID=...` into `.env.local`, and later into `docker/.env` (step 9).
 5. Note the printed `HOL Labs client id`. You paste it into Cloudflare in the next item.
-6. In Cloudflare Zero Trust, open **Settings → Authentication → Login methods**. Edit the OIDC method that signs lab VM learners in through Authentik (here it is named "AWS Authentik IDP"), and set its **App ID** (Cloudflare's name for the client id) to the HOL Labs client id from item 5. Set its **Client secret** to the contents of the file:
+6. In Cloudflare Zero Trust, open **Settings → Authentication → Login methods**. Edit the OpenID Connect method that signs lab VM learners in through Authentik (here it is named "AWS Authentik IDP"), or add one if there is none, and set every field below. The setup script prints the same list, with your values filled in, after the `HOL Labs client id` line. `<authentik>` is your `AUTHENTIK_URL`:
 
-   ```bash
-   cat ~/secrets/hol_labs_client_secret
-   ```
+   | Cloudflare field | Value |
+   | --- | --- |
+   | Name | Any name you like (it shows on the login page), for example `HOL Labs` |
+   | Callback URL | Read only. It must read `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`, which is the redirect URI step 5 set on the HOL Labs provider from `CLOUDFLARE_TEAM_DOMAIN`. Nothing to enter |
+   | App ID | The `HOL Labs client id` from item 5 |
+   | Client secret | The contents of `~/secrets/hol_labs_client_secret` (`cat` it) |
+   | Auth URL | `<authentik>/application/o/authorize/` |
+   | Token URL | `<authentik>/application/o/token/` |
+   | Certificate URL | `<authentik>/application/o/hol-labs/jwks/` (the `hol-labs` in the path is the application slug) |
+   | Proof Key for Code Exchange (PKCE) | On. Authentik supports it for confidential clients |
+   | Enable SCIM | Off |
+   | Email claim | Leave empty |
+   | OIDC Claims | Add `groups`. The lab VM Allow policy reads this claim, and without it every learner is denied. Authentik sends it with the `profile` scope |
+   | OIDC Scopes | `openid`, `email`, `profile`, which Cloudflare fills in and won't let you delete. Add no others |
 
-   Until you do, lab VM sign in fails. A login method that uses another Authentik app (here, "Nile Single Sign-On", which is `cloudflare-integration`) is not part of this app. Leave it alone.
+   Press **Test**, then **Save**. Until you do, lab VM sign in fails. Each lab VM's Access application must allow only this login method (turn "Accept all available identity providers" off), with an Allow policy on the OIDC claim `groups` equal to the testbed's group name.
+
+   Authentik's `/application/o/authorize/` and `/application/o/token/` are the same for every application. Only the Certificate URL names the application, so a method copied from another Authentik app keeps that app's `…/<slug>/jwks/` until you change it.
 
 7. Make the provisioning token. The script never creates it, so this is always by hand:
    1. In Authentik, open **Directory → Tokens and App passwords → Create**.

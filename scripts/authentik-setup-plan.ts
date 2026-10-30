@@ -309,6 +309,35 @@ export const LABS_PROVIDER_NAME = "HOL Labs";
 export const LAB_AUTHORIZATION_FLOW_SLUG = "hol-lab-authorization";
 export const LABS_POLICY = "hol-labs-access";
 
+// Every field of the Cloudflare Zero Trust login method (Settings →
+// Authentication → Login methods → OpenID Connect) that signs lab VM learners
+// in through HOL Labs. The authorize and token endpoints are the same for every
+// Authentik application; only the certificate (JWKS) URL names the slug. The
+// secret is never in these lines: `secretNote` says where to get it.
+export function cloudflareLoginSettings(
+  authentikUrl: string,
+  teamDomain: string,
+  clientId: string,
+  secretNote: string,
+): readonly string[] {
+  const base = authentikUrl.replace(/\/+$/, "");
+  return [
+    "Cloudflare Zero Trust → Settings → Authentication → Login methods → OpenID Connect:",
+    "  Name:             any name you like, for example HOL Labs",
+    `  Callback URL:     https://${teamDomain}/cdn-cgi/access/callback (read only; it must match)`,
+    `  App ID:           ${clientId}`,
+    `  Client secret:    ${secretNote}`,
+    `  Auth URL:         ${base}/application/o/authorize/`,
+    `  Token URL:        ${base}/application/o/token/`,
+    `  Certificate URL:  ${base}/application/o/${LABS_APP_SLUG}/jwks/`,
+    "  PKCE:             On",
+    "  Enable SCIM:      Off",
+    "  Email claim:      leave empty",
+    "  OIDC Claims:      add groups (the lab VM Allow policy reads it)",
+    "  OIDC Scopes:      openid, email, profile (the defaults)",
+  ];
+}
+
 export type ParsedTeamDomain =
   | { readonly ok: true; readonly domain: string }
   | { readonly ok: false; readonly error: string };
