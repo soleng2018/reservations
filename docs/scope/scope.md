@@ -373,7 +373,7 @@ When a learner is booked on a testbed, their Authentik user gets a username in t
 - [x] Verify it: `/check verify nile identity per domain` (2026-10-25, live dev run; AC-5 outage, AC-12 admin refusal and the reminder email rest on unit tests)
 - [x] Test it: `/test nile identity per domain` (2026-10-25: send time login in booked, rescheduled, cancelled and reminder emails; reschedule conflict and untagged refusals; numbered login and admin email refusal in the guest saga (the `ensureNileLogin` guard, AC-12, is covered by the guard tests))
 - [x] Review it (fresh model): `/check review nile identity per domain`
-- [ ] Document it: `/document nile identity per domain`
+- [x] Document it: `/document nile identity per domain` (CHANGELOG.md, 2026-11-02)
 spec [0019](../specs/0019-nile-identity-per-domain.md)
 code in `lib/nile-login.ts`, `server/authentik/nile-login.ts`, `server/booking/`, `db/migrations/0015_learner_domain_logins.sql`
 
