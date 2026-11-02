@@ -41,7 +41,7 @@ describe("BookInput (AC-3, AC-4)", () => {
 
   it("names each missing field in plain words", () => {
     expect(errorsFor({})).toEqual({
-      name: "Enter your name.",
+      name: "Enter your first and last name.",
       company: "Enter your company.",
       email: "Enter your email.",
       timezone: "Choose a timezone.",
@@ -52,17 +52,22 @@ describe("BookInput (AC-3, AC-4)", () => {
 
   it("refuses name and company made only of spaces", () => {
     expect(errorsFor({ ...valid, name: "   ", company: "\t" })).toEqual({
-      name: "Enter your name.",
+      name: "Enter your first and last name.",
       company: "Enter your company.",
     });
   });
 
   it("allows 200 characters of name and refuses 201", () => {
     expect(
-      BookInput.safeParse({ ...valid, name: "a".repeat(200) }).success,
+      BookInput.safeParse({
+        ...valid,
+        name: `${"a".repeat(99)} ${"b".repeat(100)}`,
+      }).success,
     ).toBe(true);
-    expect(errorsFor({ ...valid, name: "a".repeat(201) })).toEqual({
-      name: "Use at most 200 characters.",
+    expect(
+      errorsFor({ ...valid, name: `${"a".repeat(100)} ${"b".repeat(100)}` }),
+    ).toEqual({
+      name: "Enter your first and last name.",
     });
   });
 
@@ -111,9 +116,9 @@ describe("DetailsInput (spec 0010 AC-2)", () => {
   };
 
   it("is the Step 1 fields of BookInput, without a start", () => {
-    expect(DetailsInput.parse({ ...details, name: " Ada " })).toEqual({
+    expect(DetailsInput.parse({ ...details, name: " Ada Lovelace " })).toEqual({
       ...details,
-      name: "Ada",
+      name: "Ada Lovelace",
     });
   });
 
@@ -121,7 +126,7 @@ describe("DetailsInput (spec 0010 AC-2)", () => {
     const r = DetailsInput.safeParse({});
     expect(r.success).toBe(false);
     expect(r.error && fieldErrors(r.error)).toEqual({
-      name: "Enter your name.",
+      name: "Enter your first and last name.",
       company: "Enter your company.",
       email: "Enter your email.",
       timezone: "Choose a timezone.",

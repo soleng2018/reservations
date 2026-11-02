@@ -56,7 +56,7 @@ export type RescheduleState = TimeSlice & {
   readonly submitId: number;
   readonly ticks: number; // progress items ticked, 0 to 3
   // "unchanged": nothing moved. "unknown": the reply was lost.
-  readonly failure: "unchanged" | "unknown" | null;
+  readonly failure: "unchanged" | "name_incomplete" | "unknown" | null;
   readonly done: Rescheduled | null;
   // The booking changed meanwhile: leave for /reservations (AC-5 toast).
   readonly gone: boolean;
@@ -151,6 +151,8 @@ function rescheduleDone(
       return { ...s, gone: true };
     case "limited":
       return { ...s, phase: "editing", step: "confirm", confirmLimited: true };
+    case "name_incomplete":
+      return { ...s, phase: "failure", failure: "name_incomplete" };
     case "invalid":
     case "unavailable":
       return { ...s, phase: "failure", failure: "unchanged" };

@@ -37,7 +37,7 @@ export function LearnerFields({
 
   return (
     <>
-      <Field path="name" label="Full name">
+      <Field path="name" label="Full name" description="First and last name">
         <Input
           name="name"
           autoComplete="off"

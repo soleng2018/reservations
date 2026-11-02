@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanPart,
   drawNumbers,
+  hasFullName,
   localPart,
   nameWords,
   nileLoginCandidates,
@@ -106,4 +107,18 @@ describe("drawNumbers", () => {
     const drawn = drawNumbers(4, next);
     expect(drawn).toEqual([1000, 1005, 9999, 1007]);
   });
+});
+
+// covers: spec 0025 AC-1
+describe("hasFullName", () => {
+  it.each(["Ana", "", "  ", "Ana .", ". Ana", "- -"])("refuses %j", (name) => {
+    expect(hasFullName(name)).toBe(false);
+  });
+
+  it.each(["Ana Souza", "Ana de Souza", "  Ana   Souza ", "李 明", "R2 D2"])(
+    "accepts %j",
+    (name) => {
+      expect(hasFullName(name)).toBe(true);
+    },
+  );
 });

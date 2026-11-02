@@ -96,7 +96,7 @@ export type FlowState = TimeSlice & {
   readonly confirmLimited: boolean;
   readonly submitId: number;
   readonly ticks: number; // progress items ticked, 0 to 3
-  readonly failure: "nothing_booked" | "unknown" | null;
+  readonly failure: "nothing_booked" | "name_incomplete" | "unknown" | null;
   readonly booked: Booked | null;
   // The Step 1 name and email kept for the success card after the details
   // are cleared.
@@ -281,6 +281,8 @@ function bookDone(s: FlowState, result: BookState | "thrown"): FlowState {
       };
     case "limited":
       return { ...editing, step: "confirm", confirmLimited: true };
+    case "name_incomplete":
+      return { ...replied, phase: "failure", failure: "name_incomplete" };
     case "refused":
     case "unavailable":
     case "gone":

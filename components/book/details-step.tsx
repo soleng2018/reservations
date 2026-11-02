@@ -70,7 +70,12 @@ export function DetailsStep({
               <AccountSummary account={account} />
             ) : (
               <>
-                <Field path="name" label="Full name" error={fields.name}>
+                <Field
+                  path="name"
+                  label="Full name"
+                  description="First and last name"
+                  error={fields.name}
+                >
                   <Input
                     name="name"
                     autoComplete="name"

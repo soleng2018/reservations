@@ -4,6 +4,7 @@ import { sql, type Kysely } from "kysely";
 import {
   DRAW_COUNT,
   drawNumbers,
+  hasFullName,
   nameWords,
   nileLoginCandidates,
 } from "@/lib/nile-login";
@@ -24,6 +25,7 @@ const MAX_ATTEMPTS = 3;
 export type NileLoginError =
   | "unavailable" // Authentik down, no free login, or out of time
   | "refused" // the write guard: an admin or an untagged user
+  | "name_incomplete" // spec 0025 AC-4: the stored name has no last name
   // AC-3: the stored login is another Authentik user's now. The caller
   // writes the conflict audit row after its rollback.
   | {
@@ -234,6 +236,8 @@ export async function ensureNileLogin(
   draw: (below: number) => number = randomInt,
 ): Promise<Result<NileLoginSet, NileLoginError>> {
   const domain = input.domain.toLowerCase();
+  // Spec 0025 AC-4: before any read or write, so nothing half saved.
+  if (!hasFullName(input.name)) return err("name_incomplete");
   const plain = nileLoginCandidates({ ...input, domain }, [])[0];
   const rows = await trx
     .selectFrom("learner_domain_logins")
@@ -348,12 +352,14 @@ export async function auditNileLoginConflict(
 }
 
 // Every failure of `ensureNileLogin` reads to the learner as "try again
-// shortly" (AC-5); a taken stored login also leaves its audit row.
+// shortly" (AC-5), except an incomplete name (spec 0025 AC-5), which retrying
+// cannot fix; a taken stored login also leaves its audit row.
 export async function nileLoginRefusal(
   conn: Kysely<DB>,
   userId: string,
   error: NileLoginError,
-): Promise<"unavailable"> {
+): Promise<"unavailable" | "name_incomplete"> {
+  if (error === "name_incomplete") return error;
   if (typeof error === "object")
     await auditNileLoginConflict(conn, userId, error.taken);
   return "unavailable";

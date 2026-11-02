@@ -38,6 +38,7 @@ import { enqueueWelcome, welcomeKey } from "@/server/jobs/welcome-queue";
 export type GuestBookingError =
   | StepOneError
   | "unavailable" // "Sign in is temporarily unavailable, try again shortly"
+  | "name_incomplete" // spec 0025: the stored name has no last name
   | "gone"; // the sweeper removed the hold: try again
 
 export type BookedGuest = StartedBooking & {

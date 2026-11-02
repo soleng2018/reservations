@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TriangleAlertIcon } from "lucide-react";
-import { RESCHEDULE_MESSAGES } from "@/lib/booking-input";
+import { BOOK_ERRORS, RESCHEDULE_MESSAGES } from "@/lib/booking-input";
 import { BOOK_HEADING_ID } from "./step-heading";
 
 // The failure screen (spec 0010 AC-9, spec 0011 AC-10). "nothing_booked":
@@ -10,7 +10,7 @@ export function FailureScreen({
   failure,
   flow = "book",
 }: {
-  readonly failure: "nothing_booked" | "unknown";
+  readonly failure: "nothing_booked" | "name_incomplete" | "unknown";
   readonly flow?: "book" | "reschedule";
 }) {
   return (
@@ -29,7 +29,10 @@ export function FailureScreen({
         Something went wrong
       </h1>
       <p role="alert" className="text-cell leading-normal text-fg2">
-        {flow === "reschedule" ? (
+        {failure === "name_incomplete" ? (
+          // Spec 0025 AC-5: retrying cannot help, so say who can.
+          BOOK_ERRORS.name_incomplete
+        ) : flow === "reschedule" ? (
           failure === "nothing_booked" ? (
             RESCHEDULE_MESSAGES.unchanged
           ) : (

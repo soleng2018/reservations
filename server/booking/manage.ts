@@ -282,7 +282,7 @@ export type Rescheduled = {
 };
 
 export type RescheduleRefusal =
-  "stale" | "slot_taken" | "same_time" | "unavailable";
+  "stale" | "slot_taken" | "same_time" | "unavailable" | "name_incomplete";
 
 // Postgres aborts the transaction on these, so they are mapped outside it.
 const PgCode = z.object({ code: z.string() });
@@ -488,7 +488,11 @@ export async function rescheduleOwnBooking(
       }),
     );
     if (moved.ok) return moved;
-    if (typeof moved.error === "object" || moved.error === "refused")
+    if (
+      typeof moved.error === "object" ||
+      moved.error === "refused" ||
+      moved.error === "name_incomplete"
+    )
       return err(await nileLoginRefusal(conn, userId, moved.error));
     return err(moved.error);
   } catch (e) {
