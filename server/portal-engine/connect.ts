@@ -135,18 +135,29 @@ export async function checkTenant(
   if (!info.ok) return err({ kind: "sign_in", reason: "portal_unreachable" });
   const id = Userinfo.safeParse(info.value.body);
   if (info.value.status !== 200 || !id.success)
-    return err({ kind: "tenant_mismatch" });
+    return err({
+      kind: "tenant_mismatch",
+      detail: { step: "userinfo", status: info.value.status },
+    });
   const tenant = await client.call({
     method: "GET",
     path: `/api/tenants/${id.data.tenantId}`,
   });
   if (!tenant.ok) return err({ kind: "sign_in", reason: "portal_unreachable" });
   const named = Tenant.safeParse(tenant.value.body);
-  return tenant.value.status === 200 &&
+  if (
+    tenant.value.status === 200 &&
     named.success &&
     tenantMatches(named.data.name, domain)
-    ? ok(undefined)
-    : err({ kind: "tenant_mismatch" });
+  )
+    return ok(undefined);
+  return err({
+    kind: "tenant_mismatch",
+    detail:
+      tenant.value.status === 200 && named.success
+        ? { step: "name", status: 200, tenantName: named.data.name }
+        : { step: "tenant", status: tenant.value.status },
+  });
 }
 
 // AC-17: a 401 is answered with one fresh sign in for the run and a retry of

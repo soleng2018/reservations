@@ -77,10 +77,21 @@ export type RunDeps = {
   readonly sleep?: (ms: number) => Promise<void>;
 };
 
+// Why the tenant check failed, for the abort's audit row: the step, the HTTP
+// status, and the tenant name when it was read. Never a header or a body.
+export type TenantMismatchDetail = {
+  readonly step: "userinfo" | "tenant" | "name";
+  readonly status: number;
+  readonly tenantName?: string;
+};
+
 export type SignInError =
   | { readonly kind: "sign_in"; readonly reason: PortalResetSignInReason }
   | { readonly kind: "testbed_unavailable" }
-  | { readonly kind: "tenant_mismatch" };
+  | {
+      readonly kind: "tenant_mismatch";
+      readonly detail?: TenantMismatchDetail;
+    };
 
 const Phase = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 
@@ -147,12 +158,14 @@ export async function executeRun(
     reason: PortalResetAbortReason,
     c: Counts,
     guard?: GuardNote,
+    tenant?: TenantMismatchDetail,
   ) =>
     finishRun(conn, run.id, {
       kind: "aborted",
       reason,
       counts: c,
       ...(guard === undefined ? {} : { guard }),
+      ...(tenant === undefined ? {} : { tenant }),
     }).then(() => undefined);
 
   const first = await stopCheck(conn, run.id);
@@ -172,6 +185,8 @@ export async function executeRun(
   const signedIn = await keepingLease(conn, run.id, () => deps.signIn(run));
   if (!signedIn.ok) {
     const failure = signedIn.error;
+    if (failure.kind === "tenant_mismatch")
+      return abort("tenant_mismatch", {}, undefined, failure.detail);
     if (failure.kind !== "sign_in") return abort(failure.kind, {});
     // AC-14: a failure no retry can fix holds the run; the rest end it.
     if (holdsRun(failure.reason)) {
