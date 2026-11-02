@@ -42,7 +42,7 @@ describe("LearnerInput (AC-4, AC-6)", () => {
 
   it("names each missing field with its own message", () => {
     expect(errorsFor({})).toEqual({
-      name: "Enter the full name.",
+      name: "Enter the first and last name.",
       company: "Enter the company name.",
       email: "Enter a valid email address.",
       timezone: "Choose a timezone from the list.",
@@ -51,18 +51,18 @@ describe("LearnerInput (AC-4, AC-6)", () => {
 
   it("refuses a name and company made only of spaces", () => {
     expect(errorsFor({ ...valid, name: "   ", company: "\t" })).toEqual({
-      name: "Enter the full name.",
+      name: "Enter the first and last name.",
       company: "Enter the company name.",
     });
   });
 
   it("allows 200 characters of name and company, and refuses 201", () => {
-    const ok = "x".repeat(200);
+    const ok = `${"x".repeat(99)} ${"y".repeat(100)}`;
     expect(
       LearnerInput.safeParse({ ...valid, name: ok, company: ok }).success,
     ).toBe(true);
     expect(errorsFor({ ...valid, name: `${ok}x`, company: `${ok}x` })).toEqual({
-      name: "Enter the full name.",
+      name: "Enter the first and last name.",
       company: "Enter the company name.",
     });
   });
@@ -94,7 +94,7 @@ describe("LearnerInput (AC-4, AC-6)", () => {
     expect(
       errorsFor({ name: 1, company: null, email: [], timezone: {} }),
     ).toEqual({
-      name: "Enter the full name.",
+      name: "Enter the first and last name.",
       company: "Enter the company name.",
       email: "Enter a valid email address.",
       timezone: "Choose a timezone from the list.",

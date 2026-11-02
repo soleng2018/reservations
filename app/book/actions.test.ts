@@ -78,7 +78,7 @@ async function setup(trx: Kysely<DB>) {
   await makeTestbed(trx, type.id, { name: "aa bench" });
   const email = `dev-guest-${crypto.randomUUID().slice(0, 8)}@nile-test.invalid`;
   const values = {
-    name: "Priya",
+    name: "Priya Shah",
     company: "Acme",
     email,
     timezone: "America/New_York",
@@ -194,7 +194,7 @@ describe.skipIf(!hasDb)("bookAction (AC-4, AC-6)", () => {
         kind: "error",
         code: "invalid",
         fields: {
-          name: "Enter your name.",
+          name: "Enter your first and last name.",
           company: "Use at most 200 characters.",
           email: "Use at most 254 characters.",
           timezone: "Choose a timezone from the list.",
@@ -317,7 +317,7 @@ describe.skipIf(!hasDb)("checkDetailsAction (spec 0010 AC-2)", () => {
         kind: "error",
         code: "invalid",
         fields: {
-          name: "Enter your name.",
+          name: "Enter your first and last name.",
           timezone: "Choose a timezone from the list.",
         },
       });

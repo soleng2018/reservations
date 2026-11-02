@@ -34,6 +34,21 @@ export function nameWords(name: string): {
   return { first, last };
 }
 
+// Spec 0025 AC-1: a name Nile can sign in. At least two words, and the first
+// and the last each hold a letter or a digit (so "Ana ." is not enough).
+export function hasFullName(name: string): boolean {
+  const all = words(name.trim());
+  const first = all[0];
+  const last = all[all.length - 1];
+  return (
+    all.length >= 2 &&
+    first !== undefined &&
+    last !== undefined &&
+    /[\p{L}\p{N}]/u.test(first) &&
+    /[\p{L}\p{N}]/u.test(last)
+  );
+}
+
 // The name part before the `@`: `first.last`, `first`, the email's local part
 // when the first name cleans to nothing, or `learner` as a last resort.
 // `plain` is false for `learner`, which always gets a number (AC-1).

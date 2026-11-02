@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fullName } from "./full-name";
 import { Timezone } from "./timezones";
 
 // The admin's Add User and Edit User form (spec 0008 AC-4, AC-6). Parsed on
@@ -11,7 +12,7 @@ const INVALID_EMAIL = "Enter a valid email address.";
 const NO_ZONE = "Choose a timezone from the list.";
 
 export const LearnerInput = z.object({
-  name: required("Enter the full name."),
+  name: fullName("Enter the first and last name."),
   company: required("Enter the company name."),
   email: z
     .string({ error: INVALID_EMAIL })

@@ -25,7 +25,7 @@ async function setup(trx: Kysely<DB>) {
   const testbed = await makeTestbed(trx, type.id);
   const email = `priya-${crypto.randomUUID().slice(0, 8)}@x.test`;
   const input: GuestBookingInput = {
-    name: "Priya",
+    name: "Priya Shah",
     company: "Acme",
     email,
     timezone: "UTC",
@@ -279,12 +279,13 @@ describe.skipIf(!hasDb)("bookAsGuest Nile login (spec 0019)", () => {
       const r = await bookAsGuest(ak.api, asConn(trx), input);
       expect(r.ok).toBe(true);
       expect(ak.users[0]).toMatchObject({
-        username: `priya@${testbed.domain}`,
+        username: `priya.shah@${testbed.domain}`,
         email,
         attributes: {
           hol_learner: true,
-          mail: `priya@${testbed.domain}`,
+          mail: `priya.shah@${testbed.domain}`,
           firstName: "Priya",
+          lastName: "Shah",
         },
       });
     }));
@@ -309,7 +310,7 @@ describe.skipIf(!hasDb)("bookAsGuest Nile login (spec 0019)", () => {
       });
       expect(again.ok).toBe(true);
       expect(ak.users).toHaveLength(1);
-      expect(ak.users[0]?.username).toBe(`priya@${testbed.domain}`);
+      expect(ak.users[0]?.username).toBe(`priya.shah@${testbed.domain}`);
       expect(ak.users[0]?.email).toBe(email);
     }));
 
@@ -328,13 +329,15 @@ describe.skipIf(!hasDb)("bookAsGuest Nile login (spec 0019)", () => {
     inRollback(async (trx) => {
       const { input, email, testbed } = await setup(trx);
       const ak = fakeAuthentik([
-        fakeUser({ pk: 7, username: `priya@${testbed.domain}` }),
+        fakeUser({ pk: 7, username: `priya.shah@${testbed.domain}` }),
       ]);
       const r = await bookAsGuest(ak.api, asConn(trx), input);
       expect(r.ok).toBe(true);
       const mine = ak.users.find((u) => u.email === email);
       expect(mine?.username).toMatch(
-        new RegExp(`^priya\\d{4}@${testbed.domain?.replaceAll(".", "\\.")}$`),
+        new RegExp(
+          `^priya\.shah\\d{4}@${testbed.domain?.replaceAll(".", "\\.")}$`,
+        ),
       );
       expect(mine?.attributes).toMatchObject({ mail: mine?.username });
       const stored = await trx

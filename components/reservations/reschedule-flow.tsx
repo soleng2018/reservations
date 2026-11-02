@@ -349,7 +349,9 @@ export function RescheduleFlow({
           <FailureScreen
             flow="reschedule"
             failure={
-              state.failure === "unchanged" ? "nothing_booked" : "unknown"
+              state.failure === "unchanged"
+                ? "nothing_booked"
+                : (state.failure ?? "unknown")
             }
           />
           <div className="mt-7 flex justify-center gap-3">

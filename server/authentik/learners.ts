@@ -2,6 +2,7 @@ import "server-only";
 import { UserTypeEnum } from "@goauthentik/api/dist/esm/index.js";
 import { sql, type Kysely } from "kysely";
 import { bookingPhase } from "@/lib/booking-phase";
+import { nameWords } from "@/lib/nile-login";
 import { err, ok, type Result } from "@/lib/result";
 import { audit } from "@/server/audit";
 import { cancelBooking, dbNow } from "@/server/db/bookings";
@@ -181,11 +182,23 @@ export async function updateLearnerIdentity(
   }
   const guarded = await guardUserWrite(api, pk, "learner");
   if (!guarded.ok) return guarded;
+  // Spec 0025 AC-6: Nile reads `firstName` and `lastName`, so a name change
+  // writes them too, merged into the attributes the user already has.
+  const words = change.name === undefined ? null : nameWords(change.name);
   return call("users.update_identity", () =>
     api.coreUsersPartialUpdate({
       id: pk,
       patchedUserRequest: {
-        ...(change.name !== undefined ? { name: change.name } : {}),
+        ...(change.name !== undefined && words !== null
+          ? {
+              name: change.name,
+              attributes: {
+                ...(guarded.value.attributes ?? {}),
+                firstName: words.first,
+                lastName: words.last ?? "",
+              },
+            }
+          : {}),
         ...(change.email !== undefined
           ? {
               email: change.email,

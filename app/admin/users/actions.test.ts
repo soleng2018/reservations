@@ -182,7 +182,7 @@ describe.skipIf(!hasDb)(
             updateLearnerAction(
               learner.id,
               IDLE,
-              learnerForm({ name: "Changed" }),
+              learnerForm({ name: "Changed Name" }),
             ),
           () => resendSetPasswordAdminAction(learner.id),
           () => checkDeactivate(learner.id),
@@ -269,7 +269,7 @@ describe.skipIf(!hasDb)("users actions for an admin (spec 0008)", () => {
       ).toEqual({
         kind: "error",
         fields: {
-          name: "Enter the full name.",
+          name: "Enter the first and last name.",
           email: "Enter a valid email address.",
           timezone: "Choose a timezone from the list.",
         },

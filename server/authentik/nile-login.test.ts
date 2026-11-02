@@ -50,6 +50,19 @@ const audits = async (trx: Kysely<DB>, action: string) =>
       .execute()
   ).map((r) => r.metadata);
 
+// covers: spec 0025 AC-4
+describe.skipIf(!hasDb)("ensureNileLogin and a one word name", () => {
+  it("refuses with name_incomplete before any Authentik write or row", () =>
+    inRollback(async (trx) => {
+      const input = await learner(trx, 900_591, "Ana");
+      const ak = fakeAuthentik([fakeLearner(900_591, { email: input.email })]);
+      const r = await ensureNileLogin(ak.api, trx, input);
+      expect(r).toEqual({ ok: false, error: "name_incomplete" });
+      expect(ak.writes).toEqual([]);
+      expect(await stored(trx, input.userId)).toEqual([]);
+    }));
+});
+
 // covers: AC-2, AC-3, AC-4, AC-5, AC-10, AC-11, AC-12
 describe.skipIf(!hasDb)("ensureNileLogin", () => {
   it("sets username, mail, names; keeps email and other attributes", () =>

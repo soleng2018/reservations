@@ -259,6 +259,42 @@ describe("updateLearnerIdentity and a Nile login", () => {
     });
   });
 
+  // covers: spec 0025 AC-6
+  it("writes the first and last name with the name, keeping the attributes", async () => {
+    const ak = fakeAuthentik([
+      fakeLearner(900_802, {
+        attributes: {
+          hol_learner: true,
+          hol_user_id: "u",
+          mail: "a@nile.test",
+        },
+      }),
+    ]);
+    const r = await updateLearnerIdentity(ak.api, 900_802, {
+      name: "Ana de Souza",
+    });
+    expect(r.ok).toBe(true);
+    expect(ak.writes).toHaveLength(1);
+    expect(ak.users[0]).toMatchObject({
+      name: "Ana de Souza",
+      attributes: {
+        hol_learner: true,
+        hol_user_id: "u",
+        mail: "a@nile.test",
+        firstName: "Ana",
+        lastName: "Souza",
+      },
+    });
+  });
+
+  it("refuses an admin with no write", async () => {
+    const ak = fakeAuthentik([fakeUser({ pk: 900_803, groups: [ADMINS.pk] })]);
+    const pk = 900_803;
+    const r = await updateLearnerIdentity(ak.api, pk, { name: "Ana Souza" });
+    expect(r.ok).toBe(false);
+    expect(ak.writes).toEqual([]);
+  });
+
   it("sets the username to the new email when there is no stored login", async () => {
     const ak = setup();
     await updateLearnerIdentity(ak.api, 900_801, {
