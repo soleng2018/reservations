@@ -260,7 +260,13 @@ describe.skipIf(!hasDb)("connect (AC-12 to AC-17, AC-42, AC-43)", () => {
         sleep: async () => undefined,
         fetchImpl: portalFetch("Nile Workshop 1", seen),
       })(run);
-      expect(result).toEqual({ ok: false, error: { kind: "tenant_mismatch" } });
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          kind: "tenant_mismatch",
+          detail: { step: "name", status: 200, tenantName: "Nile Workshop 1" },
+        },
+      });
       expect(closed).toEqual(["a"]);
       expect(seen).toEqual(["/api/v1/userinfo", `/api/tenants/${TENANT_ID}`]);
     }));

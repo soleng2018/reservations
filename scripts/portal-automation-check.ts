@@ -139,6 +139,8 @@ async function main(): Promise<number> {
   try {
     const tenant = await checkTenant(client, domain);
     verdict("signed in tenant matches the domain", tenant.ok);
+    if (!tenant.ok && tenant.error.kind === "tenant_mismatch")
+      say(`  info  ${JSON.stringify(tenant.error.detail ?? {})}`);
     const list = guards[0]?.listPath;
     const read =
       list === undefined

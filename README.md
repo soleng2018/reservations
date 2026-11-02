@@ -27,7 +27,7 @@ Placeholders in `<angle brackets>` are values only you know. Write them as plain
 
 - **One group per workshop (testbed), made by you.** The app never creates, renames, or deletes a group. Each one needs the attribute `hol_testbed_group` set to the boolean `true`, and the attribute `hol_testbed_domain` set to the workshop's Nile tenant domain (for example `nileworkshop-1.com`). It must be flat (no parent group, no role) and not a superuser group. The group name is what an admin types when adding the testbed, and what Cloudflare Access checks for the lab VMs. Without a marked group with a domain, you cannot add a testbed. Details in [Testbed groups](#testbed-groups).
 - **Your admins as Authentik users.** After setup, add each one to `hol-admins` (step 5, item 8) and turn on MFA. Anyone not in that group is a learner.
-- **Per-workshop automation users are not yours to make.** For Nile Portal Reset, the worker creates `automation@<testbed domain>` itself and adds it to that workshop's group, so you only need the group above. This is optional and described in [Nile Portal Reset setup](#nile-portal-reset-setup).
+- **Per-workshop automation users are not yours to make.** For Nile Portal Reset, the worker creates `automation@<testbed domain>` itself and adds it to that workshop's group, so you only need the group above. This is optional and described in [Nile Portal Reset setup](#nile-portal-reset-setup); if you use it, run its sign in check for each testbed before the first lab.
 - **The Cloudflare side of the lab VMs**, if you use it: the lab VM Access apps use the HOL Labs identity provider and allow the workshop group by name.
 
 **Secret files checklist.** Every secret file lives in `~/secrets/` (the Docker setup reads `SECRETS_DIR` from `docker/.env`, `.secrets/` in the repo by default; use that folder instead if you set it). Tick each one off as you make it. The check command below prints `ok` or `MISSING` for each, so you never have to guess.
@@ -596,19 +596,19 @@ Set up, in this order:
 
 2. **The Authentik permissions.** The provisioning account needs `add_user`, `change_user`, `reset_user_password`, and `add_user_to_group`. `npm run authentik:setup` (a dry run) lists any that are missing. It has no delete permission, and the app never deletes an Authentik user.
 
-3. **Check one workshop by hand (optional, recommended once).** This makes the user, signs in to the real portal, and reads one list. It prints only pass or fail, never the password or a reply. Run it with the dry run first:
+3. **Run the sign in check for every testbed before its first lab (critical).** The worker makes `automation@<domain>` the first time a reset runs, and the portal may not accept a brand new user on that first sign in. The first live reset of Nile Workshop 2 stopped this way (`tenant_mismatch`, nothing changed) and the same check run by hand passed minutes later. So **make each account and sign in once yourself, before the mode is set to Dry run or Live**, and do not turn a testbed on until every line below says `pass`. This makes the user, signs in to the real portal, confirms the tenant, and reads one list. It prints only pass or fail, never the password or a reply. Run it with the dry run first, then with `--apply` (the only step that writes: it creates the user if missing, adds it to the testbed's group, and sets a new random password):
 
    ```bash
    npm run portal:automation-check -- --domain nileworkshop-4.com
    npm run portal:automation-check -- --domain nileworkshop-4.com --apply
    ```
 
-   If the workshop is not a testbed in the app yet, add `--group <access group name> --portal-url <portal address>`.
+   Repeat for each workshop you use (`--domain nileworkshop-1.com`, and so on). Run it again whenever you add a testbed. If a line says `FAIL` on the tenant check, it prints what the portal answered (the step, the HTTP status, and the tenant name); fix that before going on. If the workshop is not a testbed in the app yet, add `--group <access group name> --portal-url <portal address>`.
 
 4. **The Nile Portal Reset page.** Sign in to the admin console and open **Nile Portal Reset**, then:
    - Check the list of portal calls. The first `npm run db:migrate` (the `migrate` container in Docker) loads the starting list from [db/seed/portal-reset-starting-list.json](db/seed/portal-reset-starting-list.json) and prints `seeded: N Nile Portal Reset steps`, so a fresh install already has the full list and you only review it. The order matters: a thing must come after everything that uses it. One rule is enforced: the step that deletes policy groups must come before the step that deletes segments, because the portal's API deletes a segment even while a group still uses it. A Save that breaks this is refused with a message on the segment step, and a saved list in that order is stopped at the start of a run (`invalid_list`).
    - Click **Edit**, confirm the pop up, type the **abort email** (where a stopped, held, or unfinished reset is reported), and press **Save**. Until this is saved, the page warns "Aborted resets will not be emailed."
-   - Set the **mode**. **Off** means resets do not run. **Dry run** reads the portal and records what it would delete, but sends no write. **Live** deletes on real Nile Portals after every lab, and asks for a second confirm. **Start with a dry run**, look at it under **Recent resets**, then go live with the owner present.
+   - Set the **mode**. **Off** means resets do not run. **Dry run** reads the portal and records what it would delete, but sends no write. **Live** deletes on real Nile Portals after every lab, and asks for a second confirm. **Start with a dry run** (after step 3), look at it under **Recent resets**, then go live with the owner present. A dry run signs in and checks the tenant like a live run, so a tenant problem shows up with no writes at stake.
    - To change a step, use its row: drag the handle (mouse, touch, or the keyboard) to move it, switch it off with **Enabled**, or edit its JSON. A step you removed can be brought back under **Add from starting list**.
    - Later deploys never overwrite your list or email, because the file is loaded once. Every change is in the Audit Log as a `portal_reset.*` entry.
 

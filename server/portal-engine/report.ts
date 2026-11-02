@@ -7,6 +7,7 @@ import type {
 import { audit } from "@/server/audit";
 import type { DB } from "@/server/db/types";
 import type { ItemRecord } from "./interpret";
+import type { TenantMismatchDetail } from "./run";
 
 // Ending a run (spec 0023 AC-8, AC-29, AC-31): one transaction writes the
 // outcome, the run level audit row, and the report email job. Item records
@@ -36,6 +37,8 @@ export type Finish =
       readonly guard?: GuardNote;
       // The sign in reason when `reason` is `sign_in_failed` (AC-15).
       readonly signIn?: PortalResetSignInReason;
+      // What the tenant check saw when `reason` is `tenant_mismatch`.
+      readonly tenant?: TenantMismatchDetail;
     };
 
 const cut = (text: string | null, max: number): string | null =>
@@ -190,7 +193,18 @@ export async function finishRunIn(
         : `Portal reset ${f.kind}`,
     metadata:
       f.kind === "aborted"
-        ? { reason: f.reason, counts }
+        ? {
+            reason: f.reason,
+            counts,
+            ...(f.tenant === undefined
+              ? {}
+              : {
+                  tenant: {
+                    ...f.tenant,
+                    tenantName: f.tenant.tenantName?.slice(0, 200),
+                  },
+                }),
+          }
         : { outcome: f.kind, mode: f.mode, counts },
   });
   if (f.kind === "aborted" && f.signIn !== undefined) {
