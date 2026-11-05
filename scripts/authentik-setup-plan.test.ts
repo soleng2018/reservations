@@ -323,6 +323,17 @@ describe("planPermissions", () => {
       ),
     ).toBe(true);
   });
+
+  // covers: spec 0026 AC-17
+  it("grants change_group and view_policybinding once each, and policy bindings stay read only", () => {
+    const count = (name: string) =>
+      PROVISIONING_PERMISSIONS.filter((p) => p === name).length;
+    expect(count("authentik_core.change_group")).toBe(1);
+    expect(count("authentik_policies.view_policybinding")).toBe(1);
+    expect(
+      PROVISIONING_PERMISSIONS.filter((p) => p.includes("policybinding")),
+    ).toEqual(["authentik_policies.view_policybinding"]);
+  });
 });
 
 // covers: spec 0014 AC-11
