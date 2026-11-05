@@ -41,7 +41,7 @@ services:
   # the machine (the multi architecture index digest). A major bump is a dump
   # and restore into a new volume, never a tag change.
   db:
-    image: postgres:18.6-bookworm@sha256:bbf83594798e144bff365a9c191c5d779f181fb3135902064ab8ff11918020fc
+    image: postgres:18.6-bookworm@sha256:5c4783a8cc3f0074912164f94dfa1be4e043438f0f707cf968d7af9a0d31a2c8
     restart: unless-stopped
     environment:
       POSTGRES_DB: reservations
