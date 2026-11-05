@@ -83,7 +83,9 @@ export async function ensureTypeGroup(
       kind: "link",
     });
     if (!allowed.ok) {
-      console.warn(`authentik guard: refused type group link ${match.pk}`);
+      console.warn(
+        `authentik guard: refused type group link ${match.pk} (${allowed.error})`,
+      );
       return err("unsafe");
     }
     return ok({ pk: match.pk, origin: "reused", outcome: "linked" });
@@ -178,7 +180,9 @@ export async function renameTypeGroup(
     { kind: "change", typeId: input.typeId },
   );
   if (!allowed.ok) {
-    console.warn(`authentik guard: refused type group rename ${input.pk}`);
+    console.warn(
+      `authentik guard: refused type group rename ${input.pk} (${allowed.error})`,
+    );
     return err("changed");
   }
   if (group.value.name === input.name) return ok({ kind: "unchanged" });
@@ -235,7 +239,10 @@ async function groupHasBinding(
     : groupHasBinding(api, pk, page + 1);
 }
 
-const hasChildren = (g: Group) => (g.children ?? []).length > 0;
+// A reply without `children` is read as having some: when in doubt the group
+// is left alone (AC-10).
+const hasChildren = (g: Group) =>
+  g.children === undefined || g.children.length > 0;
 
 // AC-9, AC-10: delete the group the app made, unless it is no longer the
 // app's or the owner uses it elsewhere. A group with a policy binding is
@@ -258,26 +265,56 @@ export async function deleteTypeGroup(
   if (!group.ok)
     return group.error === "not_found" ? ok({ kind: "gone" }) : group;
 
-  const allowed = checkTypeGroupWrite(
-    toGroupTarget(group.value),
-    admins.value,
-    { kind: "change", typeId: input.typeId },
-  );
-  if (!allowed.ok) {
-    console.warn(`authentik guard: left type group ${input.pk} in place`);
-    return ok({ kind: "left", reason: "not_ours" });
-  }
-  if (hasChildren(group.value))
-    return ok({ kind: "left", reason: "has_children" });
+  // Why this group must stay, or null when it is safe to destroy. Run on the
+  // first read and again right before the destroy (the owner may have changed
+  // it in between). Logs the pk and the reason only, never the attributes.
+  const keepReason = (g: Group): "not_ours" | "has_children" | null => {
+    const allowed = checkTypeGroupWrite(toGroupTarget(g), admins.value, {
+      kind: "change",
+      typeId: input.typeId,
+    });
+    const reason = !allowed.ok
+      ? "not_ours"
+      : hasChildren(g)
+        ? "has_children"
+        : null;
+    if (reason)
+      console.warn(
+        `authentik guard: left type group ${input.pk} in place (${reason})`,
+      );
+    return reason;
+  };
+
+  const first = keepReason(group.value);
+  if (first) return ok({ kind: "left", reason: first });
 
   const bound = await groupHasBinding(api, input.pk);
   if (!bound.ok) return err("unavailable");
-  if (bound.value) return ok({ kind: "left", reason: "bound" });
+  if (bound.value) {
+    console.warn(
+      `authentik guard: left type group ${input.pk} in place (bound)`,
+    );
+    return ok({ kind: "left", reason: "bound" });
+  }
 
   const members = await call("users.count in group", () =>
     api.coreUsersList({ groupsByPk: [input.pk], pageSize: 1 }),
   );
   if (!members.ok) return err("unavailable");
+
+  // One more read right before the destroy, so a change made since the first
+  // read (a new marker, a child group) is seen.
+  const fresh = await call("groups.retrieve", () =>
+    api.coreGroupsRetrieve({
+      groupUuid: input.pk,
+      includeUsers: false,
+      includeChildren: true,
+    }),
+  );
+  if (!fresh.ok)
+    return fresh.error === "not_found" ? ok({ kind: "gone" }) : fresh;
+  const last = keepReason(fresh.value);
+  if (last) return ok({ kind: "left", reason: last });
 
   const destroyed = await call("groups.destroy", () =>
     api.coreGroupsDestroy({ groupUuid: input.pk }),

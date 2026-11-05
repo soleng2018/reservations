@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Group } from "./client";
 import {
   deleteTypeGroup,
   ensureTypeGroup,
@@ -292,6 +293,65 @@ describe("deleteTypeGroup (spec 0026)", () => {
       ok: true,
       value: { kind: "deleted" },
     });
+  });
+
+  // covers: spec 0026 AC-10, AC-11 (review follow ups)
+  it("leaves the group when a read shows a change made since the first read", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ak = fakeAuthentik([], { groups: [ours("g1", "A")] });
+    let reads = 0;
+    const api = new Proxy(ak.api, {
+      get(t, p, r) {
+        const v = Reflect.get(t, p, r);
+        if (p !== "coreGroupsRetrieve") return v;
+        return async (...a: unknown[]) => {
+          const g = await (v as (...x: unknown[]) => Promise<Group>).apply(
+            t,
+            a,
+          );
+          reads += 1;
+          return reads === 1 ? g : { ...g, children: ["late-child"] };
+        };
+      },
+    });
+    expect(await deleteTypeGroup(api, { typeId: TYPE, pk: "g1" })).toEqual({
+      ok: true,
+      value: { kind: "left", reason: "has_children" },
+    });
+    expect(reads).toBe(2);
+    expect(groupWrites(ak.writes)).toEqual([]);
+  });
+
+  it("reads a reply without children as having children", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ak = fakeAuthentik([], { groups: [ours("g1", "A")] });
+    const api = new Proxy(ak.api, {
+      get(t, p, r) {
+        const v = Reflect.get(t, p, r);
+        if (p !== "coreGroupsRetrieve") return v;
+        return async (...a: unknown[]) => {
+          const g = await (v as (...x: unknown[]) => Promise<Group>).apply(
+            t,
+            a,
+          );
+          return { ...g, children: undefined };
+        };
+      },
+    });
+    expect(await deleteTypeGroup(api, { typeId: TYPE, pk: "g1" })).toEqual({
+      ok: true,
+      value: { kind: "left", reason: "has_children" },
+    });
+    expect(groupWrites(ak.writes)).toEqual([]);
+  });
+
+  it("logs the pk and the reason a group was left, and nothing else", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const ak = fakeAuthentik([], { groups: [ours("g1", "A")], usedBy: ["g1"] });
+    await deleteTypeGroup(ak.api, { typeId: TYPE, pk: "g1" });
+    expect(warn).toHaveBeenCalledWith(
+      "authentik guard: left type group g1 in place (bound)",
+    );
   });
 
   it("goes on when the group is gone, and fails on an outage", async () => {
