@@ -1,7 +1,7 @@
 # 0026. Testbed type groups
 
 **Date**: 2026-11-04
-**Status**: In Progress
+**Status**: Accepted
 
 ## Summary
 
@@ -127,7 +127,7 @@ Approach: Tracer Bullet (from `AGENTS.md`). The thin thread is the add path thro
 5. [x] Delete: `deleteTypeGroup` in `type-groups.ts`, wired into `deleteTestbedType`, its message, and the toast note, satisfies **AC-9**, **AC-10**
 6. [x] `scripts/type-groups-backfill.ts`, the `typegroups:backfill` npm script, and its tests, satisfies **AC-14**, **AC-15**
 7. [x] Authorization and audit pass: action tests for `requireAdmin()` refusals, audit labels in the audit log screen, `audit-coverage` green, satisfies **AC-18**
-8. [ ] Live check on the shared Authentik (owner present): apply the permission change, add a throwaway type, rename it, delete it, and run the backfill dry run before `--apply`, satisfies **AC-1**, **AC-5**, **AC-9**, **AC-14**
+8. [x] Live check on the shared Authentik (owner present): apply the permission change, add a throwaway type, rename it, delete it, and run the backfill dry run before `--apply`, satisfies **AC-1**, **AC-5**, **AC-9**, **AC-14**
 
 ## Consequences
 
