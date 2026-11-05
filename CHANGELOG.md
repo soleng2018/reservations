@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The login shows in the booked, rescheduled, and reminder emails, on the booking and reschedule success screens, and on the reservation page. It is read when the email is sent and is never copied into an email record or a job.
 - The admin learner page has a read only "Nile logins" list with each domain, its login, and which one a booking set last.
 - A new audit action, `user.nile_login_set`, and a source scan (`tests/nile-login-scan.test.ts`) that keeps the login code out of everything except the booking flows.
+- Every Testbed Type now has an Authentik group with exactly the type's name, so the LMS can give learners access to a lab guide by group (see spec 0026). Adding a type makes the group, or links a safe group that already has that name. The group carries `hol_type_group` and `hol_type_id`, never `hol_testbed_group`, so it never shows in the testbed Group dropdown and no learner is added to it.
+- Renaming a type renames the group the app made. A group the owner made is linked, not renamed, and the toast says it keeps its old name. If the app made group is missing it is made again, and if it was changed outside the app the rename is refused.
+- Deleting a type deletes the group the app made, with its members (the users stay). A group the owner made, one with a policy binding, one with child groups, or one that lost its marker is left in place, and the toast says so.
+- If any Authentik step fails, the add, rename, or delete is refused and nothing is saved. A group named like a testbed group, a superuser group, `hol-admins`, or one with a parent or role cannot be used for a type.
+- `npm run typegroups:backfill` gives every existing type its group. It is a dry run by default, `-- --apply` writes, and a second run changes nothing.
+- New audit actions `authentik_group.linked` and `authentik_group.renamed`, with labels in the audit log.
 
 ### Changed
 
@@ -31,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A learner's name must now have a first and a last name. The booking form, the admin learner form, and the booking flow refuse a one word name, and an admin name edit also updates `firstName` and `lastName` in Authentik (see spec 0025).
 - An admin email fix still changes the learner's email. It changes the Authentik username too only when the learner has no Nile login yet, so a learner with a Nile login keeps it.
 - If Authentik is down, or every numbered login clashes, the booking or reschedule is refused with the usual "try again shortly" message and nothing is saved.
+- The scan `tests/group-writes-scan.test.ts` now allows group create, rename (name only), and delete in `server/authentik/type-groups.ts` only. A full group update and the raw groups path stay forbidden everywhere, and testbed groups stay the owner's.
+- The provisioning account gains `authentik_core.change_group` and the read only `authentik_policies.view_policybinding`.
 
 ### Removed
 
@@ -43,3 +51,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Before you pick a group, the owner needs to add `hol_testbed_group` and `hol_testbed_domain` to it in Authentik.
 - Migration `0015_learner_domain_logins.sql` adds the `learner_domain_logins` table. It changes no existing data.
 - Before Nile logins work, the owner needs to check two things in Authentik: the sign in step accepts the learner's real email, and each tenant's SAML NameID uses the username.
+- Migration `0020_testbed_type_groups.sql` adds two columns to `testbed_types` and a unique index on the group. It changes no existing data.
+- The owner runs `npm run authentik:setup -- --apply` once for the two new permissions, then `npm run typegroups:backfill` (dry run first, then `-- --apply`) to give current types their groups.
