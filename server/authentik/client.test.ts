@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { withTimeoutAndRetry } from "./client";
+import { describe, expect, it, vi } from "vitest";
+import { classifyStatus, createCoreApi, withTimeoutAndRetry } from "./client";
 
 // A fetch that never answers until it is aborted.
 const hanging = (calls: { n: number }) => (_: unknown, init?: RequestInit) =>
@@ -98,5 +98,36 @@ describe("withTimeoutAndRetry retry rules (AC-15)", () => {
     });
     expect(res.status).toBe(200);
     expect(calls.n).toBe(2);
+  });
+});
+
+// covers: spec 0026 AC-4 (a 400 is told apart from an outage)
+describe("classifyStatus (spec 0026)", () => {
+  it.each([
+    [400, "rejected"],
+    [404, "not_found"],
+    [403, "unavailable"],
+    [401, "unavailable"],
+    [500, "unavailable"],
+    [502, "unavailable"],
+  ] as const)("reads %i as %s", (status, expected) => {
+    expect(classifyStatus(status)).toBe(expected);
+  });
+});
+
+// covers: spec 0026 AC-9, AC-10. The runtime client is cached on globalThis
+// and survives a module reload (a dev hot reload, or a second bundle copy), so
+// the policies client must come from the client itself, not module state.
+describe("policiesApi (spec 0026)", () => {
+  it("works for a client made by another copy of the module", async () => {
+    const page = { pagination: { next: 0 }, results: [] };
+    const made = createCoreApi(
+      { AUTHENTIK_URL: "https://authentik.test", token: "t" },
+      async () => Response.json(page),
+    );
+    vi.resetModules();
+    const fresh = await import("./client");
+    const res = await fresh.policiesApi(made).policiesBindingsList({ page: 1 });
+    expect(res.results).toEqual([]);
   });
 });

@@ -82,7 +82,11 @@ export function DeleteFlow({
         const result = await remove(id);
         if (result.ok) {
           setView("idle");
-          return notifySuccess(DELETE_TOASTS.deleted);
+          return notifySuccess(
+            result.value
+              ? `Deleted. ${result.value.note}`
+              : DELETE_TOASTS.deleted,
+          );
         }
         switch (result.error.kind) {
           case "blocked":

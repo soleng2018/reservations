@@ -304,24 +304,35 @@ describe("planPermissions", () => {
     expect(
       planPermissions([
         "authentik_core.view_user",
-        "authentik_core.change_group",
+        "authentik_core.delete_user",
       ]),
     ).toEqual({
       add: PROVISIONING_PERMISSIONS.filter(
         (p) => p !== "authentik_core.view_user",
       ),
-      remove: ["authentik_core.change_group"],
+      remove: ["authentik_core.delete_user"],
     });
   });
 
   it("never grants anything outside users, groups, and sessions", () => {
     expect(
       PROVISIONING_PERMISSIONS.every((p) =>
-        /^authentik_core\.\w+_(user|group|user_to_group|user_from_group|authenticatedsession|user_password)$/.test(
+        /^(authentik_core\.\w+_(user|group|user_to_group|user_from_group|authenticatedsession|user_password)|authentik_policies\.view_policybinding)$/.test(
           p,
         ),
       ),
     ).toBe(true);
+  });
+
+  // covers: spec 0026 AC-17
+  it("grants change_group and view_policybinding once each, and policy bindings stay read only", () => {
+    const count = (name: string) =>
+      PROVISIONING_PERMISSIONS.filter((p) => p === name).length;
+    expect(count("authentik_core.change_group")).toBe(1);
+    expect(count("authentik_policies.view_policybinding")).toBe(1);
+    expect(
+      PROVISIONING_PERMISSIONS.filter((p) => p.includes("policybinding")),
+    ).toEqual(["authentik_policies.view_policybinding"]);
   });
 });
 

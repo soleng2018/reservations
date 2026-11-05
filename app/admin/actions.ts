@@ -128,6 +128,35 @@ const DUPLICATE_TYPE: AdminFormState = {
 };
 const TYPE_GONE = "This testbed type no longer exists.";
 
+// Spec 0026 AC-3, AC-4, AC-6, AC-8: why the type's Authentik group stopped a
+// save. The message sits on the name field; nothing was saved.
+const TYPE_GROUP_MESSAGES = {
+  group_unusable:
+    "A group with this name already exists in Authentik and can't be used for a type. Ask the owner.",
+  group_in_use:
+    "Another testbed type already uses the Authentik group with this name.",
+  group_bad_name:
+    "Authentik doesn't accept this name for a group. Use a shorter or simpler name.",
+  group_clash:
+    "A group with this name already exists in Authentik. Nothing was saved.",
+  group_changed:
+    "The Authentik group for this type was changed outside the app. Ask the owner.",
+  unavailable:
+    "Couldn't reach Authentik, so nothing was saved. Try again in a moment.",
+} as const;
+const typeGroupError = (
+  code: keyof typeof TYPE_GROUP_MESSAGES,
+): AdminFormState => ({
+  kind: "error",
+  fields: { name: TYPE_GROUP_MESSAGES[code] },
+});
+const TYPE_GROUP_NOTES = {
+  group_kept:
+    " The linked Authentik group keeps its old name because the owner made it.",
+  group_left:
+    " Its Authentik group was left in place because it isn't the one the app made, or the owner uses it elsewhere.",
+} as const;
+
 // AC-1. The list on /admin/testbed-types shows the result.
 export async function createTestbedTypeAction(
   _prev: AdminFormState,
@@ -139,7 +168,10 @@ export async function createTestbedTypeAction(
     return { kind: "error", fields: fieldErrors(parsed.error) };
 
   const created = await createTestbedType(db(), parsed.data, user.id);
-  if (!created.ok) return DUPLICATE_TYPE;
+  if (!created.ok)
+    return created.error === "duplicate_name"
+      ? DUPLICATE_TYPE
+      : typeGroupError(created.error);
   revalidatePath("/admin", "layout");
   return { kind: "saved", message: `Created ${parsed.data.name}.` };
 }
@@ -164,14 +196,23 @@ export async function updateTestbedTypeAction(
       case "not_found":
         revalidatePath("/admin", "layout");
         return { kind: "error", message: TYPE_GONE, fields: {} };
+      case "group_clash":
+      case "group_changed":
+      case "group_bad_name":
+      case "unavailable":
+        return typeGroupError(updated.error);
       default: {
         const never: never = updated.error;
         return never;
       }
     }
   }
+  const note = updated.value.note;
   revalidatePath("/admin", "layout");
-  return { kind: "saved", message: `Updated ${parsed.data.name}.` };
+  return {
+    kind: "saved",
+    message: `Updated ${parsed.data.name}.${note ? TYPE_GROUP_NOTES[note] : ""}`,
+  };
 }
 
 // Feature 7, the delete flow's check: the live testbeds using this type.
@@ -186,18 +227,27 @@ export async function checkTestbedTypeDelete(
 // Feature 7, the delete flow's remove (spec 0002 AC-4, AC-14).
 export async function deleteTestbedTypeAction(
   id: string,
-): Promise<Result<void, DeleteRemoveError>> {
+): Promise<Result<void | { readonly note: string }, DeleteRemoveError>> {
   const { user } = await requireAdmin();
   if (!isId(id)) return err({ kind: "failed", message: TYPE_GONE });
 
   const deleted = await deleteTestbedType(db(), id, user.id);
   revalidatePath("/admin", "layout");
-  if (deleted.ok) return ok(undefined);
+  if (deleted.ok)
+    return deleted.value.note
+      ? ok({ note: TYPE_GROUP_NOTES[deleted.value.note].trim() })
+      : ok(undefined);
   switch (deleted.error.kind) {
     case "blocked":
       return err(deleted.error);
     case "not_found":
       return err({ kind: "failed", message: TYPE_GONE });
+    case "unavailable":
+      return err({
+        kind: "failed",
+        message:
+          "Couldn't reach Authentik, so the type was not deleted. Try again in a moment.",
+      });
     default: {
       const never: never = deleted.error;
       return never;

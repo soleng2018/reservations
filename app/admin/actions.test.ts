@@ -263,6 +263,7 @@ describe.skipIf(!hasDb)("admin create actions require an admin (AC-13)", () => {
         auth_user_id: authId,
       });
       ctx.authUserId = authId;
+      ctx.authentik = fakeAuthentik([]).api;
       const bad = typeForm("  ");
       bad.set("durationValue", "0");
       expect(await createTestbedTypeAction(IDLE, bad)).toEqual({
@@ -280,6 +281,22 @@ describe.skipIf(!hasDb)("admin create actions require an admin (AC-13)", () => {
         kind: "error",
         fields: { name: "A testbed type with this name already exists." },
       });
+      // Spec 0026 AC-4: Authentik down saves nothing and says so.
+      ctx.authentik = fakeAuthentik([], { down: true }).api;
+      const other = `Type ${crypto.randomUUID().slice(0, 8)}`;
+      expect(await createTestbedTypeAction(IDLE, typeForm(other))).toEqual({
+        kind: "error",
+        fields: {
+          name: "Couldn't reach Authentik, so nothing was saved. Try again in a moment.",
+        },
+      });
+      expect(
+        await trx
+          .selectFrom("testbed_types")
+          .select("id")
+          .where("name", "=", other)
+          .executeTakeFirst(),
+      ).toBeUndefined();
     }));
 
   it("refuses non https testbed URLs with field errors", () =>

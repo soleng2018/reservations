@@ -15,6 +15,7 @@
     "db:migrate": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/migrate.ts",
     "db:codegen": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/codegen.ts",
     "calendar:backfill": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/calendar-backfill.ts",
+    "typegroups:backfill": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/type-groups-backfill.ts",
     "worker": "tsx --import ./worker/server-only-hook.mjs --env-file-if-exists=.env.local worker/index.ts",
     "prepare": "husky",
     "test": "vitest run",

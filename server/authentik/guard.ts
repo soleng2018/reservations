@@ -89,6 +89,44 @@ export function checkGroupWrite(
   return ok(undefined);
 }
 
+// Spec 0026: a Testbed Type's group. The app makes, renames, and deletes only
+// a group it made, which carries these two attributes (never the testbed
+// marker above, so a type group is never offered for a testbed and never
+// opens the HOL Labs gate).
+export const TYPE_GROUP_MARKER = "hol_type_group";
+export const TYPE_GROUP_ID_ATTRIBUTE = "hol_type_id";
+
+// "link": a group found by name that the app would link or reuse. "change":
+// a group the app made, about to be renamed or deleted for this type id.
+export type TypeGroupPurpose =
+  | { readonly kind: "link" }
+  | { readonly kind: "change"; readonly typeId: string };
+
+export type TypeGroupRefusal = "unsafe_group" | "not_ours";
+
+// Pure: may this group be linked to, renamed, or deleted for a type? Never
+// the admin group, a superuser group, a group with a parent or a role (or one
+// Authentik did not describe), or any group carrying the testbed marker key,
+// whatever its value.
+export function checkTypeGroupWrite(
+  group: GroupTarget,
+  adminGroupUuid: string,
+  purpose: TypeGroupPurpose,
+): Result<void, TypeGroupRefusal> {
+  const safe =
+    !isAdminGroup(group, adminGroupUuid) &&
+    group.isSuperuser === false &&
+    group.parents?.length === 0 &&
+    group.roles?.length === 0 &&
+    !(TESTBED_GROUP_MARKER in group.attributes);
+  if (!safe) return err("unsafe_group");
+  if (purpose.kind === "link") return ok(undefined);
+  return group.attributes[TYPE_GROUP_MARKER] === true &&
+    group.attributes[TYPE_GROUP_ID_ATTRIBUTE] === purpose.typeId
+    ? ok(undefined)
+    : err("not_ours");
+}
+
 // The admin group's uuid, looked up once per process. A missing group means
 // setup never ran: every user write is refused as unavailable.
 const cache = globalThis as typeof globalThis & { holAdminGroup?: string };

@@ -71,6 +71,14 @@ export const AUDIT_ACTION_INFO = {
     label: "Authentik group created",
     area: "access_groups",
   },
+  "authentik_group.linked": {
+    label: "Authentik group linked",
+    area: "access_groups",
+  },
+  "authentik_group.renamed": {
+    label: "Authentik group renamed",
+    area: "access_groups",
+  },
   "authentik_group.deleted": {
     label: "Authentik group deleted",
     area: "access_groups",

@@ -6,6 +6,7 @@ import {
   Configuration,
   CoreApi,
   FetchError,
+  PoliciesApi,
   ResponseError,
   type FetchAPI,
 } from "@goauthentik/api/dist/esm/index.js";
@@ -47,17 +48,36 @@ export const withTimeoutAndRetry =
     return tryOnce(attempts);
   };
 
+// Spec 0026: the delete check reads policy bindings with the same token,
+// timeout, and fetch as the core client. The policies client rides on the core
+// client under a global symbol, not in module state: the runtime client is
+// cached on globalThis and outlives a module reload (a dev hot reload, or a
+// second bundle copy), so a module local map would lose it.
+const POLICIES = Symbol.for("hol.authentik.policiesApi");
+type WithPolicies = CoreApi & { [POLICIES]?: PoliciesApi };
+
 export function createCoreApi(
   env: { readonly AUTHENTIK_URL: string; readonly token: string },
   fetchApi: FetchAPI = fetch,
 ): CoreApi {
-  return new CoreApi(
-    new Configuration({
-      basePath: `${env.AUTHENTIK_URL}/api/v3`,
-      accessToken: env.token,
-      fetchApi: withTimeoutAndRetry(fetchApi),
-    }),
-  );
+  const configuration = new Configuration({
+    basePath: `${env.AUTHENTIK_URL}/api/v3`,
+    accessToken: env.token,
+    fetchApi: withTimeoutAndRetry(fetchApi),
+  });
+  const api = new CoreApi(configuration);
+  Object.defineProperty(api, POLICIES, {
+    value: new PoliciesApi(configuration),
+  });
+  return api;
+}
+
+export function policiesApi(api: CoreApi): PoliciesApi {
+  const policies = (api as WithPolicies)[POLICIES];
+  // A bug, not an expected failure: every client comes from createCoreApi.
+  if (!policies)
+    throw new Error("policiesApi: client not made by createCoreApi");
+  return policies;
 }
 
 const cache = globalThis as typeof globalThis & { holAuthentik?: CoreApi };
@@ -70,6 +90,35 @@ export function authentik(): CoreApi {
     token: env.AUTHENTIK_PROVISIONING_TOKEN,
   });
   return cache.holAuthentik;
+}
+
+// What an error status means for a group write (spec 0026 AC-4). Pure, so it
+// is unit tested: a 400 is a refusal of the request itself (a name that
+// exists or is not accepted), told apart from an outage.
+export type WriteFailure = AuthentikFailure | "rejected";
+export const classifyStatus = (status: number): WriteFailure =>
+  status === 404 ? "not_found" : status === 400 ? "rejected" : "unavailable";
+
+// Like `call`, for a write whose 400 the caller must tell from an outage.
+export async function callWrite<T>(
+  what: string,
+  run: () => Promise<T>,
+): Promise<Result<T, WriteFailure>> {
+  try {
+    return ok(await run());
+  } catch (e) {
+    if (e instanceof ResponseError) {
+      const failure = classifyStatus(e.response.status);
+      if (failure !== "not_found")
+        console.error(`authentik: ${what} → ${e.response.status}`);
+      return err(failure);
+    }
+    if (e instanceof FetchError) {
+      console.error(`authentik: ${what} failed: ${e.cause.name}`);
+      return err("unavailable");
+    }
+    throw e;
+  }
 }
 
 // Runs one SDK call. Network errors, timeouts, and error statuses become a

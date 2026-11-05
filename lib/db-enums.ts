@@ -76,6 +76,11 @@ export const SetPasswordLinkEndReason = z.enum([
 ]);
 export type SetPasswordLinkEndReason = z.infer<typeof SetPasswordLinkEndReason>;
 
+// Spec 0026: whether the app made a type's Authentik group or only linked one
+// the owner made.
+export const TypeGroupOrigin = z.enum(["created", "reused"]);
+export type TypeGroupOrigin = z.infer<typeof TypeGroupOrigin>;
+
 export const AuditTargetType = z.enum([
   "testbed_type",
   "testbed",
@@ -165,6 +170,7 @@ export const checkLists: Readonly<Record<string, readonly string[]>> = {
   "users.role": UserRole.options,
   "users.status": UserStatus.options,
   "testbed_types.duration_unit": DurationUnit.options,
+  "testbed_types.authentik_group_origin": TypeGroupOrigin.options,
   "testbed_clients.kind": TestbedClientKind.options,
   "api_keys.type": ApiKeyType.options,
   "api_keys.google_auth": GoogleAuthMethod.options,

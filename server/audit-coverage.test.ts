@@ -160,9 +160,18 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
         durationValue: 2,
         durationUnit: "hours",
       } as const;
-      const created = await createTestbedType(asConn(trx), input, admin.id);
+      const ak = fakeAuthentik([]);
+      const created = await createTestbedType(
+        asConn(trx),
+        input,
+        admin.id,
+        ak.api,
+      );
       if (!created.ok) throw new Error(created.error);
       const id = created.value.id;
+      expect(await entryFor(trx, "authentik_group.created", id)).toEqual(
+        expected(admin.id, "authentik_group.created", "testbed_type", id),
+      );
       expect(await entryFor(trx, "testbed_type.created", id)).toEqual(
         expected(admin.id, "testbed_type.created", "testbed_type", id),
       );
@@ -174,6 +183,7 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
             id,
             { ...input, durationValue: 3 },
             admin.id,
+            ak.api,
           )
         ).ok,
       ).toBe(true);
@@ -181,9 +191,9 @@ describe.skipIf(!hasDb)("audit coverage (AC-12)", () => {
         expected(admin.id, "testbed_type.updated", "testbed_type", id),
       );
 
-      expect((await deleteTestbedType(asConn(trx), id, admin.id)).ok).toBe(
-        true,
-      );
+      expect(
+        (await deleteTestbedType(asConn(trx), id, admin.id, ak.api)).ok,
+      ).toBe(true);
       expect(await entryFor(trx, "testbed_type.deleted", id)).toEqual(
         expected(admin.id, "testbed_type.deleted", "testbed_type", id),
       );

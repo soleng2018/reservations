@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   checkGroupWrite,
+  checkTypeGroupWrite,
   checkUserWrite,
   guardGroupWrite,
   type GroupTarget,
@@ -221,5 +222,65 @@ describe("guardGroupWrite (spec 0017 AC-3)", () => {
       error: "unavailable",
     });
     error.mockRestore();
+  });
+});
+
+// covers: spec 0026 AC-3, AC-11 (the pure type group check)
+describe("checkTypeGroupWrite (spec 0026)", () => {
+  const target = (over: Partial<GroupTarget> = {}): GroupTarget => ({
+    pk: "g-uuid",
+    name: "Nile Certified Associate",
+    isSuperuser: false,
+    parents: [],
+    roles: [],
+    attributes: {},
+    ...over,
+  });
+  const link = { kind: "link" } as const;
+  const change = { kind: "change", typeId: "type-1" } as const;
+  const ours = { hol_type_group: true, hol_type_id: "type-1" };
+
+  it("links a flat plain group, and refuses anything unsafe", () => {
+    expect(checkTypeGroupWrite(target(), "admins-uuid", link).ok).toBe(true);
+    const refused = [
+      target({ pk: "admins-uuid" }),
+      target({ name: "HOL-Admins" }),
+      target({ isSuperuser: true }),
+      target({ parents: ["p"] }),
+      target({ roles: ["r"] }),
+      target({ isSuperuser: undefined }),
+      target({ attributes: { hol_testbed_group: false } }),
+      target({ attributes: { hol_testbed_group: "true" } }),
+      target({ attributes: { hol_testbed_group: true } }),
+    ];
+    for (const g of refused)
+      expect(checkTypeGroupWrite(g, "admins-uuid", link)).toEqual({
+        ok: false,
+        error: "unsafe_group",
+      });
+  });
+
+  it("changes only a group marked for this very type", () => {
+    expect(
+      checkTypeGroupWrite(target({ attributes: ours }), "admins-uuid", change)
+        .ok,
+    ).toBe(true);
+    for (const attributes of [
+      {},
+      { hol_type_group: true },
+      { hol_type_group: true, hol_type_id: "type-2" },
+      { hol_type_group: "true", hol_type_id: "type-1" },
+    ])
+      expect(
+        checkTypeGroupWrite(target({ attributes }), "admins-uuid", change),
+      ).toEqual({ ok: false, error: "not_ours" });
+    // Marked for the type, but also a testbed group: unsafe wins.
+    expect(
+      checkTypeGroupWrite(
+        target({ attributes: { ...ours, hol_testbed_group: true } }),
+        "admins-uuid",
+        change,
+      ),
+    ).toEqual({ ok: false, error: "unsafe_group" });
   });
 });
