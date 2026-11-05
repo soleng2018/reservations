@@ -155,7 +155,7 @@ List, search, add, edit, and delete testbed types (name plus a duration in hours
   - [x] Backfill script, dry run first (AC-14, AC-15)
 - [x] Verify it: `/check verify testbed type groups`
 - [x] Test it: `/test testbed type groups`
-- [ ] Review it (fresh model): `/check review testbed type groups`
+- [x] Review it (fresh model): `/check review testbed type groups`
 - [ ] Document it: `/document testbed type groups`
 code in `app/admin/testbed-types/`, `server/authentik/type-groups.ts`, `server/catalog/type-groups-backfill.ts`, `app/admin/actions.ts`, `server/catalog/testbed-types.ts`, `components/admin/testbed-type-fields.tsx` (rules from specs [0002](../specs/0002-data-model/index.md) AC-4, AC-5, AC-14 and [0005](../specs/0005-design-system-ui-foundation/index.md) delete flow)
 

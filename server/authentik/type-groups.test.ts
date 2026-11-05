@@ -268,6 +268,32 @@ describe("deleteTypeGroup (spec 0026)", () => {
     }
   });
 
+  // covers: spec 0026 AC-10 (the binding scan walks pages, and doubts mean bound)
+  it("finds a binding on a later page, and treats a very long list as bound", async () => {
+    const others = (n: number) => Array.from({ length: n }, (_, i) => `x${i}`);
+    const run = (usedBy: readonly string[]) =>
+      deleteTypeGroup(
+        fakeAuthentik([], { groups: [ours("g1", "A")], usedBy }).api,
+        { typeId: TYPE, pk: "g1" },
+      );
+    // A binding on page 2 is found.
+    expect(await run([...others(100), "g1"])).toEqual({
+      ok: true,
+      value: { kind: "left", reason: "bound" },
+    });
+    // 500 unrelated bindings fill five pages with more to come: when in doubt,
+    // the group stays.
+    expect(await run(others(501))).toEqual({
+      ok: true,
+      value: { kind: "left", reason: "bound" },
+    });
+    // A single full page with no match and no next page is not bound.
+    expect(await run(others(100))).toMatchObject({
+      ok: true,
+      value: { kind: "deleted" },
+    });
+  });
+
   it("goes on when the group is gone, and fails on an outage", async () => {
     const ak = fakeAuthentik([]);
     expect(await deleteTypeGroup(ak.api, { typeId: TYPE, pk: "gone" })).toEqual(
