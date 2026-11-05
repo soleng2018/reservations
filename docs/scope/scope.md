@@ -42,7 +42,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 4 | Authentik sign in & provisioning | Foundation | done |
 | 5 | Design system & UI foundation | Foundation | done |
 | 6 | Core booking loop | Slice 1 | done |
-| 7 | Admin: Testbed Types | Slice 2 | done |
+| 7 | Admin: Testbed Types | Slice 2 | in-progress |
 | 8 | Admin: API Keys | Slice 2 | done |
 | 9 | Admin: Testbeds | Slice 2 | done |
 | 10 | Admin: Users & user detail | Slice 2 | done |
@@ -140,11 +140,24 @@ spec [0004](../specs/0004-core-booking-loop/index.md) · code in `app/book/`, `a
 
 ## Slice 2: Admin console (from the mock)
 
-### 7. Admin: Testbed Types · done
+### 7. Admin: Testbed Types · in-progress · Full
 List, search, add, edit, and delete testbed types (name plus a duration in hours or days), with a count of the testbeds that use each type.
 **Done when:** the screen matches the mock; duration must be at least 1; deleting a type still used by testbeds is blocked and the dialog lists those testbeds.
 - [x] Build it: `/develop admin: testbed types`
-code in `app/admin/testbed-types/`, `app/admin/actions.ts`, `server/catalog/testbed-types.ts`, `components/admin/testbed-type-fields.tsx` (rules from specs [0002](../specs/0002-data-model/index.md) AC-4, AC-5, AC-14 and [0005](../specs/0005-design-system-ui-foundation/index.md) delete flow)
+
+**Amended 2026-11-04: a group per type.** When an admin adds a Testbed Type, the app creates an Authentik group with exactly the type's name (for example `Nile Certified Associate`). The LMS uses that group to give learners access to a specific lab guide. Renaming the type renames its group, and deleting the type deletes its group (owner's choice, 2026-11-04). A group that already has that name is reused, not an error, and a one time backfill (dry run first, `--apply` writes) gives every current type its group. This is an exception to the rule that the owner owns groups (spec 0017, `tests/group-writes-scan.test.ts`): it covers type groups only, and testbed groups stay the owner's. Needs `/architect` to settle: how the app tells a group it made from one the owner made (so a delete never removes a reused or owner made group), whether a failed Authentik step refuses the save with nothing saved, what the LMS needs on the group, and how the scan is narrowed. The learner is not added to a type group by this feature.
+**Done when (amendment):** adding a type creates a group with its exact name and shows a clear message if Authentik refuses; a same name group is reused; renaming or deleting a type changes or removes only the group the app made for it; a failed Authentik step leaves the type unchanged; the backfill covers every current type and a second run changes nothing; no testbed group is ever created, renamed, or deleted by the app.
+- [x] Design it (spec): `/architect testbed type groups` (amends spec 0017's group rule), spec [0026](../specs/0026-testbed-type-groups/index.md)
+- [ ] Build it: `/develop testbed type groups`
+  - [x] Schema, permissions, guard, and narrowed scan (AC-11, AC-12, AC-16, AC-17)
+  - [x] Add path end to end: create, reuse, refuse, rollback (AC-1 to AC-4, AC-13, AC-18)
+  - [x] Rename and delete, with the binding and child group checks (AC-5 to AC-10)
+  - [x] Backfill script, dry run first (AC-14, AC-15)
+- [ ] Verify it: `/check verify testbed type groups`
+- [ ] Test it: `/test testbed type groups`
+- [ ] Review it (fresh model): `/check review testbed type groups`
+- [ ] Document it: `/document testbed type groups`
+code in `app/admin/testbed-types/`, `server/authentik/type-groups.ts`, `server/catalog/type-groups-backfill.ts`, `app/admin/actions.ts`, `server/catalog/testbed-types.ts`, `components/admin/testbed-type-fields.tsx` (rules from specs [0002](../specs/0002-data-model/index.md) AC-4, AC-5, AC-14 and [0005](../specs/0005-design-system-ui-foundation/index.md) delete flow)
 
 ### 8. Admin: API Keys · done · Full
 List, search, add, edit, and delete IDP and AI credentials (name, type, base URL, secret). Secrets are entered once and are write-only afterward: the list shows only a fixed mask, and there is no reveal or copy. Editing a key leaves the secret unchanged unless the admin types a replacement. Keys are stored only; no part of the app calls them yet (see Deferred).

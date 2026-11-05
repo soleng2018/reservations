@@ -1,5 +1,10 @@
 import type { Kysely } from "kysely";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  fakeAuthentik,
+  fakeGroup,
+  markedGroup,
+} from "@/server/authentik/testing";
 import { db } from "@/server/db";
 import {
   asConn,
@@ -12,6 +17,7 @@ import {
 } from "@/server/db/testing";
 import type { DB } from "@/server/db/types";
 import {
+  createTestbedType,
   deleteTestbedType,
   listTestbedTypes,
   updateTestbedType,
@@ -79,7 +85,7 @@ describe.skipIf(!hasDb)("updateTestbedType", () => {
         admin.id,
       );
 
-      expect(result).toEqual({ ok: true, value: undefined });
+      expect(result).toEqual({ ok: true, value: { note: null } });
       expect(await typeRow(trx, type.id)).toMatchObject({
         duration_value: 4,
         duration_unit: "days",
@@ -220,7 +226,7 @@ describe.skipIf(!hasDb)("deleteTestbedType", () => {
 
       const result = await deleteTestbedType(asConn(trx), type.id, admin.id);
 
-      expect(result).toEqual({ ok: true, value: undefined });
+      expect(result).toEqual({ ok: true, value: { note: null } });
       expect((await typeRow(trx, type.id)).deleted_at).not.toBeNull();
       expect(await auditsFor(trx, type.id)).toEqual([
         {
@@ -309,5 +315,346 @@ describe.skipIf(!hasDb)("deleteTestbedType", () => {
         .where("bookings.id", "=", booking.id)
         .executeTakeFirstOrThrow();
       expect(joined.name).toBe(type.name);
+    }));
+});
+
+// Spec 0026: the type's Authentik group, through the real transaction and the
+// in memory Authentik. A refusal must leave the row and the audit as they were.
+const groupOf = (trx: Kysely<DB>, id: string) =>
+  trx
+    .selectFrom("testbed_types")
+    .select([
+      "name",
+      "authentik_group_pk",
+      "authentik_group_origin",
+      "deleted_at",
+    ])
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
+
+const OWNER_UUID = "22222222-2222-4222-8222-222222222222";
+
+const input = (name: string) =>
+  ({ name, durationValue: 2, durationUnit: "hours" }) as const;
+
+const typeCount = (trx: Kysely<DB>, name: string) =>
+  trx
+    .selectFrom("testbed_types")
+    .select("id")
+    .where("name", "=", name)
+    .execute()
+    .then((r) => r.length);
+
+const quiet = () => {
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+};
+
+describe.skipIf(!hasDb)("createTestbedType with a group (spec 0026)", () => {
+  it("makes the group, stores its pk, and audits it (AC-1)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const ak = fakeAuthentik([]);
+      const name = `Group ${unique()}`;
+      const r = await createTestbedType(
+        asConn(trx),
+        input(name),
+        admin.id,
+        ak.api,
+      );
+      if (!r.ok) throw new Error(r.error);
+      const made = ak.groups.find((g) => g.name === name);
+      expect(made?.attributes).toEqual({
+        hol_type_group: true,
+        hol_type_id: r.value.id,
+      });
+      expect(await groupOf(trx, r.value.id)).toMatchObject({
+        authentik_group_pk: made?.pk,
+        authentik_group_origin: "created",
+      });
+      expect((await auditsFor(trx, r.value.id)).map((a) => a.action)).toEqual([
+        "testbed_type.created",
+        "authentik_group.created",
+      ]);
+    }));
+
+  it("links a plain same name group and changes nothing in Authentik (AC-2)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const name = `Owner ${unique()}`;
+      const ak = fakeAuthentik([], { groups: [fakeGroup(OWNER_UUID, name)] });
+      const r = await createTestbedType(
+        asConn(trx),
+        input(name),
+        admin.id,
+        ak.api,
+      );
+      if (!r.ok) throw new Error(r.error);
+      expect(ak.writes).toEqual([]);
+      expect(await groupOf(trx, r.value.id)).toMatchObject({
+        authentik_group_pk: OWNER_UUID,
+        authentik_group_origin: "reused",
+      });
+      expect((await auditsFor(trx, r.value.id)).map((a) => a.action)).toContain(
+        "authentik_group.linked",
+      );
+    }));
+
+  it("refuses an unsafe group, one already used, and an outage, saving nothing (AC-3, AC-4)", () =>
+    inRollback(async (trx) => {
+      quiet();
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const unsafe = `Unsafe ${tag}`;
+      const ak = fakeAuthentik([], {
+        groups: [markedGroup("tb-uuid", unsafe)],
+      });
+      expect(
+        await createTestbedType(asConn(trx), input(unsafe), admin.id, ak.api),
+      ).toEqual({ ok: false, error: "group_unusable" });
+      expect(await typeCount(trx, unsafe)).toBe(0);
+
+      const used = `Used ${tag}`;
+      await makeType(trx, {
+        name: `Holder ${tag}`,
+        authentik_group_pk: "11111111-1111-4111-8111-111111111111",
+        authentik_group_origin: "reused",
+      });
+      const ak2 = fakeAuthentik([], {
+        groups: [fakeGroup("11111111-1111-4111-8111-111111111111", used)],
+      });
+      expect(
+        await createTestbedType(asConn(trx), input(used), admin.id, ak2.api),
+      ).toEqual({ ok: false, error: "group_in_use" });
+      expect(await typeCount(trx, used)).toBe(0);
+
+      const down = `Down ${tag}`;
+      expect(
+        await createTestbedType(
+          asConn(trx),
+          input(down),
+          admin.id,
+          fakeAuthentik([], { down: true }).api,
+        ),
+      ).toEqual({ ok: false, error: "unavailable" });
+      expect(await typeCount(trx, down)).toBe(0);
+      const left = await trx
+        .selectFrom("audit_events")
+        .select("id")
+        .where("summary", "like", "Testbed type created")
+        .where("actor_user_id", "=", admin.id)
+        .execute();
+      expect(left).toEqual([]);
+    }));
+});
+
+describe.skipIf(!hasDb)("updateTestbedType with a group (spec 0026)", () => {
+  it("renames the group the app made, and only for a name change (AC-5)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const ak = fakeAuthentik([]);
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Old ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const id = created.value.id;
+      ak.writes.length = 0;
+
+      await updateTestbedType(
+        asConn(trx),
+        id,
+        { ...input(`Old ${tag}`), durationValue: 5 },
+        admin.id,
+        ak.api,
+      );
+      expect(ak.writes).toEqual([]);
+
+      const r = await updateTestbedType(
+        asConn(trx),
+        id,
+        input(`New ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      expect(r).toEqual({ ok: true, value: { note: null } });
+      expect(ak.writes).toHaveLength(1);
+      expect(ak.groups.some((g) => g.name === `New ${tag}`)).toBe(true);
+      expect((await auditsFor(trx, id)).map((a) => a.action)).toContain(
+        "authentik_group.renamed",
+      );
+    }));
+
+  it("keeps a reused group's name, and calls nothing for an unlinked type (AC-7)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const ak = fakeAuthentik([], {
+        groups: [fakeGroup("owner-uuid", `R ${tag}`)],
+      });
+      const reused = await makeType(trx, {
+        name: `R ${tag}`,
+        authentik_group_pk: "11111111-1111-4111-8111-111111111111",
+        authentik_group_origin: "reused",
+      });
+      expect(
+        await updateTestbedType(
+          asConn(trx),
+          reused.id,
+          input(`R2 ${tag}`),
+          admin.id,
+          ak.api,
+        ),
+      ).toEqual({ ok: true, value: { note: "group_kept" } });
+      const bare = await makeType(trx, { name: `B ${tag}` });
+      expect(
+        await updateTestbedType(
+          asConn(trx),
+          bare.id,
+          input(`B2 ${tag}`),
+          admin.id,
+          ak.api,
+        ),
+      ).toEqual({ ok: true, value: { note: null } });
+      expect(ak.writes).toEqual([]);
+    }));
+
+  it("refuses a taken name, a changed group, and an outage, saving nothing (AC-4, AC-6, AC-8)", () =>
+    inRollback(async (trx) => {
+      quiet();
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const ak = fakeAuthentik([], {
+        groups: [fakeGroup("other", `Taken ${tag}`)],
+      });
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Mine ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const id = created.value.id;
+      expect(
+        await updateTestbedType(
+          asConn(trx),
+          id,
+          input(`Taken ${tag}`),
+          admin.id,
+          ak.api,
+        ),
+      ).toEqual({ ok: false, error: "group_clash" });
+      expect((await groupOf(trx, id)).name).toBe(`Mine ${tag}`);
+
+      const group = ak.groups.find((g) => g.name === `Mine ${tag}`);
+      if (group) group.attributes = {};
+      expect(
+        await updateTestbedType(
+          asConn(trx),
+          id,
+          input(`Next ${tag}`),
+          admin.id,
+          ak.api,
+        ),
+      ).toEqual({ ok: false, error: "group_changed" });
+      expect((await groupOf(trx, id)).name).toBe(`Mine ${tag}`);
+
+      const down = fakeAuthentik([], { down: true });
+      expect(
+        await updateTestbedType(
+          asConn(trx),
+          id,
+          input(`Down ${tag}`),
+          admin.id,
+          down.api,
+        ),
+      ).toEqual({ ok: false, error: "unavailable" });
+      expect((await groupOf(trx, id)).name).toBe(`Mine ${tag}`);
+    }));
+});
+
+describe.skipIf(!hasDb)("deleteTestbedType with a group (spec 0026)", () => {
+  it("deletes the group the app made and audits the member count (AC-9)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const ak = fakeAuthentik([]);
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Del ${unique()}`),
+        admin.id,
+        ak.api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const id = created.value.id;
+      const pk = (await groupOf(trx, id)).authentik_group_pk;
+      expect(
+        await deleteTestbedType(asConn(trx), id, admin.id, ak.api),
+      ).toEqual({
+        ok: true,
+        value: { note: null },
+      });
+      expect(ak.groups.some((g) => g.pk === pk)).toBe(false);
+      const deleted = (await auditsFor(trx, id)).find(
+        (a) => a.action === "authentik_group.deleted",
+      );
+      expect(deleted?.metadata).toEqual({ groupPk: pk, memberCount: 0 });
+    }));
+
+  it("leaves a bound group, a reused one, and refuses on an outage (AC-4, AC-10)", () =>
+    inRollback(async (trx) => {
+      quiet();
+      const admin = await makeUser(trx, { role: "admin" });
+      const ak = fakeAuthentik([]);
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Bound ${unique()}`),
+        admin.id,
+        ak.api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const id = created.value.id;
+      const pk = (await groupOf(trx, id)).authentik_group_pk ?? "";
+
+      const down = fakeAuthentik([], { down: true });
+      expect(
+        await deleteTestbedType(asConn(trx), id, admin.id, down.api),
+      ).toEqual({
+        ok: false,
+        error: { kind: "unavailable" },
+      });
+      expect((await groupOf(trx, id)).deleted_at).toBeNull();
+
+      const bound = fakeAuthentik([], {
+        groups: [fakeGroup(pk, "x", { hol_type_group: true, hol_type_id: id })],
+        usedBy: [pk],
+      });
+      expect(
+        await deleteTestbedType(asConn(trx), id, admin.id, bound.api),
+      ).toEqual({
+        ok: true,
+        value: { note: "group_left" },
+      });
+      expect(bound.writes).toEqual([]);
+      const row = (await auditsFor(trx, id)).find(
+        (a) => a.action === "testbed_type.deleted",
+      );
+      expect(row?.metadata).toEqual({ groupLeft: true, reason: "bound" });
+
+      const reused = await makeType(trx, {
+        name: `Re ${unique()}`,
+        authentik_group_pk: "11111111-1111-4111-8111-111111111111",
+        authentik_group_origin: "reused",
+      });
+      const ak2 = fakeAuthentik([]);
+      expect(
+        await deleteTestbedType(asConn(trx), reused.id, admin.id, ak2.api),
+      ).toEqual({
+        ok: true,
+        value: { note: null },
+      });
+      expect(ak2.writes).toEqual([]);
     }));
 });

@@ -52,6 +52,10 @@ export const AuditAction = z.enum([
   // creates or deletes one: the worker releases a deleted testbed's group
   // (AC-9), and the reconciler found a recreated group again by name (AC-10).
   "authentik_group.released",
+  // Spec 0026: a Testbed Type's group was linked (the owner made it) or
+  // renamed to follow its type. `created` and `deleted` are reused.
+  "authentik_group.linked",
+  "authentik_group.renamed",
   "testbed.group_relinked",
   // Feature 20 (spec 0019). A learner's Nile login was set or first stored,
   // or a stored one was found taken in Authentik by another user.

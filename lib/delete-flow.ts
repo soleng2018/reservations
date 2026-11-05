@@ -19,9 +19,10 @@ export type DeleteRemoveError =
   | { readonly kind: "failed"; readonly message: string };
 
 // Locks, checks again, and deletes, in one transaction (spec 0002 AC-14).
+// A note (spec 0026 AC-10) is extra text for the success toast.
 export type DeleteRemove = (
   id: string,
-) => Promise<Result<void, DeleteRemoveError>>;
+) => Promise<Result<void | { readonly note: string }, DeleteRemoveError>>;
 
 type BlockedCopy = {
   readonly title: string;

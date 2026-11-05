@@ -94,11 +94,19 @@ export function fakeAuthentik(
     // Answer with this exact response to the matching requests, e.g. a 403
     // or a body that is not JSON.
     readonly reply?: (method: string, path: string) => Response | undefined;
+    // Spec 0026: group pks that something in Authentik uses (a policy
+    // binding), as `used_by` reports them.
+    readonly usedBy?: readonly string[];
+    // Spec 0026: a group name Authentik does not accept (a 400 on write).
+    readonly rejectName?: (name: string) => boolean;
   } = {},
 ) {
   const users = initial.map((u) => ({ ...u, groups: [...u.groups] }));
   const sessions = (opts.sessions ?? []).map((s) => ({ ...s }));
   const writes: string[] = [];
+  // The JSON body of every write, in order, beside `writes` (spec 0026: a
+  // rename must send the name and nothing else).
+  const writeBodies: { path: string; body: Record<string, unknown> }[] = [];
   // The passwords set through `set_password`, by pk: tests compare them and
   // check none leaks. The real Authentik never returns one.
   const passwords = new Map<number, string>();
@@ -136,7 +144,10 @@ export function fakeAuthentik(
     if (opts.fail?.(method, path)) return json({ detail: "boom" }, 500);
     const replied = opts.reply?.(method, path);
     if (replied) return replied;
-    if (method !== "GET") writes.push(`${method} ${path}`);
+    if (method !== "GET") {
+      writes.push(`${method} ${path}`);
+      writeBodies.push({ path, body });
+    }
     const q = url.searchParams;
 
     if (method === "GET" && /^\/core\/groups\//.test(path))
@@ -154,6 +165,8 @@ export function fakeAuthentik(
         ),
       );
     if (method === "POST" && path === "/core/groups/") {
+      if (opts.rejectName?.(body.name))
+        return json({ name: ["Ensure this field has no more than 80."] }, 400);
       if (groups.some((g) => g.name === body.name))
         return json({ name: ["group with this name already exists."] }, 400);
       const created = fakeGroup(
@@ -168,7 +181,27 @@ export function fakeAuthentik(
     if (byPk) {
       const i = groups.findIndex((g) => g.pk === byPk[1]);
       if (i < 0) return notFound();
-      if (method === "GET") return json(groups[i]);
+      if (method === "GET")
+        return json({
+          ...groups[i],
+          children: groups
+            .filter((g) => g.parents.includes(byPk[1] ?? ""))
+            .map((g) => g.pk),
+        });
+      if (method === "PATCH") {
+        if (opts.rejectName?.(body.name ?? ""))
+          return json(
+            { name: ["Ensure this field has no more than 80."] },
+            400,
+          );
+        if (
+          body.name !== undefined &&
+          groups.some((g) => g.name === body.name && g.pk !== byPk[1])
+        )
+          return json({ name: ["group with this name already exists."] }, 400);
+        Object.assign(groups[i] ?? {}, body);
+        return json(groups[i]);
+      }
       if (method === "DELETE") {
         groups.splice(i, 1);
         users.forEach((u) => {
@@ -176,6 +209,24 @@ export function fakeAuthentik(
         });
         return noContent();
       }
+    }
+    const usedBy = path.match(/^\/core\/groups\/([^/]+)\/used_by\/$/);
+    if (method === "GET" && usedBy) {
+      const [, groupPk = ""] = usedBy;
+      if (!groups.some((g) => g.pk === groupPk)) return notFound();
+      return json(
+        (opts.usedBy ?? []).includes(groupPk)
+          ? [
+              {
+                app: "authentik_policies",
+                model_name: "policybinding",
+                pk: "binding-uuid",
+                name: "binding",
+                action: "cascade",
+              },
+            ]
+          : [],
+      );
     }
     const member = path.match(/^\/core\/groups\/([^/]+)\/(add|remove)_user\/$/);
     if (method === "POST" && member) {
@@ -273,6 +324,7 @@ export function fakeAuthentik(
     sessions,
     groups,
     writes,
+    writeBodies,
     passwords,
     groupReads,
     api: createCoreApi(

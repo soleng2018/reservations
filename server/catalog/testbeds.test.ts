@@ -132,21 +132,29 @@ describe.skipIf(!hasDb)("createTestbedType (AC-1)", () => {
       const admin = await makeUser(trx, { role: "admin", company: null });
       const name = `Type ${unique()}`;
       const input = { name, durationValue: 2, durationUnit: "hours" } as const;
-      const created = await createTestbedType(asConn(trx), input, admin.id);
+      const created = await createTestbedType(
+        asConn(trx),
+        input,
+        admin.id,
+        fakeAuthentik([]).api,
+      );
       if (!created.ok) throw new Error(created.error);
       const audit = await trx
         .selectFrom("audit_events")
         .select(["action", "actor_user_id"])
         .where("target_id", "=", created.value.id)
+        .orderBy("created_at")
         .execute();
       expect(audit).toEqual([
         { action: "testbed_type.created", actor_user_id: admin.id },
+        { action: "authentik_group.created", actor_user_id: admin.id },
       ]);
       expect(
         await createTestbedType(
           asConn(trx),
           { ...input, name: name.toUpperCase() },
           admin.id,
+          fakeAuthentik([]).api,
         ),
       ).toEqual({ ok: false, error: "duplicate_name" });
     }));
@@ -160,6 +168,7 @@ describe.skipIf(!hasDb)("createTestbedType (AC-1)", () => {
         asConn(trx),
         { name, durationValue: 3, durationUnit: "days" },
         admin.id,
+        fakeAuthentik([]).api,
       );
       expect(created.ok).toBe(true);
     }));

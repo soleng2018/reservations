@@ -52,6 +52,8 @@ describe("AUDIT_ACTION_INFO", () => {
       "access.granted",
       "access.revoked",
       "authentik_group.released",
+      "authentik_group.linked",
+      "authentik_group.renamed",
     ]);
     expect(areaActions("users")).toContain("set_password.resent");
     expect(areaActions("admin")).toEqual([
@@ -94,6 +96,9 @@ const NULL_ACTOR: Readonly<Record<string, ActorKind>> = {
   "user.created_in_authentik": "booking_form",
   "user.tagged_in_authentik": "booking_form",
   "authentik_group.released": "system",
+  // Spec 0026: the type groups backfill has no signed in admin.
+  "authentik_group.created": "system",
+  "authentik_group.linked": "system",
   "testbed.group_relinked": "system",
   "user.nile_login_set": "system",
   "user.nile_login_conflict": "system",

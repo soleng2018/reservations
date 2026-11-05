@@ -29,6 +29,7 @@ const byConstraint: Readonly<Record<string, ConstraintError>> = {
   testbeds_group_name_lower_uq: "duplicate_group_name",
   testbeds_domain_uq: "duplicate_domain",
   testbeds_group_pk_uq: "group_in_use",
+  testbed_types_group_pk_uq: "group_in_use",
   api_keys_name_lower_uq: "duplicate_name",
   api_keys_one_cloudflare_uq: "cloudflare_exists",
   api_keys_one_google_uq: "google_exists",

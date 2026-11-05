@@ -304,13 +304,13 @@ describe("planPermissions", () => {
     expect(
       planPermissions([
         "authentik_core.view_user",
-        "authentik_core.change_group",
+        "authentik_core.delete_user",
       ]),
     ).toEqual({
       add: PROVISIONING_PERMISSIONS.filter(
         (p) => p !== "authentik_core.view_user",
       ),
-      remove: ["authentik_core.change_group"],
+      remove: ["authentik_core.delete_user"],
     });
   });
 

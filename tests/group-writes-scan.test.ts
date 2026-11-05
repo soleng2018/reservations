@@ -8,12 +8,29 @@ import { describe, expect, it } from "vitest";
 // code, and also on the raw `core/groups` path, which would be a direct fetch
 // around the SDK (and around the guard). Tests are not app code; the in
 // memory fake Authentik is test support and names the path to answer it.
+//
+// Spec 0026 AC-12: one exception. A Testbed Type's group is made, renamed, and
+// deleted in `server/authentik/type-groups.ts`, and nowhere else. That file may
+// name create, partial update, and destroy; the full update (PUT) and the raw
+// path stay forbidden everywhere.
 const FORBIDDEN = [
   "coreGroupsCreate",
   "coreGroupsUpdate",
   "coreGroupsPartialUpdate",
   "coreGroupsDestroy",
   "core/groups",
+];
+const TYPE_GROUPS = "server/authentik/type-groups.ts";
+const TYPE_GROUPS_MAY = new Set([
+  "coreGroupsCreate",
+  "coreGroupsPartialUpdate",
+  "coreGroupsDestroy",
+]);
+// The type group file never touches membership or the testbed marker.
+const TYPE_GROUPS_NEVER = [
+  "TESTBED_GROUP_MARKER",
+  "coreGroupsAddUserCreate",
+  "coreGroupsRemoveUserCreate",
 ];
 const SKIPPED = new Set(["server/authentik/testing.ts"]);
 const DIRS = ["app", "lib", "server", "worker"];
@@ -43,11 +60,27 @@ describe("group writes source scan (spec 0017 AC-4)", () => {
   it("calls no group create, update, or delete, and no raw groups path", () => {
     const found = scanned.flatMap((f) => {
       const text = readFileSync(path.join(root, f), "utf8");
-      return FORBIDDEN.filter((word) => text.includes(word)).map(
-        (word) => `${f}: ${word}`,
-      );
+      return FORBIDDEN.filter(
+        (word) =>
+          text.includes(word) &&
+          !(f === TYPE_GROUPS && TYPE_GROUPS_MAY.has(word)),
+      ).map((word) => `${f}: ${word}`);
     });
     expect(found).toEqual([]);
+  });
+
+  it("keeps type group writes in their one file (spec 0026 AC-12)", () => {
+    const text = readFileSync(path.join(root, TYPE_GROUPS), "utf8");
+    expect(scanned).toContain(TYPE_GROUPS);
+    TYPE_GROUPS_MAY.forEach((word) => expect(text).toContain(word));
+    expect(TYPE_GROUPS_NEVER.filter((word) => text.includes(word))).toEqual([]);
+  });
+
+  it("sends only the name in a rename (spec 0026 AC-11)", () => {
+    const text = readFileSync(path.join(root, TYPE_GROUPS), "utf8");
+    const bodies = [...text.matchAll(/patchedGroupRequest:\s*([^,}\n]+)/g)];
+    expect(bodies.map((m) => m[1])).toEqual(["renameBody(input.name)"]);
+    expect(text).toContain("({ name })");
   });
 
   it("catches a forbidden call when one is written (the scan itself works)", () => {

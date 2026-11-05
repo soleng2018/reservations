@@ -270,6 +270,8 @@ export interface Testbeds {
 }
 
 export interface TestbedTypes {
+  authentik_group_origin: string | null;
+  authentik_group_pk: string | null;
   created_at: Generated<Timestamp>;
   deleted_at: Timestamp | null;
   duration_unit: string;

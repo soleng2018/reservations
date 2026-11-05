@@ -72,6 +72,35 @@ export function authentik(): CoreApi {
   return cache.holAuthentik;
 }
 
+// What an error status means for a group write (spec 0026 AC-4). Pure, so it
+// is unit tested: a 400 is a refusal of the request itself (a name that
+// exists or is not accepted), told apart from an outage.
+export type WriteFailure = AuthentikFailure | "rejected";
+export const classifyStatus = (status: number): WriteFailure =>
+  status === 404 ? "not_found" : status === 400 ? "rejected" : "unavailable";
+
+// Like `call`, for a write whose 400 the caller must tell from an outage.
+export async function callWrite<T>(
+  what: string,
+  run: () => Promise<T>,
+): Promise<Result<T, WriteFailure>> {
+  try {
+    return ok(await run());
+  } catch (e) {
+    if (e instanceof ResponseError) {
+      const failure = classifyStatus(e.response.status);
+      if (failure !== "not_found")
+        console.error(`authentik: ${what} → ${e.response.status}`);
+      return err(failure);
+    }
+    if (e instanceof FetchError) {
+      console.error(`authentik: ${what} failed: ${e.cause.name}`);
+      return err("unavailable");
+    }
+    throw e;
+  }
+}
+
 // Runs one SDK call. Network errors, timeouts, and error statuses become a
 // Result; a 404 is told apart. Logs the call name and status, never PII.
 export async function call<T>(

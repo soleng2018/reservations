@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withTimeoutAndRetry } from "./client";
+import { classifyStatus, withTimeoutAndRetry } from "./client";
 
 // A fetch that never answers until it is aborted.
 const hanging = (calls: { n: number }) => (_: unknown, init?: RequestInit) =>
@@ -98,5 +98,19 @@ describe("withTimeoutAndRetry retry rules (AC-15)", () => {
     });
     expect(res.status).toBe(200);
     expect(calls.n).toBe(2);
+  });
+});
+
+// covers: spec 0026 AC-4 (a 400 is told apart from an outage)
+describe("classifyStatus (spec 0026)", () => {
+  it.each([
+    [400, "rejected"],
+    [404, "not_found"],
+    [403, "unavailable"],
+    [401, "unavailable"],
+    [500, "unavailable"],
+    [502, "unavailable"],
+  ] as const)("reads %i as %s", (status, expected) => {
+    expect(classifyStatus(status)).toBe(expected);
   });
 });
