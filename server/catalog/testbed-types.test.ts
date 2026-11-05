@@ -829,6 +829,40 @@ describe.skipIf(!hasDb)("type edit locks (spec 0026 AC-19)", () => {
       ]);
     }));
 
+  it("heals a rename that landed in Authentik but never reached the row (AC-8)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Old ${tag}`),
+        admin.id,
+        fakeAuthentik([]).api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const pk = (await groupOf(trx, created.value.id)).authentik_group_pk;
+      // The state a failed row save leaves: the group already has the new
+      // name, the type row still has the old one.
+      const ak = fakeAuthentik([], {
+        groups: [
+          fakeGroup(pk ?? "x", `New ${tag}`, {
+            hol_type_group: true,
+            hol_type_id: created.value.id,
+          }),
+        ],
+      });
+      const r = await updateTestbedType(
+        asConn(trx),
+        created.value.id,
+        input(`New ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      expect(r.ok).toBe(true);
+      expect(ak.writes).toEqual([]);
+      expect((await typeRow(trx, created.value.id)).name).toBe(`New ${tag}`);
+    }));
+
   it("makes no Authentik call for a delete of a type with no group", () =>
     inRollback(async (trx) => {
       const admin = await makeUser(trx, { role: "admin" });
