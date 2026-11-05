@@ -48,10 +48,13 @@ export const withTimeoutAndRetry =
     return tryOnce(attempts);
   };
 
-// The configuration each core client was built with, so the policies client
-// (spec 0026: the delete check reads policy bindings) shares its token,
-// timeout, and fetch without a second setup.
-const configurations = new WeakMap<CoreApi, Configuration>();
+// Spec 0026: the delete check reads policy bindings with the same token,
+// timeout, and fetch as the core client. The policies client rides on the core
+// client under a global symbol, not in module state: the runtime client is
+// cached on globalThis and outlives a module reload (a dev hot reload, or a
+// second bundle copy), so a module local map would lose it.
+const POLICIES = Symbol.for("hol.authentik.policiesApi");
+type WithPolicies = CoreApi & { [POLICIES]?: PoliciesApi };
 
 export function createCoreApi(
   env: { readonly AUTHENTIK_URL: string; readonly token: string },
@@ -63,12 +66,19 @@ export function createCoreApi(
     fetchApi: withTimeoutAndRetry(fetchApi),
   });
   const api = new CoreApi(configuration);
-  configurations.set(api, configuration);
+  Object.defineProperty(api, POLICIES, {
+    value: new PoliciesApi(configuration),
+  });
   return api;
 }
 
-export const policiesApi = (api: CoreApi): PoliciesApi =>
-  new PoliciesApi(configurations.get(api));
+export function policiesApi(api: CoreApi): PoliciesApi {
+  const policies = (api as WithPolicies)[POLICIES];
+  // A bug, not an expected failure: every client comes from createCoreApi.
+  if (!policies)
+    throw new Error("policiesApi: client not made by createCoreApi");
+  return policies;
+}
 
 const cache = globalThis as typeof globalThis & { holAuthentik?: CoreApi };
 
