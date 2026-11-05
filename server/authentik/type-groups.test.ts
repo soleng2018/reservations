@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Group } from "./client";
 import {
-  deleteTypeGroup,
+  decideTypeGroupDelete,
+  destroyTypeGroup,
   ensureTypeGroup,
   renameTypeGroup,
 } from "./type-groups";
+import type { CoreApi } from "./client";
+import { ok, type Result } from "@/lib/result";
 import {
   ADMINS,
   fakeAuthentik,
@@ -15,6 +18,21 @@ import {
 } from "./testing";
 
 const TYPE = "type-1";
+
+// Both halves of a delete in a row, as the catalog runs them around its row
+// lock (spec 0026 AC-19).
+async function deleteTypeGroup(
+  api: CoreApi,
+  input: { readonly typeId: string; readonly pk: string },
+): Promise<Result<unknown, "unavailable" | "not_found">> {
+  const decided = await decideTypeGroupDelete(api, input);
+  if (!decided.ok) return decided;
+  if (decided.value.kind !== "destroy") return ok(decided.value);
+  return destroyTypeGroup(api, {
+    ...input,
+    memberCount: decided.value.memberCount,
+  });
+}
 const NAME = "Nile Certified Associate";
 const ours = (pk: string, name: string, id = TYPE) =>
   fakeGroup(pk, name, { hol_type_group: true, hol_type_id: id });

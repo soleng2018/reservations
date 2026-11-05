@@ -98,6 +98,9 @@ export function fakeAuthentik(
     readonly usedBy?: readonly string[];
     // Spec 0026: a group name Authentik does not accept (a 400 on write).
     readonly rejectName?: (name: string) => boolean;
+    // Called once per request, before it is answered, so a test can record
+    // where an Authentik call falls among other events (spec 0026 AC-19).
+    readonly onRequest?: (method: string, path: string) => void;
   } = {},
 ) {
   const users = initial.map((u) => ({ ...u, groups: [...u.groups] }));
@@ -140,6 +143,7 @@ export function fakeAuthentik(
     const path = url.pathname.replace("/api/v3", "");
     const method = (init?.method ?? "GET").toUpperCase();
     const body = init?.body ? JSON.parse(String(init.body)) : {};
+    opts.onRequest?.(method, path);
     if (opts.fail?.(method, path)) return json({ detail: "boom" }, 500);
     const replied = opts.reply?.(method, path);
     if (replied) return replied;

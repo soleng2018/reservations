@@ -51,7 +51,9 @@ Save the type at once and let the worker create, rename, or delete the group lat
 
 The owner's two hard rules decide this: a failed Authentik step must leave the type unchanged, and the app must never touch a group it did not make. The first rules out the worker queue (Option 3), because a queue saves first and fixes later. The second needs more than a stored pk, because the shared Authentik can change under the app, and because the same name rule means the app will sometimes hold a pk for a group the owner made. Checking the stored origin and the live marker together is cheap (one read before each write) and fails safe: on any doubt the app leaves the group alone.
 
-Holding a row lock during Authentik calls is the price of atomicity. It is the same pattern `deactivateLearner` already uses, the load is a handful of admin edits a month, and the client timeout is 10 seconds per call, so the worst case is acceptable. The runner up was Option 2, rejected because an unmarked group cannot be told apart from an owner made one after any drift.
+Holding a row lock during Authentik calls was the first design's price of atomicity. A review on 2026-11-04 found it could hold a booking for about 90 seconds, because bookings take the type `FOR SHARE`. The owner chose (2026-11-04) to move the long Authentik calls under a per type advisory lock and keep the row lock for the row write (AC-19). Capping the booking wait was rejected as the only fix because it leaves the admin side blocking, and moving Authentik out of the transaction was rejected because it breaks AC-4.
+
+Original reasoning: It is the same pattern `deactivateLearner` already uses, the load is a handful of admin edits a month, and the client timeout is 10 seconds per call, so the worst case is acceptable. The runner up was Option 2, rejected because an unmarked group cannot be told apart from an owner made one after any drift.
 
 The type group deliberately carries its own markers and never `hol_testbed_group`. That one choice keeps the testbed dropdown, the reconciler, and the HOL Labs gate exactly as spec 0017 left them, so the exception stays inside `server/authentik/type-groups.ts`.
 

@@ -244,14 +244,43 @@ async function groupHasBinding(
 const hasChildren = (g: Group) =>
   g.children === undefined || g.children.length > 0;
 
-// AC-9, AC-10: delete the group the app made, unless it is no longer the
-// app's or the owner uses it elsewhere. A group with a policy binding is
-// never destroyed: removing the binding can open an Authentik app to every
-// user.
-export async function deleteTypeGroup(
+// Why this group must stay, or null when it is safe to destroy. Logs the pk
+// and the reason only, never the attributes.
+const keepReason = (
+  g: Group,
+  admins: Parameters<typeof checkTypeGroupWrite>[1],
+  input: { readonly typeId: string; readonly pk: string },
+): "not_ours" | "has_children" | null => {
+  const allowed = checkTypeGroupWrite(toGroupTarget(g), admins, {
+    kind: "change",
+    typeId: input.typeId,
+  });
+  const reason = !allowed.ok
+    ? "not_ours"
+    : hasChildren(g)
+      ? "has_children"
+      : null;
+  if (reason)
+    console.warn(
+      `authentik guard: left type group ${input.pk} in place (${reason})`,
+    );
+  return reason;
+};
+
+// What the first, lock free half of a delete decided (spec 0026 AC-19).
+export type DeleteDecision =
+  | Exclude<DeleteOutcome, { readonly kind: "deleted" }>
+  | { readonly kind: "destroy"; readonly memberCount: number };
+
+// AC-9, AC-10, first half: read the group, its bindings, and its members, and
+// decide whether it is the app's to destroy. Run before the type row lock is
+// taken, because these are up to five slow calls. A group with a policy
+// binding is never destroyed: removing the binding can open an Authentik app
+// to every user.
+export async function decideTypeGroupDelete(
   api: CoreApi,
   input: { readonly typeId: string; readonly pk: string },
-): Promise<Result<DeleteOutcome, AuthentikFailure>> {
+): Promise<Result<DeleteDecision, AuthentikFailure>> {
   const admins = await adminGroupUuid(api);
   if (!admins.ok) return err("unavailable");
 
@@ -265,27 +294,7 @@ export async function deleteTypeGroup(
   if (!group.ok)
     return group.error === "not_found" ? ok({ kind: "gone" }) : group;
 
-  // Why this group must stay, or null when it is safe to destroy. Run on the
-  // first read and again right before the destroy (the owner may have changed
-  // it in between). Logs the pk and the reason only, never the attributes.
-  const keepReason = (g: Group): "not_ours" | "has_children" | null => {
-    const allowed = checkTypeGroupWrite(toGroupTarget(g), admins.value, {
-      kind: "change",
-      typeId: input.typeId,
-    });
-    const reason = !allowed.ok
-      ? "not_ours"
-      : hasChildren(g)
-        ? "has_children"
-        : null;
-    if (reason)
-      console.warn(
-        `authentik guard: left type group ${input.pk} in place (${reason})`,
-      );
-    return reason;
-  };
-
-  const first = keepReason(group.value);
+  const first = keepReason(group.value, admins.value, input);
   if (first) return ok({ kind: "left", reason: first });
 
   const bound = await groupHasBinding(api, input.pk);
@@ -301,9 +310,23 @@ export async function deleteTypeGroup(
     api.coreUsersList({ groupsByPk: [input.pk], pageSize: 1 }),
   );
   if (!members.ok) return err("unavailable");
+  return ok({ kind: "destroy", memberCount: members.value.pagination.count });
+}
 
-  // One more read right before the destroy, so a change made since the first
-  // read (a new marker, a child group) is seen.
+// AC-9, AC-10, second half: one more read right before the destroy, so a
+// change made since the first read (a new marker, a child group) is seen. Run
+// under the type row lock, so it is the only slow part a booking can wait for
+// (two calls).
+export async function destroyTypeGroup(
+  api: CoreApi,
+  input: {
+    readonly typeId: string;
+    readonly pk: string;
+    readonly memberCount: number;
+  },
+): Promise<Result<DeleteOutcome, AuthentikFailure>> {
+  const admins = await adminGroupUuid(api);
+  if (!admins.ok) return err("unavailable");
   const fresh = await call("groups.retrieve", () =>
     api.coreGroupsRetrieve({
       groupUuid: input.pk,
@@ -313,7 +336,7 @@ export async function deleteTypeGroup(
   );
   if (!fresh.ok)
     return fresh.error === "not_found" ? ok({ kind: "gone" }) : fresh;
-  const last = keepReason(fresh.value);
+  const last = keepReason(fresh.value, admins.value, input);
   if (last) return ok({ kind: "left", reason: last });
 
   const destroyed = await call("groups.destroy", () =>
@@ -321,8 +344,5 @@ export async function deleteTypeGroup(
   );
   if (!destroyed.ok && destroyed.error === "unavailable")
     return err("unavailable");
-  return ok({
-    kind: "deleted",
-    memberCount: members.value.pagination.count,
-  });
+  return ok({ kind: "deleted", memberCount: input.memberCount });
 }

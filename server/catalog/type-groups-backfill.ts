@@ -8,11 +8,12 @@ import {
   lookupTypeGroup,
 } from "@/server/authentik/type-groups";
 import { Refusal, refusable } from "@/server/db/refusal";
+import { lockTypeEdit } from "@/server/db/type-edit-lock";
 import type { DB } from "@/server/db/types";
 
 // Spec 0026 AC-14, AC-15: give every live type that has no group its group,
 // under its current name. A dry run reads only. Each type is its own
-// transaction holding the row lock, and the pk is checked again under it, so
+// transaction holding the type's advisory lock (spec 0026 AC-19) and the row lock, and the pk is checked again under it, so
 // an admin edit made at the same moment is never overwritten. A skipped type
 // (an unsafe same name group, a group another type holds) is reported and the
 // rest go on; an unreachable Authentik stops the run.
@@ -76,6 +77,7 @@ async function applyOne(
   const base = { typeId: t.id, name: t.name };
   const done = await refusable<BackfillLine, "unavailable" | BackfillLine>(() =>
     conn.transaction().execute(async (trx) => {
+      await lockTypeEdit(trx, t.id);
       const row = await trx
         .selectFrom("testbed_types")
         .select(["name", "authentik_group_pk"])

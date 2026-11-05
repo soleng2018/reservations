@@ -1,4 +1,10 @@
-import type { Kysely } from "kysely";
+import type {
+  Kysely,
+  KyselyPlugin,
+  RawNode,
+  SelectQueryNode,
+  Transaction,
+} from "kysely";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   fakeAuthentik,
@@ -656,5 +662,215 @@ describe.skipIf(!hasDb)("deleteTestbedType with a group (spec 0026)", () => {
         value: { note: null },
       });
       expect(ak2.writes).toEqual([]);
+    }));
+});
+
+// Spec 0026 AC-19: a type edit never holds a booking up for an Authentik call.
+// A booking takes the type row FOR SHARE, so the test records, in order, every
+// Authentik request, the advisory lock, and every row lock (a SELECT ... FOR
+// UPDATE) the edit takes, and checks where the row lock falls.
+type Event = "advisory" | "row_lock" | "authentik";
+
+function traced(trx: Transaction<DB>) {
+  const events: Event[] = [];
+  const plugin: KyselyPlugin = {
+    transformQuery: ({ node }) => {
+      if (
+        node.kind === "SelectQueryNode" &&
+        (node as SelectQueryNode).endModifiers?.some(
+          (m) => m.modifier === "ForUpdate",
+        )
+      )
+        events.push("row_lock");
+      if (
+        node.kind === "RawNode" &&
+        (node as RawNode).sqlFragments
+          .join("")
+          .includes("pg_advisory_xact_lock")
+      )
+        events.push("advisory");
+      return node;
+    },
+    transformResult: async ({ result }) => result,
+  };
+  return {
+    events,
+    conn: asConn(trx.withPlugin(plugin)),
+    onRequest: () => events.push("authentik"),
+  };
+}
+
+describe.skipIf(!hasDb)("type edit locks (spec 0026 AC-19)", () => {
+  it("takes the advisory lock first and the row lock only after every rename call", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const seed = fakeAuthentik([]);
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Old ${tag}`),
+        admin.id,
+        seed.api,
+      );
+      if (!created.ok) throw new Error(created.error);
+
+      const t = traced(trx);
+      const ak = fakeAuthentik([], {
+        groups: seed.groups.filter((g) => g.name === `Old ${tag}`),
+        onRequest: t.onRequest,
+      });
+      const r = await updateTestbedType(
+        t.conn,
+        created.value.id,
+        input(`New ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      expect(r.ok).toBe(true);
+      expect(ak.writes).toHaveLength(1);
+      expect(t.events[0]).toBe("advisory");
+      const lastCall = t.events.lastIndexOf("authentik");
+      expect(lastCall).toBeGreaterThan(0);
+      expect(t.events.indexOf("row_lock")).toBeGreaterThan(lastCall);
+    }));
+
+  it("makes no Authentik call under the row lock when the rename fails", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Old ${tag}`),
+        admin.id,
+        fakeAuthentik([]).api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      quiet();
+      const t = traced(trx);
+      const down = fakeAuthentik([], { down: true, onRequest: t.onRequest });
+      const r = await updateTestbedType(
+        t.conn,
+        created.value.id,
+        input(`New ${tag}`),
+        admin.id,
+        down.api,
+      );
+      expect(r).toEqual({ ok: false, error: "unavailable" });
+      expect(t.events).not.toContain("row_lock");
+      expect((await typeRow(trx, created.value.id)).name).toBe(`Old ${tag}`);
+    }));
+
+  it("refuses a duplicate name before it renames the group", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const seed = fakeAuthentik([]);
+      const a = await createTestbedType(
+        asConn(trx),
+        input(`A ${tag}`),
+        admin.id,
+        seed.api,
+      );
+      const b = await createTestbedType(
+        asConn(trx),
+        input(`B ${tag}`),
+        admin.id,
+        seed.api,
+      );
+      if (!a.ok || !b.ok) throw new Error("setup");
+      seed.writes.length = 0;
+      const r = await updateTestbedType(
+        asConn(trx),
+        a.value.id,
+        input(`b ${tag}`),
+        admin.id,
+        seed.api,
+      );
+      expect(r).toEqual({ ok: false, error: "duplicate_name" });
+      expect(seed.writes).toEqual([]);
+    }));
+
+  it("reads and decides before the row lock on a delete, leaving only the last read and the destroy under it", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Del ${unique()}`),
+        admin.id,
+        fakeAuthentik([]).api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const pk = (await groupOf(trx, created.value.id)).authentik_group_pk;
+      const t = traced(trx);
+      const ak = fakeAuthentik([], {
+        groups: [
+          fakeGroup(pk ?? "x", "Del", {
+            hol_type_group: true,
+            hol_type_id: created.value.id,
+          }),
+        ],
+        onRequest: t.onRequest,
+      });
+      const r = await deleteTestbedType(
+        t.conn,
+        created.value.id,
+        admin.id,
+        ak.api,
+      );
+      expect(r.ok).toBe(true);
+      expect(ak.writes).toHaveLength(1);
+      expect(t.events[0]).toBe("advisory");
+      const firstRowLock = t.events.indexOf("row_lock");
+      // The reads (admin group, retrieve, bindings, members) come before it;
+      // the last read and the destroy come after it, and nothing else.
+      expect(t.events.slice(firstRowLock + 1)).toEqual([
+        "authentik",
+        "authentik",
+      ]);
+    }));
+
+  it("heals a rename that landed in Authentik but never reached the row (AC-8)", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const tag = unique();
+      const created = await createTestbedType(
+        asConn(trx),
+        input(`Old ${tag}`),
+        admin.id,
+        fakeAuthentik([]).api,
+      );
+      if (!created.ok) throw new Error(created.error);
+      const pk = (await groupOf(trx, created.value.id)).authentik_group_pk;
+      // The state a failed row save leaves: the group already has the new
+      // name, the type row still has the old one.
+      const ak = fakeAuthentik([], {
+        groups: [
+          fakeGroup(pk ?? "x", `New ${tag}`, {
+            hol_type_group: true,
+            hol_type_id: created.value.id,
+          }),
+        ],
+      });
+      const r = await updateTestbedType(
+        asConn(trx),
+        created.value.id,
+        input(`New ${tag}`),
+        admin.id,
+        ak.api,
+      );
+      expect(r.ok).toBe(true);
+      expect(ak.writes).toEqual([]);
+      expect((await typeRow(trx, created.value.id)).name).toBe(`New ${tag}`);
+    }));
+
+  it("makes no Authentik call for a delete of a type with no group", () =>
+    inRollback(async (trx) => {
+      const admin = await makeUser(trx, { role: "admin" });
+      const type = await makeType(trx);
+      const t = traced(trx);
+      const ak = fakeAuthentik([], { onRequest: t.onRequest });
+      const r = await deleteTestbedType(t.conn, type.id, admin.id, ak.api);
+      expect(r.ok).toBe(true);
+      expect(t.events).toEqual(["advisory", "row_lock"]);
     }));
 });
