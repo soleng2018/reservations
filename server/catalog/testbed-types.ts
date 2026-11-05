@@ -15,10 +15,12 @@ import type { DB } from "@/server/db/types";
 import { Refusal, refusable } from "@/server/db/refusal";
 import { authentik, type CoreApi } from "@/server/authentik/client";
 import {
-  deleteTypeGroup,
+  decideTypeGroupDelete,
+  destroyTypeGroup,
   ensureTypeGroup,
   renameTypeGroup,
 } from "@/server/authentik/type-groups";
+import { lockTypeEdit } from "@/server/db/type-edit-lock";
 
 export type TestbedTypeRow = {
   readonly id: string;
@@ -141,12 +143,15 @@ export type UpdateTypeError =
 // old name (AC-7).
 export type UpdateTypeOutcome = { readonly note: "group_kept" | null };
 
-// Feature 7, spec 0026 AC-5 to AC-8. A new duration applies to new bookings
-// and reschedules only: a booking keeps the ends_at it was given (spec 0002).
-// The row lock waits for a booking that holds the type FOR SHARE. A duplicate
-// name aborts the transaction, so it is mapped outside it. A changed name
-// renames the group the app made (after the row update, so `duplicate_name`
-// wins); a type with no group yet, or a reused one, makes no Authentik call.
+// Feature 7, spec 0026 AC-5 to AC-8, AC-19. A new duration applies to new
+// bookings and reschedules only: a booking keeps the ends_at it was given
+// (spec 0002). The slow Authentik calls run under the per type advisory lock,
+// before the type row is locked, so a booking (which holds the row FOR SHARE)
+// waits only for the row write. A duplicate name is checked before the group
+// is renamed, so the common clash never leaves the group renamed alone; the
+// constraint is the backstop and aborts the transaction, so it is mapped
+// outside it. A type with no group yet, or a reused one, makes no Authentik
+// call.
 export async function updateTestbedType(
   conn: Kysely<DB>,
   id: string,
@@ -157,6 +162,7 @@ export async function updateTestbedType(
   try {
     return await refusable<UpdateTypeOutcome, UpdateTypeError>(() =>
       conn.transaction().execute(async (trx) => {
+        await lockTypeEdit(trx, id);
         const row = await trx
           .selectFrom("testbed_types")
           .select([
@@ -168,7 +174,6 @@ export async function updateTestbedType(
           ])
           .where("id", "=", id)
           .where("deleted_at", "is", null)
-          .forUpdate()
           .executeTakeFirst();
         if (!row) throw new Refusal<UpdateTypeError>("not_found");
         const changed = changedFields(
@@ -182,6 +187,45 @@ export async function updateTestbedType(
         );
         if (Object.keys(changed).length === 0) return { note: null };
 
+        const nameChanged = row.name !== input.name;
+        if (nameChanged) {
+          const taken = await trx
+            .selectFrom("testbed_types")
+            .select("id")
+            .where(sql<boolean>`lower(name) = lower(${input.name})`)
+            .where("id", "<>", id)
+            .where("deleted_at", "is", null)
+            .executeTakeFirst();
+          if (taken) throw new Refusal<UpdateTypeError>("duplicate_name");
+        }
+        const groupPk = row.authentik_group_pk;
+        const rename =
+          nameChanged && groupPk && row.authentik_group_origin === "created"
+            ? await renameTypeGroup(api ?? authentik(), {
+                typeId: id,
+                pk: groupPk,
+                name: input.name,
+              })
+            : null;
+        if (rename && !rename.ok)
+          throw new Refusal<UpdateTypeError>(
+            rename.error === "name_taken"
+              ? "group_clash"
+              : rename.error === "changed"
+                ? "group_changed"
+                : groupFailure(rename.error),
+          );
+
+        // The row lock, for the write only. The advisory lock already keeps
+        // other edits out, so a miss here means the row went away.
+        const locked = await trx
+          .selectFrom("testbed_types")
+          .select("id")
+          .where("id", "=", id)
+          .where("deleted_at", "is", null)
+          .forUpdate()
+          .executeTakeFirst();
+        if (!locked) throw new Refusal<UpdateTypeError>("unavailable");
         await trx
           .updateTable("testbed_types")
           .set({
@@ -199,26 +243,12 @@ export async function updateTestbedType(
           summary: "Testbed type updated",
           metadata: changed,
         });
-        if (row.name === input.name || !row.authentik_group_pk)
-          return { note: null };
+        if (!nameChanged || !groupPk) return { note: null };
         if (row.authentik_group_origin === "reused")
           return { note: "group_kept" };
 
-        const renamed = await renameTypeGroup(api ?? authentik(), {
-          typeId: id,
-          pk: row.authentik_group_pk,
-          name: input.name,
-        });
-        if (!renamed.ok)
-          throw new Refusal<UpdateTypeError>(
-            renamed.error === "name_taken"
-              ? "group_clash"
-              : renamed.error === "changed"
-                ? "group_changed"
-                : groupFailure(renamed.error),
-          );
-        const outcome = renamed.value;
-        if (outcome.kind === "unchanged") return { note: null };
+        const outcome = rename?.ok ? rename.value : null;
+        if (!outcome || outcome.kind === "unchanged") return { note: null };
         if (outcome.kind === "recreated")
           await trx
             .updateTable("testbed_types")
@@ -238,10 +268,7 @@ export async function updateTestbedType(
               ? "Authentik group created for a testbed type"
               : "Authentik group renamed with its testbed type",
           metadata: {
-            groupPk:
-              outcome.kind === "recreated"
-                ? outcome.pk
-                : row.authentik_group_pk,
+            groupPk: outcome.kind === "recreated" ? outcome.pk : groupPk,
           },
         });
         return { note: null };
@@ -263,11 +290,13 @@ export type DeleteTestbedTypeError =
 // "group_left": the group stays in Authentik (AC-10).
 export type DeleteTypeOutcome = { readonly note: "group_left" | null };
 
-// Feature 7 (spec 0002 AC-4, AC-14), spec 0026 AC-9, AC-10. Lock, check the
-// blockers again, then soft delete, so a testbed added meanwhile cannot slip
-// in. The name is free for reuse afterwards (unique among live rows only).
-// The group the app made is deleted after that, in the same transaction, so
-// an Authentik failure keeps the type.
+// Feature 7 (spec 0002 AC-4, AC-14), spec 0026 AC-9, AC-10, AC-19. The
+// Authentik reads and the decision about the group run first, under the per
+// type advisory lock only. Then the row lock, the blockers again, the soft
+// delete (so a testbed added meanwhile cannot slip in), and the group's last
+// read and destroy, which is all a booking can wait for. The name is free for
+// reuse afterwards (unique among live rows only). An Authentik failure keeps
+// the type.
 export async function deleteTestbedType(
   conn: Kysely<DB>,
   id: string,
@@ -276,6 +305,27 @@ export async function deleteTestbedType(
 ): Promise<Result<DeleteTypeOutcome, DeleteTestbedTypeError>> {
   return refusable<DeleteTypeOutcome, DeleteTestbedTypeError>(() =>
     conn.transaction().execute(async (trx) => {
+      await lockTypeEdit(trx, id);
+      const row = await trx
+        .selectFrom("testbed_types")
+        .select(["authentik_group_pk", "authentik_group_origin"])
+        .where("id", "=", id)
+        .where("deleted_at", "is", null)
+        .executeTakeFirst();
+      if (!row)
+        throw new Refusal<DeleteTestbedTypeError>({ kind: "not_found" });
+
+      const groupPk = row.authentik_group_pk;
+      const made = groupPk && row.authentik_group_origin === "created";
+      const decision = made
+        ? await decideTypeGroupDelete(api ?? authentik(), {
+            typeId: id,
+            pk: groupPk,
+          })
+        : null;
+      if (decision && !decision.ok)
+        throw new Refusal<DeleteTestbedTypeError>({ kind: "unavailable" });
+
       if (!(await lockForDelete(trx, "testbed_types", id)))
         throw new Refusal<DeleteTestbedTypeError>({ kind: "not_found" });
       const blockers = await testbedTypeBlockers(trx, id);
@@ -284,26 +334,28 @@ export async function deleteTestbedType(
           kind: "blocked",
           blockers,
         });
-
-      const row = await trx
-        .selectFrom("testbed_types")
-        .select(["authentik_group_pk", "authentik_group_origin"])
-        .where("id", "=", id)
-        .executeTakeFirst();
       await trx
         .updateTable("testbed_types")
         .set({ deleted_at: sql<Date>`now()` })
         .where("id", "=", id)
         .execute();
 
-      const groupPk = row?.authentik_group_pk;
-      const made = groupPk && row.authentik_group_origin === "created";
-      const group = made
-        ? await deleteTypeGroup(api ?? authentik(), { typeId: id, pk: groupPk })
-        : null;
-      if (group && !group.ok)
+      const decided = decision?.ok ? decision.value : null;
+      const destroyed =
+        groupPk && decided?.kind === "destroy"
+          ? await destroyTypeGroup(api ?? authentik(), {
+              typeId: id,
+              pk: groupPk,
+              memberCount: decided.memberCount,
+            })
+          : null;
+      if (destroyed && !destroyed.ok)
         throw new Refusal<DeleteTestbedTypeError>({ kind: "unavailable" });
-      const outcome = group?.ok ? group.value : null;
+      const outcome = destroyed?.ok
+        ? destroyed.value
+        : decided?.kind === "destroy"
+          ? null
+          : decided;
 
       await audit(trx, {
         actorUserId: actorId,

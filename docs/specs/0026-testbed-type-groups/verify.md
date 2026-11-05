@@ -24,3 +24,4 @@ _Steps derived from spec 0026 acceptance criteria. `/check verify` runs these; `
 
 ## Acceptance-criteria coverage
 - AC-1 · AC-13 first manual step · AC-2 · AC-3 · AC-4 (two steps) · AC-5 · AC-6 · AC-7 · AC-8 · AC-9 · AC-10 · AC-11, AC-12 `npm test` · AC-14, AC-15 backfill · AC-16 codegen · AC-17 setup · AC-18 audit log
+- [ ] While a rename waits on a slow Authentik, book that type in another tab → the booking goes through without waiting → AC-19
