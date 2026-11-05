@@ -4,6 +4,7 @@ import { err, ok, type Result } from "@/lib/result";
 import {
   call,
   callWrite,
+  policiesApi,
   type AuthentikFailure,
   type CoreApi,
   type Group,
@@ -211,6 +212,29 @@ export type DeleteOutcome =
       readonly reason: "not_ours" | "bound" | "has_children";
     };
 
+const BINDING_PAGE = 100;
+const BINDING_MAX_PAGES = 5;
+
+// Does any policy binding point at this group? Authentik's own `used_by`
+// answers 500 for the provisioning token, and the bindings list has no group
+// filter, so read the bindings (a few dozen) and look. More than five pages
+// counts as bound: when in doubt the group is left alone.
+async function groupHasBinding(
+  api: CoreApi,
+  pk: string,
+  page = 1,
+): Promise<Result<boolean, "unavailable">> {
+  const res = await call("policies.bindings list", () =>
+    policiesApi(api).policiesBindingsList({ page, pageSize: BINDING_PAGE }),
+  );
+  if (!res.ok) return err("unavailable");
+  if (res.value.results.some((b) => b.group === pk)) return ok(true);
+  if (res.value.pagination.next === 0) return ok(false);
+  return page >= BINDING_MAX_PAGES
+    ? ok(true)
+    : groupHasBinding(api, pk, page + 1);
+}
+
 const hasChildren = (g: Group) => (g.children ?? []).length > 0;
 
 // AC-9, AC-10: delete the group the app made, unless it is no longer the
@@ -246,11 +270,9 @@ export async function deleteTypeGroup(
   if (hasChildren(group.value))
     return ok({ kind: "left", reason: "has_children" });
 
-  const usedBy = await call("groups.used_by", () =>
-    api.coreGroupsUsedByList({ groupUuid: input.pk }),
-  );
-  if (!usedBy.ok) return err("unavailable");
-  if (usedBy.value.length > 0) return ok({ kind: "left", reason: "bound" });
+  const bound = await groupHasBinding(api, input.pk);
+  if (!bound.ok) return err("unavailable");
+  if (bound.value) return ok({ kind: "left", reason: "bound" });
 
   const members = await call("users.count in group", () =>
     api.coreUsersList({ groupsByPk: [input.pk], pageSize: 1 }),

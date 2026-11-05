@@ -317,7 +317,7 @@ describe("planPermissions", () => {
   it("never grants anything outside users, groups, and sessions", () => {
     expect(
       PROVISIONING_PERMISSIONS.every((p) =>
-        /^authentik_core\.\w+_(user|group|user_to_group|user_from_group|authenticatedsession|user_password)$/.test(
+        /^(authentik_core\.\w+_(user|group|user_to_group|user_from_group|authenticatedsession|user_password)|authentik_policies\.view_policybinding)$/.test(
           p,
         ),
       ),

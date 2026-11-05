@@ -6,6 +6,7 @@ import {
   Configuration,
   CoreApi,
   FetchError,
+  PoliciesApi,
   ResponseError,
   type FetchAPI,
 } from "@goauthentik/api/dist/esm/index.js";
@@ -47,18 +48,27 @@ export const withTimeoutAndRetry =
     return tryOnce(attempts);
   };
 
+// The configuration each core client was built with, so the policies client
+// (spec 0026: the delete check reads policy bindings) shares its token,
+// timeout, and fetch without a second setup.
+const configurations = new WeakMap<CoreApi, Configuration>();
+
 export function createCoreApi(
   env: { readonly AUTHENTIK_URL: string; readonly token: string },
   fetchApi: FetchAPI = fetch,
 ): CoreApi {
-  return new CoreApi(
-    new Configuration({
-      basePath: `${env.AUTHENTIK_URL}/api/v3`,
-      accessToken: env.token,
-      fetchApi: withTimeoutAndRetry(fetchApi),
-    }),
-  );
+  const configuration = new Configuration({
+    basePath: `${env.AUTHENTIK_URL}/api/v3`,
+    accessToken: env.token,
+    fetchApi: withTimeoutAndRetry(fetchApi),
+  });
+  const api = new CoreApi(configuration);
+  configurations.set(api, configuration);
+  return api;
 }
+
+export const policiesApi = (api: CoreApi): PoliciesApi =>
+  new PoliciesApi(configurations.get(api));
 
 const cache = globalThis as typeof globalThis & { holAuthentik?: CoreApi };
 

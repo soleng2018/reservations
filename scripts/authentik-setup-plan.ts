@@ -46,6 +46,7 @@ export const PROVISIONING_PERMISSIONS: readonly string[] = [
   "authentik_core.view_group",
   "authentik_core.add_group",
   "authentik_core.change_group", // rename a type group (spec 0026)
+  "authentik_policies.view_policybinding", // delete check: is the group bound (spec 0026)
   "authentik_core.delete_group",
   "authentik_core.add_user_to_group",
   "authentik_core.remove_user_from_group",

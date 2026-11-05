@@ -94,8 +94,7 @@ export function fakeAuthentik(
     // Answer with this exact response to the matching requests, e.g. a 403
     // or a body that is not JSON.
     readonly reply?: (method: string, path: string) => Response | undefined;
-    // Spec 0026: group pks that something in Authentik uses (a policy
-    // binding), as `used_by` reports them.
+    // Spec 0026: group pks that a policy binding points at.
     readonly usedBy?: readonly string[];
     // Spec 0026: a group name Authentik does not accept (a 400 on write).
     readonly rejectName?: (name: string) => boolean;
@@ -210,24 +209,28 @@ export function fakeAuthentik(
         return noContent();
       }
     }
-    const usedBy = path.match(/^\/core\/groups\/([^/]+)\/used_by\/$/);
-    if (method === "GET" && usedBy) {
-      const [, groupPk = ""] = usedBy;
-      if (!groups.some((g) => g.pk === groupPk)) return notFound();
+    if (method === "GET" && path === "/policies/bindings/")
       return json(
-        (opts.usedBy ?? []).includes(groupPk)
-          ? [
-              {
-                app: "authentik_policies",
-                model_name: "policybinding",
-                pk: "binding-uuid",
-                name: "binding",
-                action: "cascade",
-              },
-            ]
-          : [],
+        page(
+          (opts.usedBy ?? []).map((groupPk) => ({
+            pk: `binding-${groupPk}`,
+            group: groupPk,
+            policy: null,
+            user: null,
+            target: "app-uuid",
+            order: 0,
+            negate: false,
+            enabled: true,
+            timeout: 30,
+            failure_result: false,
+            policy_obj: {},
+            group_obj: {},
+            user_obj: {},
+            target_obj: {},
+          })),
+          q,
+        ),
       );
-    }
     const member = path.match(/^\/core\/groups\/([^/]+)\/(add|remove)_user\/$/);
     if (method === "POST" && member) {
       const [, groupPk = "", op] = member;
