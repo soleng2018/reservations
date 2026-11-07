@@ -16,10 +16,11 @@ const entry = {
 const listOf = (...steps: readonly unknown[]) => ({ schemaVersion: 1, steps });
 
 describe("the starting list file (AC-17, AC-18, AC-21)", () => {
-  it("parses, with the 13 tested steps in run order", () => {
+  it("parses, with the 14 tested steps in run order", () => {
     expect(parsed.steps.map((s) => s.key)).toEqual([
       "integrations",
       "ssids",
+      "ssid-url-filters",
       "guest-service-auth-geo-control",
       "wired-access-management",
       "policies",

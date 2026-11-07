@@ -16,6 +16,7 @@ export type FakeState = {
   ddns: Rec[];
   ssids: Rec[];
   guestAdvance: Rec[];
+  urlFilter: Rec;
   sso: { pre: string; post: string } | null;
   clientConfigs: Rec[];
   policySets: Rec[];
@@ -80,6 +81,16 @@ export const populatedState = (): FakeState => ({
     },
   ],
   guestAdvance: [{ id: "ga1", tenantId: "t1", advanceSettingsEnabled: true }],
+  urlFilter: {
+    enabled: true,
+    level: "MODERATE",
+    allowedUrls: ["https://allowed.example"],
+    blockedUrls: ["https://blocked.example"],
+    customBlockedIds: null,
+    customAllowedIds: null,
+    allowDOH: false,
+    allowP2P: false,
+  },
   sso: { pre: "seg-a", post: "seg-b" },
   clientConfigs: [
     { clientConfig: { id: "cc-all", ruleType: "ALL" } },
@@ -151,6 +162,11 @@ export const baselineState = (): FakeState => ({
   ddns: [],
   ssids: (populatedState().ssids as Rec[]).slice(0, 1),
   guestAdvance: [{ id: "ga1", tenantId: "t1", advanceSettingsEnabled: false }],
+  urlFilter: {
+    ...(populatedState().urlFilter as Rec),
+    allowedUrls: [],
+    blockedUrls: [],
+  },
   brandingProfile: "profiles",
   sso: null,
   clientConfigs: [],
@@ -273,6 +289,14 @@ function handle(s: FakeState, req: PortalRequest): PortalReply {
     table("/api/v1/settings/radius", s.radius, dataContent) ??
     table("/api/v1/portalconfig", s.portals, (rows) => rows);
   if (simple) return simple;
+
+  if (at("/api/v1/edgegwservice/urlfilter")) {
+    if (get) return reply(200, s.urlFilter);
+    if (req.method === "PUT" && isRec(req.body)) {
+      s.urlFilter = req.body;
+      return reply(200);
+    }
+  }
 
   if (at("/api/v1/guestpop/advance") && get) return reply(200, s.guestAdvance);
   if (path.startsWith("/api/v1/guestpop/advance/") && req.method === "PUT") {

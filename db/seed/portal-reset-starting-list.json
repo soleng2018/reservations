@@ -149,6 +149,63 @@
       ]
     },
     {
+      "key": "ssid-url-filters",
+      "featureName": "SSID URL filters: Allowed and Blocked URLs",
+      "note": "Guest SSID, Advanced: one PUT of the whole filter record with both lists empty, other settings sent back unchanged. Runs before Guest Service Auth, because the page's SSID save also sends advanceSettingsEnabled. Tested on Workshop 2.",
+      "pages": ["/network-setup/wireless"],
+      "parts": [
+        {
+          "kind": "read",
+          "as": "filter",
+          "method": "GET",
+          "path": "/api/v1/edgegwservice/urlfilter",
+          "pick": {
+            "enabled": "enabled",
+            "level": "level",
+            "allowDOH": "allowDOH",
+            "allowP2P": "allowP2P"
+          }
+        },
+        {
+          "kind": "call",
+          "method": "PUT",
+          "path": "/api/v1/edgegwservice/urlfilter",
+          "body": {
+            "enabled": "{read.filter.enabled}",
+            "level": "{read.filter.level}",
+            "allowedUrls": [],
+            "blockedUrls": [],
+            "customBlockedIds": null,
+            "customAllowedIds": null,
+            "allowDOH": "{read.filter.allowDOH}",
+            "allowP2P": "{read.filter.allowP2P}"
+          }
+        },
+        {
+          "kind": "read",
+          "as": "filterAfter",
+          "method": "GET",
+          "path": "/api/v1/edgegwservice/urlfilter",
+          "pick": {
+            "firstAllowed": "allowedUrls[0]",
+            "firstBlocked": "blockedUrls[0]"
+          }
+        },
+        {
+          "kind": "expect",
+          "read": "filterAfter",
+          "key": "firstAllowed",
+          "op": "missing"
+        },
+        {
+          "kind": "expect",
+          "read": "filterAfter",
+          "key": "firstBlocked",
+          "op": "missing"
+        }
+      ]
+    },
+    {
       "key": "guest-service-auth-geo-control",
       "featureName": "Guest Service Auth and Geo Control",
       "note": "From OFF the switch goes true, waits 10 seconds, then false; from ON it goes false only. The portal page ignores this click, so the API is used.",

@@ -29,7 +29,8 @@ Screenshots and other output land in the current directory, so run from a scratc
 | `00-discover-pages.mjs` | discovery (D16) | Fresh context per page; lists every response that is a list of records, flags the never touch routes. Read only. | Prototype of the discovery pass |
 | `01-integrations.mjs` | 1 | Webhooks, SIEMs (all vendors), email, DNS: list, `DELETE <list>/{id}`, re-read, report leftovers. | API |
 | `02-ssids.mjs` | 2 | Delete every SSID except the protected one (`popTunnelUsed`), with checks. | API |
-| `03-guest-geo-control.mjs` | 3 | Read the state; OFF: PUT true, wait 10 s, PUT false; ON: PUT false. | API |
+| (no script) | 3 | SSID URL filters (added 2026-11-06, tested on Workshop 2): `GET` then `PUT /api/v1/edgegwservice/urlfilter` with both lists empty and the other fields sent back unchanged. The page's Save also PATCHes `/api/v1/guestpop`, which the API call does not need. | API |
+| `03-guest-geo-control.mjs` | 4 (was 3) | Read the state; OFF: PUT true, wait 10 s, PUT false; ON: PUT false. | API |
 | `04-wired.mjs` | 4 | Wired SSO enabled or not: entries, SSO config, then `ALL`. | API |
 | `05-policies-ui-capture.mjs` | 5 | Deletes the admin policy through the page to capture the call. | UI capture |
 | `07-policy-group-ui-capture.mjs` | 7 | Deletes the admin user group through the page to capture the call. | UI capture |
@@ -48,3 +49,6 @@ Missing on purpose: scripts for the Trust Engine policies, groups, service profi
 - The page can fetch the same list twice and the second response may be cut off: keep the **first successful parse**.
 - The API sends no `Allow` header (`OPTIONS` answers 401 or 403), so a route can only be confirmed by a real delete and a re-read.
 - Selecting several rows is not always possible in the page (DHCP scopes allow one at a time); the API has no such limit.
+
+
+Since 2026-11-06 the starting list has a new Step 3, so every step from the guest switch on is one higher than the number in the table's Step column for the rows below it. The file numbers did not change.

@@ -11,7 +11,7 @@ afterAll(() => db().destroy());
 
 const wait = (seconds: number) => ({ parts: [{ kind: "wait", seconds }] });
 
-// A database as a fresh install leaves it: the 13 starting steps, version 1.
+// A database as a fresh install leaves it: the 14 starting steps, version 1.
 const fresh = async (trx: Transaction<DB>) => {
   await trx.deleteFrom("portal_reset_steps").execute();
   await trx
@@ -146,7 +146,7 @@ describe.skipIf(!hasDb)("savePortalReset", () => {
         ...rest.map((r) => r.featureName),
       ]);
       expect(await positions(trx)).toEqual(
-        Array.from({ length: 14 }, (_, i) => i + 1),
+        Array.from({ length: 15 }, (_, i) => i + 1),
       );
       const row = await settings(trx);
       expect(row.updated_by).toBe(admin.id);
@@ -166,7 +166,7 @@ describe.skipIf(!hasDb)("savePortalReset", () => {
       expect(result.ok).toBe(true);
       await sql`set constraints all immediate`.execute(trx);
       expect(await positions(trx)).toEqual(
-        Array.from({ length: 11 }, (_, i) => i + 1),
+        Array.from({ length: 12 }, (_, i) => i + 1),
       );
     });
   });
@@ -181,7 +181,7 @@ describe.skipIf(!hasDb)("savePortalReset", () => {
         mode: "live",
       });
       expect(result).toEqual({ ok: false, error: { kind: "stale" } });
-      expect(await names(trx)).toHaveLength(13);
+      expect(await names(trx)).toHaveLength(14);
       expect(await audits(trx)).toEqual(before);
       expect(await settings(trx)).toMatchObject({ version: 1, mode: "off" });
     });
@@ -454,7 +454,7 @@ describe.skipIf(!hasDb)("savePortalReset", () => {
         });
         expect(saved?.metadata).toMatchObject({
           version: { from: 1, to: 2 },
-          steps: 14,
+          steps: 15,
         });
         const updated = rows.find(
           (r) =>

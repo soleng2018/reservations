@@ -59,9 +59,9 @@ const runAll = async (fake: Fake, extra: Partial<StepEnv> = {}) => {
 };
 
 // covers: AC-19, AC-20, AC-22, AC-24
-describe("the 13 starting steps", () => {
-  it("has 13 steps", () => {
-    expect(steps).toHaveLength(13);
+describe("the 14 starting steps", () => {
+  it("has 14 steps", () => {
+    expect(steps).toHaveLength(14);
   });
 
   it("bring a populated tenant to the baseline", async () => {
@@ -95,12 +95,13 @@ describe("the 13 starting steps", () => {
     expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
     // The writes a clean tenant still gets, by the starting list's design: the
     // branding restore, the certificate delete (a 404 is fine), the App group
-    // the portal refuses (expected), and the guest switch cycled on and off.
+    // the portal refuses (expected), the URL filter PUT (always sent, empty lists), and the guest switch cycled on and off.
     const extra = fake.writes.slice(writesBefore);
     expect(extra.map((w) => `${w.method} ${w.path}`).sort()).toEqual([
       "DELETE /api/v1/cloud-profile/value?profile_name=profiles&profile_type=app_profile&scope_type=tenant",
       "DELETE /api/v1/cloudradius/config/demo/keys",
       "DELETE /api/v3/policy/groups/g-app",
+      "PUT /api/v1/edgegwservice/urlfilter",
       "PUT /api/v1/guestpop/advance/ga1",
       "PUT /api/v1/guestpop/advance/ga1",
     ]);
