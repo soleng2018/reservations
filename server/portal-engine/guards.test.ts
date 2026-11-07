@@ -431,4 +431,26 @@ describe("the Users guards", () => {
     }
     expect(fake.writes).toEqual([]);
   });
+  it("refuses an alias, an email, or a user the list never held, and any kept id in the query or a comma list", async () => {
+    const fake = makeFake();
+    const found = await load(fake);
+    if (!found.ok) throw new Error(found.error.why);
+    const portal = guardedPortal(fake.portal, found.value);
+    const refused = [
+      { method: "DELETE", path: "/api/v1/users/me" },
+      { method: "DELETE", path: "/api/v1/users/nileadmin%40example.com" },
+      { method: "DELETE", path: "/api/v1/users/u-never-listed" },
+      { method: "POST", path: "/api/v1/users/me/lifecycle/deactivate" },
+      { method: "DELETE", path: "/api/v1/users/u-learner1?id=u-root" },
+      {
+        method: "DELETE",
+        path: "/api/v1/users/u-learner1",
+        body: { ids: "u-learner1,u-root" },
+      },
+    ] as const;
+    for (const req of refused) {
+      await expect(portal.call(req)).rejects.toBeInstanceOf(GuardStop);
+    }
+    expect(fake.writes).toEqual([]);
+  });
 });

@@ -21,6 +21,9 @@ export type Protection = {
   readonly guard: Guard;
   // Lower case, so a differently cased id in a path still matches.
   readonly ids: ReadonlySet<string>;
+  // Every id the guard's list returned, kept or not, lower case. Used by a
+  // guard that sets `onlyListed`.
+  readonly listed: ReadonlySet<string>;
   // The parents of kept nested records. A parent is protected as itself (its
   // own delete route), not as a place its other children live in.
   readonly parentIds: ReadonlySet<string>;
@@ -102,7 +105,12 @@ export async function computeProtected(
     );
     if (!body.ok) return err({ guardKey: guard.key, why: "unreadable" });
     if (body.value === undefined) {
-      found.push({ guard, ids: new Set(), parentIds: new Set() });
+      found.push({
+        guard,
+        ids: new Set(),
+        listed: new Set(),
+        parentIds: new Set(),
+      });
       continue;
     }
     const items = listItems(body.value, guard);
@@ -133,6 +141,7 @@ export async function computeProtected(
     found.push({
       guard,
       ids: new Set(kept.map((i) => i.id.toLowerCase())),
+      listed: new Set(items.value.map((i) => i.id.toLowerCase())),
       parentIds: new Set(
         kept
           .flatMap((i) => (i.parentId === null ? [] : [i.parentId]))
@@ -146,7 +155,7 @@ export async function computeProtected(
 type GuardedMethod = "DELETE" | "PUT" | "POST";
 
 const stringLeaves = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return [value];
+  if (typeof value === "string") return [value, ...value.split(",")];
   if (typeof value === "number") return [String(value)];
   if (Array.isArray(value)) return value.flatMap(stringLeaves);
   if (typeof value === "object" && value !== null) {
@@ -203,6 +212,21 @@ function hitOf(
   });
 }
 
+// A write under a route whose guard sets `onlyListed` must name, as the
+// segment right after the route prefix, an id the guard's own list returned
+// and did not keep. A literal alias, an email, or a user the list never held
+// fails this, whatever the step says (spec 0027 review).
+const onlyListedOk = (prot: Protected, path: string): boolean => {
+  const route = normalizePortalRoute(path);
+  return prot.every(({ guard, ids, listed }) => {
+    if (guard.onlyListed !== true) return true;
+    const prefix = normalizePortalRoute(guard.deleteRoutePrefix);
+    if (!underPrefix(route, prefix)) return true;
+    const target = route[prefix.length]?.toLowerCase();
+    return target !== undefined && listed.has(target) && !ids.has(target);
+  });
+};
+
 // The interpreter's silent skip (AC-26, D9): a protected item is never
 // deleted, never recorded as a failure, never emailed. `ids` holds the ids a
 // batch carries in its body.
@@ -247,6 +271,9 @@ export function guardedPortal(
       req.method !== "POST"
     ) {
       return;
+    }
+    if (!onlyListedOk(prot, req.path)) {
+      throw new GuardStop(routePattern(req.path));
     }
     const hit = hitOf(prot, req.method, req.path, stringLeaves(req.body));
     if (hit !== undefined) {

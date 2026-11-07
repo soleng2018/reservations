@@ -165,7 +165,9 @@ Approach: Tracer Bullet. First one thin thread through every layer on the fake p
 
 ## Follow-up
 
-- [ ] (Live check ran on Workshop 2 on 2026-11-07 and passed, but it did not hit these two cases; they need extra throwaway users.) Record the portal's answers to a deactivate of a user that is already deactivated, and to a delete of a user that is still active (the fake in AC-13 assumes 400 for the first).
+- [x] Review fix (2026-11-07): the Users guards set `onlyListed`, so a write under `/api/v1/users` must name an id the guard's list returned and did not keep (an alias such as `me`, an email, or an unlisted user stops the run). A user who signs in between the guard read and the step is not listed, so that run stops `guard_stop` and the next run removes the user.
+
+- [x] Recorded 2026-11-07 on Workshop 2 with throwaway users: a deactivate of an already deactivated user answers 204 (not the 400 the fake assumes, so `skipWhen` saves a call but is not required), and a delete of a still active user answers 400 "Please deactivate the user ... before you can delete them" (so the pre call is required). The fake keeps its stricter 400 on purpose.
 - [ ] `/sync` after merge (the root `AGENTS.md` line is already added): add one line to the root `AGENTS.md` portal rules that `/api/*/users` has three allowed calls and two guards (`guardPost`, `when_touched`), and update the deny list line.
 - [x] Add a scope row for this (feature 26).
 - [ ] Confirm the RootAdmin group id on Workshop 1 and 5 if either gets a portal tenant (Workshop 5 has none today).

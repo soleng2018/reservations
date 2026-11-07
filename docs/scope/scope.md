@@ -489,7 +489,7 @@ Follow up from feature 24, from spec 0027 (owner request 2026-11-07). After ever
   - [x] The seed entry (15 steps), docs, and the live check on a scratch workshop (AC-11, 12, 14, 15). Live check on Workshop 2, 2026-11-07: dry run listed 4 users, live run deleted them, only `nileadmin@` and `automation@` left, second run changed nothing
 - [x] Verify it: `/check verify portal reset: remove users` (a dry run and then a live run on a scratch tenant, with the owner present)
 - [ ] Test it: `/test portal reset: remove users`
-- [ ] Review it (fresh model): `/check review portal reset: remove users`
+- [x] Review it (fresh model): `/check review portal reset: remove users`
 - [ ] Document it: `/document portal reset: remove users`
 spec [0027](../specs/0027-portal-reset-users-step.md) · research [findings 3i and D17](../research/nile-portal-reset-findings.md) · code in `server/portal-engine/`, `lib/portal-reset/`, `db/seed/portal-reset-starting-list.json`
 

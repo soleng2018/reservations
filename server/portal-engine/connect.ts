@@ -228,12 +228,12 @@ export const connect =
     return ok({ ...portal, userId: tenant.value.userId });
   };
 
-// A portal that has an open browser, for discovery (AC-13).
 // A portal that knows the id it signed in as, for the Users guard.
 export const hasUserId = (
   portal: PortalClient,
 ): portal is PortalClient & { readonly userId: string } =>
   "userId" in portal && typeof portal.userId === "string";
 
+// A portal that has an open browser, for discovery (AC-13).
 export const hasBrowser = (portal: PortalClient): portal is ConnectedPortal =>
   "signedIn" in portal;

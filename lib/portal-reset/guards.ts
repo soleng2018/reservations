@@ -40,6 +40,11 @@ const guardShape = z.strictObject({
   // A `POST` under the delete route that carries a protected id is refused
   // like a `DELETE` (spec 0027 AC-6): a deactivate is a `POST`.
   guardPost: z.boolean().optional(),
+  // A write under the delete route may name only a record the guard's own
+  // list read returned, by its id, and never a kept one (spec 0027 review). A
+  // positive check, so an alias (`me`) or another identifier (an email) is
+  // refused, not just the known ids.
+  onlyListed: z.boolean().optional(),
   // `always` (the default) is read at the start of every run. `when_touched`
   // is read only by a run whose enabled steps reach the guard's routes, and
   // then a 404, a bad shape, or a truncated list stops the run.
