@@ -3,6 +3,7 @@
 **Date**: 2026-10-27
 **Status**: Accepted
 **Builds on**: [spec 0022](../0022-nile-portal-reset-page.md) (the step language, the saved list, the deny list, the guards, the mode), [spec 0020](../0020-cleanup-gap-between-labs/index.md) (the 30 minute gap), [spec 0021](../0021-cleanup-hook-early-end/index.md) (the early end event; the hook itself is unchanged), [spec 0013](../0013-email-delivery-booking-confirmations/index.md) (the job queue and mail), [spec 0016](../0016-admin-audit-log/index.md) (audit).
+**Amended in part by**: [spec 0027](../0027-portal-reset-users-step.md) (the Users step: a method aware deny list, `beforeDelete`, the `has` rule, and two Users guards).
 **Research**: [findings D1 to D17](../../research/nile-portal-reset-findings.md); prototypes in [portal-scripts](../../research/portal-scripts/README.md) (references only, not copied).
 
 ## Summary

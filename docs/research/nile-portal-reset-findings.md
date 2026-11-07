@@ -251,6 +251,8 @@ Located at Global Settings, Integrations. The page shows one card per integratio
 
 ### Decision D14: never touch Identity or Users (owner, 2026-10-27)
 
+*Users part changed by D17 (section 3i, 2026-11-07).*
+
 **Never go to Global Settings, Identity** (identity providers, `GET /api/v1/idps`), **and never go to Network Setup, Users.** Make it explicit. If either is deleted, the reset and the owner lock themselves out: the sign in to the portal goes through the identity provider, and the admin user the reset signs in as is one of the portal's users.
 
 - These two are **not** "not found yet" or "to be decided": they are permanently out of the reset. No step may be added for them, now or later, and an admin may not add one from the Nile Portal Reset page.
@@ -272,6 +274,48 @@ Located at Global Settings, Guest Portal. The page edits the guest portal's look
 - No ordering dependency was seen.
 
 **Records of changes on Workshop 4:** the restore ran twice with the owner's changed colors in place and put the branding back to default (204). A later attempt to change a color through the page did not enable SAVE, so nothing was changed.
+
+## 3i. Users: deactivate, then delete (owner request, 2026-11-07, not built yet)
+
+The owner asked for a reset option that removes the portal's users (Network Setup, Users). It is recorded here from a live walk through the page on **Nile Workshop-2** (read calls, then one deactivate and one delete of two ordinary accounts). It is **now the `users` step of the starting list** (spec 0027, built 2026-11-07; the engine needs below were added), and it reverses part of D14.
+
+### The page
+
+`/network-setup/users`, table "ADMINS" (Email, Full name, Group, Federated, Status). Toolbar buttons have stable ids: `users-action-add`, `users-action-re_activate`, `users-action-de_activate`, `users-action-edit`, `users-action-delete`, plus Manage assignment, Reset MFA, Reset password and Resync. Row checkboxes allow a multi select. Clicking De Activate or Delete only opens a Yes/No dialog (`confirm-modal-yes-btn`, "Are you sure you want to de-activate / delete selected users?"); no call is made until YES.
+
+### The calls (same three headers as everywhere else)
+
+| What | Call | Body | Reply |
+|---|---|---|---|
+| List the users | `GET /api/v2/users?page=0&size=10` (the page's own size; `size=2000` also answers 200) | none | 200, paged: `content[]`, `totalElements`, `totalPages`, `number`, `last` |
+| Who am I | `GET /api/v1/userinfo` | none | 200, `id`, `email`, `tenantId`, `groupIds` |
+| Group names | `GET /api/v1/groups` | none | 200, a list of `{id, name, type}` |
+| Deactivate one user | `POST /api/v1/users/{id}/lifecycle/deactivate` | `{"id": "{id}"}` | 204 |
+| Delete one user | `DELETE /api/v1/users/{id}` | `{"id": "{id}"}` | 204 |
+
+A multi select is **not** a bulk call: the page sends one `POST` (or one `DELETE`) per selected user, then re-reads the list. Item fields used: `id`, `email`, `status` (`ACTIVATED` or `DEACTIVATED`), `federated`, `groupIds[]`.
+
+### The owner's rules
+
+1. The **RootAdmin** is never deleted. On Workshop 2 that is `nileadmin@` (not federated, `groupIds` is the one id of the group named `RootAdmin`, `00ghquj7yiA33Pg5v5d5`). Resolve the id by name from `GET /api/v1/groups` rather than hardcoding it: it was seen on Workshop 2 only.
+2. The **user the reset signs in as** is never deleted. That is `automation@<testbed domain>`, the account the app owns (spec 0023 AC-12), not `admin@`; `admin@` is an ordinary user and is deleted. Deleting the automation account would end the run and the next sign in.
+3. Every other user is **deactivated first** (select, De Activate, YES), then **deleted** (select, Delete, YES).
+
+### What the engine needs (for /architect)
+
+- **D14 has to be narrowed.** `lib/portal-reset/deny-list.json` refuses every method on `/api/*/users`, and spec 0022 AC-19 and spec 0023 AC-25 say no step may ever use it. The step needs exactly three routes allowed (the list, the deactivate, the delete), not the whole prefix, and the page route `/network-setup/users`. `isDenied(path)` takes no method, so it needs a method aware exception list.
+- **The step language has no "POST for each item, then delete".** `delete_each` only sends a `DELETE`, and a `call` is `DELETE` or `PUT`. It needs a per item call before the delete (or a `deactivate` option on `delete_each`).
+- **Two guards, one of them dynamic.** RootAdmin can be a `keepWhen` rule on `groupIds` (it needs the group id, so a read of `/api/v1/groups` first, or a rule on a group name). "The signed in user" has no literal value in the file: the engine must supply the sign in email or the `userinfo` id to the guard.
+- **A paged list.** Without `size=2000` the page size is 10.
+- **Order.** Users can go anywhere in the list; nothing else refers to them. Putting them last keeps the sign in intact until the end.
+
+### Not tested
+
+Whether the API refuses a delete of a user that is still `ACTIVATED` (the page was used in the order above); whether the page or the API refuses a delete of the RootAdmin or of the signed in user (deliberately not tried); the calls made without the page; `groups` ids on other workshops; what the list answers when the tenant has more than 2000 users.
+
+### Decision D17: the Users step reverses D14 in part (owner, 2026-11-07, designed in [spec 0027](../specs/0027-portal-reset-users-step.md))
+
+The owner asked for it, and confirmed the only survivors are the RootAdmin and the automation account, and that each user is deactivated then deleted. D14 still holds for **Identity** (`/api/v1/idps`) and for every other Users route (create, edit, reset password or MFA, assignment). Only list, deactivate and delete are to be allowed, with the two guards above (the signed in user is `automation@`).
 
 ## 3h. Discovery: no hardcoded types (owner, 2026-10-27)
 
@@ -356,6 +400,7 @@ All on Workshop 4 only (`Nile Workshop 4`), 2026-10-27, each with the owner's ap
 - **Authentication:** deleted the RADIUS servers `MYRADIUS`, `my tadf`, `fdsfsdfasfds`; the Guest Portals `TEST`, `fdsafsdafsdaf`, `sfsdfsdfsd`; the Nile RADIUS policies `Policy 1`, `fsdafsdfsaf`, `fsdfsdfsafds`; and cleared the Nile RADIUS certificates twice. Set the Default Network Policy from ACCEPT back to REJECT once.
 - **DHCP:** deleted the servers `EXTERNAL DHCP` and `myDHCP` and six Nile DHCP scopes (192.168.10.0/24 to 192.168.13.0/24, then 10.10.10.0/24 and 10.10.11.0/24).
 - **Integrations:** deleted the webhooks `Webhook1` and `sdfsdfasd` (with their alert subscriptions) and a CrowdStrike SIEM.
+- **Workshop 2, 2026-11-07:** deactivated and deleted the users `jane.do@nileworkshop-2.com` and `kamal@nileworkshop-2.com` (page, then API calls 204) to record the Users calls. Six users are left (the RootAdmin, the signed in admin, and four others).
 - **Left as is:** the six system App groups, the eight system policies, the three system Service Profiles, `NILE RADIUS`, `NILE DHCP` (no scopes), and the Default Network Policy (now REJECT). Nile Cloud RADIUS is not usable (its certificates are gone).
 
 ## 7. How this was found

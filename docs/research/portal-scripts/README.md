@@ -8,7 +8,7 @@ They are references for `/architect` and `/develop`, not production code. The en
 
 - **Most of these delete things on a live tenant, and the deletes cannot be undone.** Run them only against a scratch workshop tenant, never a tenant with a lab in progress.
 - Several carry a guard for Workshop 4 (tenant id `0be085a9-aa56-4af8-81bd-18677e67db63`). They stop on any other tenant. Change the guard on purpose when you point one elsewhere.
-- They never touch Identity (`/api/v1/idps`) or Network Setup, Users (`/api/v1/users`): see the never touch rule (D14).
+- They never touch Identity (`/api/v1/idps`) or Network Setup, Users (`/api/v1/users`): see the never touch rule (D14). The one exception is `14-users-ui-capture.mjs`, run on the owner's request of 2026-11-07 (D17).
 - The password comes from `~/secrets/nileportal.pw`. The scripts print only whether the `x-id-token` header was captured, never its value. Do not add logging of the password, the token, webhook URLs, SIEM credentials, TSIG secrets, or certificates.
 
 ## Running
@@ -40,6 +40,7 @@ Screenshots and other output land in the current directory, so run from a scratc
 | `10-nile-radius-default-reject.mjs` | 10 | Sets the Default Network Policy to REJECT with a PUT of the record. | API |
 | `12-dhcp.mjs` | 12 | Admin DHCP servers, then one PUT that empties the Nile DHCP scopes. | API |
 | `13-guest-portal-restore-ui-capture.mjs` | 13 | Clicks Restore to default through the page. The call is `DELETE /api/v1/cloud-profile/value`; its body was not captured. | UI capture |
+| `14-users-ui-capture.mjs` | Users (now the `users` step in the starting list, spec 0027) | Selects the named users, De Activate, then Delete, and prints the calls (2026-11-07, Workshop 2). Refuses the RootAdmin and the signed in admin. | UI capture |
 
 Missing on purpose: scripts for the Trust Engine policies, groups, service profiles and the Nile RADIUS policy deletes through the API were not written (the calls were captured through the page); the delete calls for Service Profiles and PEAP were never seen.
 
