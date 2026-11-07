@@ -28,7 +28,7 @@ import {
 import type { Part } from "@/lib/portal-reset/step-schema";
 import { fillBody, fillPath, type Fill } from "@/lib/portal-reset/template";
 import type { PortalResetRunMode } from "@/lib/db-enums";
-import { ok } from "@/lib/result";
+import { err, ok, type Result } from "@/lib/result";
 import type { ResetStep } from "@/server/portal-reset/steps";
 import type { PortalClient, PortalRequest } from "./portal";
 
@@ -79,7 +79,7 @@ export type StepEnv = {
   readonly sleep: (ms: number) => Promise<void>;
   readonly beforeWrite: () => Promise<void>;
   readonly isGuarded: (
-    method: "DELETE" | "PUT",
+    method: "DELETE" | "PUT" | "POST",
     path: string,
     ids: readonly string[],
   ) => boolean;
@@ -283,11 +283,61 @@ async function deleteEach(
       results.push(unresolved(ctx, "DELETE", part.delete.path));
       continue;
     }
-    if (env.isGuarded("DELETE", path.value, [item.id])) continue;
+    const before = part.beforeDelete;
+    const beforeCall =
+      before === undefined
+        ? ok(undefined)
+        : fillCall(ctx, before.path, before.body, item);
+    if (!beforeCall.ok) {
+      results.push(unresolved(ctx, "POST", before?.path ?? part.delete.path));
+      continue;
+    }
+    if (
+      env.isGuarded("DELETE", path.value, [item.id]) ||
+      (beforeCall.value !== undefined &&
+        env.isGuarded("POST", beforeCall.value.path, [item.id]))
+    ) {
+      continue;
+    }
     if (dry(env)) {
       env.hidden.add(deleteKey(path.value));
       env.record(itemRecord(ctx, "would_delete", item, part.delete.path));
       continue;
+    }
+    // The call before the delete (spec 0027 AC-4). A failure stops this item
+    // only; a missing item is already gone, so there is nothing to delete.
+    if (
+      before !== undefined &&
+      beforeCall.value !== undefined &&
+      !(
+        before.skipWhen !== undefined &&
+        evaluateRules(item.raw, before.skipWhen)
+      )
+    ) {
+      const first = await send(
+        env,
+        "write",
+        {
+          method: "POST",
+          path: beforeCall.value.path,
+          ...(beforeCall.value.body === undefined
+            ? {}
+            : { body: beforeCall.value.body }),
+        },
+        { okStatus: before.okStatus ?? [204] },
+      );
+      if (first.status === 404) continue;
+      if (first.cls !== "done") {
+        failed(ctx, {
+          item,
+          method: "POST",
+          route: before.path,
+          status: first.status,
+          message: first.message,
+        });
+        results.push(false);
+        continue;
+      }
     }
     const sent = await send(
       env,
@@ -302,6 +352,21 @@ async function deleteEach(
     results.push(settle(ctx, sent, [item], "DELETE", part.delete.path));
   }
   return results.every(Boolean);
+}
+
+// The path and body of a call made for one item, placeholders filled.
+function fillCall(
+  ctx: Ctx,
+  path: string,
+  body: unknown,
+  item: Item,
+): Result<{ readonly path: string; readonly body: unknown }, "unresolved"> {
+  const fill = fillFor(ctx, { id: item.id, parentId: item.parentId });
+  const p = fillPath(path, fill);
+  const b = body === undefined ? ok(undefined) : fillBody(body, fill);
+  return p.ok && b.ok
+    ? ok({ path: p.value, body: b.value })
+    : err("unresolved");
 }
 
 const itemRecord = (

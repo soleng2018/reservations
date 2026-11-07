@@ -763,6 +763,43 @@
           "value": "profiles"
         }
       ]
+    },
+    {
+      "key": "users",
+      "featureName": "Users: deactivate, then delete",
+      "note": "Keeps two accounts: the RootAdmin and the one the reset signs in as, both held by hard guards (a run stops before any write if it cannot find them). Every other user is deactivated, then deleted. Both calls answer 204 (found 2026-11-07).",
+      "parts": [
+        {
+          "kind": "delete_each",
+          "list": {
+            "method": "GET",
+            "path": "/api/v2/users?page=0&size=2000",
+            "itemsAt": "content",
+            "idField": "id",
+            "labelField": "email"
+          },
+          "beforeDelete": {
+            "method": "POST",
+            "path": "/api/v1/users/{id}/lifecycle/deactivate",
+            "body": {
+              "id": "{id}"
+            },
+            "skipWhen": [
+              {
+                "field": "status",
+                "op": "eq",
+                "value": "DEACTIVATED"
+              }
+            ]
+          },
+          "delete": {
+            "path": "/api/v1/users/{id}",
+            "body": {
+              "id": "{id}"
+            }
+          }
+        }
+      ]
     }
   ]
 }

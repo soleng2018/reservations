@@ -20,6 +20,9 @@ export type Counts = Readonly<Record<string, number>>;
 export type GuardNote = {
   readonly stepKey: string | null;
   readonly route: string;
+  // The guard whose list could not be used (spec 0027 AC-9): a key from
+  // `guards.json`, repo data, never a portal value.
+  readonly guardKey?: string;
 };
 
 export type Finish =
@@ -217,7 +220,13 @@ export async function finishRunIn(
       targetType: "portal_reset_run",
       targetId: runId,
       summary: "Portal reset stopped by a guard",
-      metadata: { stepKey: f.guard.stepKey, route: f.guard.route },
+      metadata: {
+        stepKey: f.guard.stepKey,
+        route: f.guard.route,
+        ...(f.guard.guardKey === undefined
+          ? {}
+          : { guardKey: f.guard.guardKey }),
+      },
     });
   }
   if (needsReport(f, ended.mode, counts)) await queueReport(trx, runId);

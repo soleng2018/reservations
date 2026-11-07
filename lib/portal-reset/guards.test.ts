@@ -4,13 +4,15 @@ import { GuardsFile, guards, guardsForDefinition } from "./guards";
 import { StepDefinition } from "./step-schema";
 
 describe("guards.json (AC-20)", () => {
-  it("holds the five starting guards", () => {
+  it("holds the seven guards", () => {
     expect(guards.map((g) => g.key)).toEqual([
       "protected-ssid",
       "system-policies",
       "nile-radius",
       "nile-radius-policies",
       "nile-dhcp",
+      "users-root-admin",
+      "users-signed-in",
     ]);
   });
 
@@ -24,8 +26,10 @@ describe("guards.json (AC-20)", () => {
 
   it("holds no route on the deny list", () => {
     guards.forEach((g) => {
-      expect(isDenied(g.listPath)).toBe(false);
-      expect(isDenied(g.deleteRoutePrefix)).toBe(false);
+      // The Users guards read their list and refuse writes on a prefix the
+      // deny list covers, so they are checked with the method they use.
+      expect(isDenied(g.listPath, "GET")).toBe(false);
+      expect(isDenied(`${g.deleteRoutePrefix}/x`, "DELETE")).toBe(false);
     });
   });
 

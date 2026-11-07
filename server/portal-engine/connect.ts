@@ -38,6 +38,9 @@ export type ConnectDeps = {
 // What discovery needs beyond calls: the open browser and its cookies.
 export type ConnectedPortal = PortalClient & {
   readonly signedIn: () => SignedIn;
+  // The portal id of the account the run signed in as, from `userinfo`. The
+  // Users guard keeps this account (spec 0027 AC-8).
+  readonly userId: string;
 };
 
 async function auditCredential(
@@ -122,7 +125,10 @@ async function signInWithRetry(
   return attempt(deps, run, tb);
 }
 
-const Userinfo = z.object({ tenantId: z.uuid() });
+const Userinfo = z.object({
+  tenantId: z.uuid(),
+  id: z.union([z.string().min(1), z.number().int()]).transform(String),
+});
 const Tenant = z.object({ name: z.string().min(1).max(200) });
 
 // AC-16: the signed in tenant must be this domain's. A tenant that cannot be
@@ -130,7 +136,7 @@ const Tenant = z.object({ name: z.string().min(1).max(200) });
 export async function checkTenant(
   client: PortalClient,
   domain: string,
-): Promise<Result<void, SignInError>> {
+): Promise<Result<{ readonly userId: string }, SignInError>> {
   const info = await client.call({ method: "GET", path: "/api/v1/userinfo" });
   if (!info.ok) return err({ kind: "sign_in", reason: "portal_unreachable" });
   const id = Userinfo.safeParse(info.value.body);
@@ -150,7 +156,7 @@ export async function checkTenant(
     named.success &&
     tenantMatches(named.data.name, domain)
   )
-    return ok(undefined);
+    return ok({ userId: id.data.id });
   return err({
     kind: "tenant_mismatch",
     detail:
@@ -167,7 +173,7 @@ function withResignIn(
   first: SignedIn,
   fetchImpl: typeof fetch | undefined,
   resign: () => Promise<Result<SignedIn, PortalResetSignInReason>>,
-): ConnectedPortal {
+): Omit<ConnectedPortal, "userId"> {
   const build = (s: SignedIn) => makePortalClient(s.session, fetchImpl);
   const state = { signed: first, client: build(first), resigned: false };
   const call = async (req: PortalRequest) => {
@@ -219,9 +225,15 @@ export const connect =
       await portal.close();
       return tenant;
     }
-    return ok(portal);
+    return ok({ ...portal, userId: tenant.value.userId });
   };
 
 // A portal that has an open browser, for discovery (AC-13).
+// A portal that knows the id it signed in as, for the Users guard.
+export const hasUserId = (
+  portal: PortalClient,
+): portal is PortalClient & { readonly userId: string } =>
+  "userId" in portal && typeof portal.userId === "string";
+
 export const hasBrowser = (portal: PortalClient): portal is ConnectedPortal =>
   "signedIn" in portal;

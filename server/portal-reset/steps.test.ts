@@ -32,7 +32,7 @@ describe.skipIf(!hasDb)("readResetList (AC-16)", () => {
         mode: "dry_run",
       });
       expect(list.steps.map((s) => (s.ok ? s.step.position : -1))).toEqual(
-        Array.from({ length: 14 }, (_, i) => i + 1),
+        Array.from({ length: 15 }, (_, i) => i + 1),
       );
       expect(Object.keys(list).sort()).toEqual([
         "abortEmail",
@@ -65,7 +65,7 @@ describe.skipIf(!hasDb)("readResetList (AC-16)", () => {
         trx,
       );
       const list = await readResetList(asConn(trx));
-      expect(list.steps).toHaveLength(14);
+      expect(list.steps).toHaveLength(15);
       expect(list.steps[1]).toMatchObject({
         ok: false,
         position: 2,

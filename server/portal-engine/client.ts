@@ -72,8 +72,8 @@ export function makePortalClient(
   session: Session,
   fetchImpl: FetchImpl = session.fetch ?? fetch,
 ): PortalClient {
-  const urlFor = (path: string): URL => {
-    if (isDenied(path) || !path.startsWith("/api/")) {
+  const urlFor = (path: string, method: string): URL => {
+    if (isDenied(path, method) || !path.startsWith("/api/")) {
       throw new GuardStop(routePattern(path));
     }
     const url = new URL(path, session.origin);
@@ -86,7 +86,7 @@ export function makePortalClient(
   const call = async (
     req: PortalRequest,
   ): Promise<Result<PortalReply, CallError>> => {
-    const url = urlFor(req.path);
+    const url = urlFor(req.path, req.method);
     try {
       const res = await fetchImpl(url, {
         method: req.method,

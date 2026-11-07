@@ -434,3 +434,132 @@ describe("AC-25: a definition holds no secret", () => {
     ).toBeNull();
   });
 });
+
+// covers: spec 0027 AC-3, AC-5
+describe("a call before each delete, and the has operator", () => {
+  const users = {
+    kind: "delete_each",
+    list: {
+      method: "GET",
+      path: "/api/v2/users?page=0&size=2000",
+      itemsAt: "content",
+      idField: "id",
+      labelField: "email",
+    },
+    beforeDelete: {
+      method: "POST",
+      path: "/api/v1/users/{id}/lifecycle/deactivate",
+      body: { id: "{id}" },
+      skipWhen: [{ field: "status", op: "eq", value: "DEACTIVATED" }],
+    },
+    delete: { path: "/api/v1/users/{id}", body: { id: "{id}" } },
+  };
+  const at = (definition: unknown, path: string) =>
+    errorsOf(definition)?.[path];
+
+  it("accepts the Users step", () => {
+    expect(errorsOf(step(users))).toBeNull();
+  });
+
+  it("refuses the same routes in any other part, or with another method", () => {
+    expect(
+      errorsOf(
+        step({
+          kind: "read",
+          as: "u",
+          method: "GET",
+          path: "/api/v2/users",
+          pick: { a: "a" },
+        }),
+      ),
+    ).not.toBeNull();
+    expect(
+      errorsOf(step({ ...users, list: { ...users.list, method: "POST" } })),
+    ).toHaveProperty("parts.0.list.path");
+    expect(
+      errorsOf(
+        step({
+          kind: "call",
+          method: "DELETE",
+          path: "/api/v1/users/abc",
+        }),
+      ),
+    ).not.toBeNull();
+  });
+
+  it.each([
+    ["create", "/api/v1/users"],
+    ["activate", "/api/v1/users/{id}/lifecycle/activate"],
+    ["tags", "/api/v1/users/{id}/tags"],
+    ["an idps route", "/api/v1/idps/{id}"],
+  ])("refuses a beforeDelete that is %s", (_why, path) => {
+    expect(
+      at(
+        step({ ...users, beforeDelete: { ...users.beforeDelete, path } }),
+        "parts.0.beforeDelete.path",
+      ),
+    ).toBeDefined();
+  });
+
+  it("refuses a beforeDelete that does not name the item, a query on it, a batch, and a method other than POST", () => {
+    const before = (extra: object) =>
+      step({ ...users, beforeDelete: { ...users.beforeDelete, ...extra } });
+    expect(
+      at(
+        before({ path: "/api/v1/users/abc/lifecycle/deactivate", body: {} }),
+        "parts.0.beforeDelete.path",
+      ),
+    ).toMatch(/names the item/);
+    expect(
+      at(
+        before({ path: "/api/v1/users/{id}/lifecycle/deactivate?x=1" }),
+        "parts.0.beforeDelete.path",
+      ),
+    ).toBeDefined();
+    expect(errorsOf(before({ method: "DELETE" }))).not.toBeNull();
+    expect(
+      errorsOf(
+        step({
+          ...users,
+          delete: {
+            path: "/api/v1/things",
+            body: { ids: "{ids}" },
+            batch: true,
+          },
+        }),
+      ),
+    ).toHaveProperty("parts.0.beforeDelete");
+  });
+
+  it("takes has in an item rule, with one value, and refuses it in when and expect", () => {
+    const rule = (extra: object) =>
+      step({
+        ...deleteEach,
+        skipWhen: [{ field: "groupIds", op: "has", ...extra }],
+      });
+    expect(errorsOf(rule({ value: "g1" }))).toBeNull();
+    expect(at(rule({}), "parts.0.skipWhen.0.value")).toMatch(/needs a value/);
+    expect(at(rule({ value: ["a", "b"] }), "parts.0.skipWhen.0.value")).toMatch(
+      /one value/,
+    );
+    expect(
+      errorsOf(
+        step(stateRead, {
+          ...deleteEach,
+          when: [{ read: "state", key: "on", op: "has", value: 1 }],
+        }),
+      ),
+    ).toHaveProperty("parts.1.when.0.value");
+    expect(
+      errorsOf(
+        step(stateRead, {
+          kind: "expect",
+          read: "state",
+          key: "on",
+          op: "has",
+          value: 1,
+        }),
+      ),
+    ).toHaveProperty("parts.1.value");
+  });
+});

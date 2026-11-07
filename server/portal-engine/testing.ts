@@ -28,6 +28,8 @@ export type FakeState = {
   nileRadiusSets: Rec[];
   nileRadiusConfig: { usable: boolean; tlsComplete: boolean };
   dhcp: Rec[];
+  // Portal users (spec 0027 AC-13): `status` changes on a deactivate.
+  users: Rec[];
   brandingRestores: number;
   // The guest portal profile's own name: `<tenantId>_V1` once customised,
   // `profiles` at the defaults.
@@ -55,7 +57,26 @@ const reply = (status: number, body: unknown = {}): PortalReply => ({
 });
 const notFound = () => reply(404, { message: "Not found" });
 
-// A tenant with something of every kind the 13 starting steps know, plus the
+// The two accounts the Users step keeps: the RootAdmin and the account the
+// reset signs in as. The RootAdmin group id is the one on Workshops 2, 3, 4.
+export const ROOT_ADMIN_GROUP = "00ghquj7yiA33Pg5v5d5";
+export const SIGNED_IN_USER = "u-automation";
+const keptUsers = (): Rec[] => [
+  {
+    id: "u-root",
+    email: "nileadmin@example.test",
+    status: "ACTIVE",
+    groupIds: ["g-other", ROOT_ADMIN_GROUP],
+  },
+  {
+    id: SIGNED_IN_USER,
+    email: "automation@example.test",
+    status: "ACTIVE",
+    groupIds: [],
+  },
+];
+
+// A tenant with something of every kind the 15 starting steps know, plus the
 // system items that must survive.
 export const populatedState = (): FakeState => ({
   webhooks: [{ id: "wh1", name: "Hook" }],
@@ -150,6 +171,27 @@ export const populatedState = (): FakeState => ({
       dhcpClient: { cloudDHCP: false, servers: [{ subnets: [] }] },
     },
   ],
+  users: [
+    ...keptUsers(),
+    {
+      id: "u-learner1",
+      email: "learner1@example.test",
+      status: "ACTIVE",
+      groupIds: [],
+    },
+    {
+      id: "u-learner2",
+      email: "learner2@example.test",
+      status: "ACTIVE",
+      groupIds: ["g-other"],
+    },
+    {
+      id: "u-earlier",
+      email: "earlier@example.test",
+      status: "DEACTIVATED",
+      groupIds: [],
+    },
+  ],
   brandingRestores: 0,
   brandingProfile: "t1_V1",
 });
@@ -168,6 +210,7 @@ export const baselineState = (): FakeState => ({
     blockedUrls: [],
   },
   brandingProfile: "profiles",
+  users: keptUsers(),
   sso: null,
   clientConfigs: [],
   policySets: [
@@ -289,6 +332,27 @@ function handle(s: FakeState, req: PortalRequest): PortalReply {
     table("/api/v1/settings/radius", s.radius, dataContent) ??
     table("/api/v1/portalconfig", s.portals, (rows) => rows);
   if (simple) return simple;
+
+  if (at("/api/v2/users") && get) {
+    return reply(200, { content: s.users, totalElements: s.users.length });
+  }
+  const lifecycle = /^\/api\/v1\/users\/([^/]+)\/lifecycle\/deactivate$/.exec(
+    path,
+  );
+  if (lifecycle && req.method === "POST") {
+    const user = s.users.find((u) => u.id === lifecycle[1]);
+    if (!user) return notFound();
+    // Like the page: a user that is already deactivated is refused.
+    if (user.status === "DEACTIVATED") {
+      return reply(400, { message: "User is already deactivated" });
+    }
+    user.status = "DEACTIVATED";
+    return reply(204);
+  }
+  const userId = idAfter("/api/v1/users");
+  if (userId !== undefined && del) {
+    return removeFrom(s.users, userId).status === 200 ? reply(204) : notFound();
+  }
 
   if (at("/api/v1/edgegwservice/urlfilter")) {
     if (get) return reply(200, s.urlFilter);

@@ -16,7 +16,7 @@ const entry = {
 const listOf = (...steps: readonly unknown[]) => ({ schemaVersion: 1, steps });
 
 describe("the starting list file (AC-17, AC-18, AC-21)", () => {
-  it("parses, with the 14 tested steps in run order", () => {
+  it("parses, with the 15 tested steps in run order", () => {
     expect(parsed.steps.map((s) => s.key)).toEqual([
       "integrations",
       "ssids",
@@ -32,6 +32,7 @@ describe("the starting list file (AC-17, AC-18, AC-21)", () => {
       "nile-radius-certificates",
       "dhcp",
       "guest-portal-branding",
+      "users",
     ]);
   });
 
@@ -41,11 +42,50 @@ describe("the starting list file (AC-17, AC-18, AC-21)", () => {
     ]);
   });
 
-  it("holds no path on the deny list", () => {
-    const text = JSON.stringify(raw);
-    const paths = [...text.matchAll(/"(\/[^"]+)"/g)].map((m) => m[1] ?? "");
-    expect(paths.length).toBeGreaterThan(20);
-    expect(paths.filter(isDenied)).toEqual([]);
+  it("holds no call the deny list refuses, method by method", () => {
+    const calls = parsed.steps.flatMap((s) =>
+      s.definition.parts.flatMap((p) => {
+        switch (p.kind) {
+          case "read":
+            return [[p.method, p.path]];
+          case "delete_each":
+            return [
+              [p.list.method, p.list.path],
+              ["DELETE", p.delete.path],
+              ...(p.beforeDelete === undefined
+                ? []
+                : [[p.beforeDelete.method, p.beforeDelete.path]]),
+            ];
+          case "call":
+            return [[p.method, p.path]];
+          case "update_record":
+            return [
+              [p.list.method, p.list.path],
+              ["PUT", p.put.path],
+            ];
+          case "wait":
+          case "expect":
+            return [];
+        }
+      }),
+    );
+    expect(calls.length).toBeGreaterThan(20);
+    expect(calls.filter(([method, path]) => isDenied(path, method))).toEqual(
+      [],
+    );
+  });
+
+  it("holds no page route the deny list refuses", () => {
+    const pages = parsed.steps.flatMap((s) => s.definition.pages ?? []);
+    expect(pages.filter((page) => isDenied(page))).toEqual([]);
+  });
+
+  it("offers the Users step last, with its two guards (spec 0027 AC-11)", () => {
+    const users = parsed.steps.find((s) => s.key === "users");
+    expect(users?.definition.pages).toBeUndefined();
+    expect(
+      guardsForDefinition(users?.definition ?? { parts: [] }).map((g) => g.key),
+    ).toEqual(["users-root-admin", "users-signed-in"]);
   });
 
   it("describes every step with one sentence per part", () => {
