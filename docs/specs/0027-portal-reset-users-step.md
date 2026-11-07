@@ -165,7 +165,7 @@ Approach: Tracer Bullet. First one thin thread through every layer on the fake p
 
 ## Follow-up
 
-- [ ] At the live check, record the portal's answers to a deactivate of a user that is already deactivated, and to a delete of a user that is still active (the fake in AC-13 assumes 400 for the first).
-- [ ] `/sync` after merge: add one line to the root `AGENTS.md` portal rules that `/api/*/users` has three allowed calls and two guards (`guardPost`, `when_touched`), and update the deny list line.
-- [ ] Add a scope row for this (an enhancement to feature 24) with `/scope`.
+- [ ] (Live check ran on Workshop 2 on 2026-11-07 and passed, but it did not hit these two cases; they need extra throwaway users.) Record the portal's answers to a deactivate of a user that is already deactivated, and to a delete of a user that is still active (the fake in AC-13 assumes 400 for the first).
+- [ ] `/sync` after merge (the root `AGENTS.md` line is already added): add one line to the root `AGENTS.md` portal rules that `/api/*/users` has three allowed calls and two guards (`guardPost`, `when_touched`), and update the deny list line.
+- [x] Add a scope row for this (feature 26).
 - [ ] Confirm the RootAdmin group id on Workshop 1 and 5 if either gets a portal tenant (Workshop 5 has none today).

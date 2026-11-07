@@ -483,11 +483,11 @@ spec [0022](../specs/0022-nile-portal-reset-page.md) · code in `server/portal-r
 Follow up from feature 24, from spec 0027 (owner request 2026-11-07). After every lab the reset also deactivates and then deletes the portal's users, except the RootAdmin and the account the reset signs in as (`automation@<domain>`). This reverses part of D14, so the deny list allows exactly three Users calls, and the step language and guards each gain a few small features.
 **Done when:** a dry run and then a live run on a scratch workshop with the Users step added on the page leave only `nileadmin@` and `automation@`, a second run changes nothing, a run without the step never reads Users, and no saved step can create, edit, or touch either kept account.
 - [x] Design it (spec): `/architect portal reset users step` (spec 0027, accepted by the owner 2026-11-07)
-- [ ] Build it: `/develop portal reset: remove users`
+- [x] Build it: `/develop portal reset: remove users`
   - [x] Method aware deny list, `beforeDelete` in the step language, the interpreter order, and the fake portal users on one end to end thread (AC-1 to 4, 13, 16)
   - [x] The `has` rule, guard options, the signed in id from `userinfo`, the two Users guards, `when_touched` wiring, and the request guard bypass fixes (AC-5 to 10)
-  - [ ] The seed entry (15 steps), docs, and the live check on a scratch workshop (AC-11, 12, 14, 15)
-- [ ] Verify it: `/check verify portal reset: remove users` (a dry run and then a live run on a scratch tenant, with the owner present)
+  - [x] The seed entry (15 steps), docs, and the live check on a scratch workshop (AC-11, 12, 14, 15). Live check on Workshop 2, 2026-11-07: dry run listed 4 users, live run deleted them, only `nileadmin@` and `automation@` left, second run changed nothing
+- [x] Verify it: `/check verify portal reset: remove users` (a dry run and then a live run on a scratch tenant, with the owner present)
 - [ ] Test it: `/test portal reset: remove users`
 - [ ] Review it (fresh model): `/check review portal reset: remove users`
 - [ ] Document it: `/document portal reset: remove users`
