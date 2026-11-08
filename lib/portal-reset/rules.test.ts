@@ -20,6 +20,14 @@ describe("evaluateRules", () => {
     [{ field: "nope", op: "missing" }, true],
     [{ field: "list", op: "nonEmpty" }, true],
     [{ field: "empty", op: "nonEmpty" }, false],
+    // `has` (spec 0027 AC-5): an array that holds the one value given.
+    [{ field: "list", op: "has", value: 1 }, true],
+    [{ field: "list", op: "has", value: 2 }, false],
+    [{ field: "empty", op: "has", value: 1 }, false],
+    [{ field: "n", op: "has", value: 3 }, false],
+    [{ field: "nope", op: "has", value: 3 }, false],
+    [{ field: "list", op: "has", value: "1" }, false],
+    [{ field: "list", op: "has" }, false],
   ];
   it.each(cases)("%j gives %s", (rule, expected) => {
     expect(evaluateRules(item, [rule])).toBe(expected);

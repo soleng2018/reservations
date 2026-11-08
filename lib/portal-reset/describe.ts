@@ -29,6 +29,8 @@ const phrase = (subject: string, test: Test): string => {
       return `${subject} is not set`;
     case "nonEmpty":
       return `${subject} is not empty`;
+    case "has":
+      return `${subject} includes ${show(test.value)}`;
     default: {
       const unreachable: never = test.op;
       throw new Error(`Unhandled operator ${String(unreachable)}`);
@@ -74,7 +76,15 @@ function describePart(part: Part): string {
         part.skipWhen === undefined
           ? ""
           : `, skipping items where ${rules(part.skipWhen)}`;
-      return `Read ${part.list.method} ${part.list.path}${nested}, ${how}${only}${skip}${refusals(part)}${conds(part.when)}.`;
+      const before =
+        part.beforeDelete === undefined
+          ? ""
+          : `, first calling ${part.beforeDelete.method} ${part.beforeDelete.path} on each${
+              part.beforeDelete.skipWhen === undefined
+                ? ""
+                : ` (not where ${rules(part.beforeDelete.skipWhen)})`
+            }`;
+      return `Read ${part.list.method} ${part.list.path}${nested}, ${how}${before}${only}${skip}${refusals(part)}${conds(part.when)}.`;
     }
     case "call":
       return `Call ${part.method} ${part.path}${part.body === undefined ? "" : " with a body"}${refusals(part)}${conds(part.when)}.`;

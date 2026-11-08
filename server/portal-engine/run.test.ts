@@ -17,7 +17,9 @@ import type { Bookings, DB } from "@/server/db/types";
 import { claimDueRun, keepingLease, stopCheck } from "./claim";
 import type { PortalClient } from "./portal";
 import { queueEndedResets } from "./queue";
-import { makeFake, populatedState } from "./testing";
+import { makeFake, populatedState, SIGNED_IN_USER } from "./testing";
+import { recheckStep, runStep } from "./interpret";
+import { startingList } from "@/server/portal-reset/starting-list";
 import { executeRun } from "./run";
 
 afterAll(() => db().destroy());
@@ -702,4 +704,132 @@ describe.skipIf(!hasDb)("the tracer run (AC-8, AC-1, AC-6, AC-10)", () => {
         route: "/api/v1/settings/ssids/{id}",
       });
     }));
+
+  // covers: spec 0027 AC-9, AC-10, AC-12
+  describe("with the Users step", () => {
+    const withUsersStep = async (trx: Transaction<DB>) => {
+      await trx.deleteFrom("portal_reset_steps").execute();
+      const entry = startingList().steps.find((e) => e.key === "users");
+      if (!entry) throw new Error("no users entry");
+      await trx
+        .insertInto("portal_reset_steps")
+        .values({
+          position: 1,
+          feature_name: entry.featureName,
+          enabled: true,
+          seed_key: entry.key,
+          definition: JSON.stringify(entry.definition),
+        })
+        .execute();
+      await setMode(trx, "live");
+      const w = await world(trx);
+      await insertRun(trx, w.testbed.id);
+      const run = await claimDueRun(asConn(trx));
+      if (!run) throw new Error("no run claimed");
+      return { conn: asConn(trx), run };
+    };
+    const real = {
+      runStep,
+      recheckStep,
+      shouldStop: () => false,
+      sleep: async () => undefined,
+    };
+    const stateOf = (trx: Kysely<DB>, id: string) =>
+      trx
+        .selectFrom("portal_reset_runs")
+        .select(["state", "abort_reason"])
+        .where("id", "=", id)
+        .executeTakeFirstOrThrow();
+
+    it("removes every user but the RootAdmin and the signed in account, then finishes done", () =>
+      inRollback(async (trx) => {
+        const { conn, run } = await withUsersStep(trx);
+        const tenant = makeFake();
+        await executeRun(run, {
+          conn,
+          ...real,
+          signIn: async () => ok({ ...tenant.portal, userId: SIGNED_IN_USER }),
+        });
+        expect(await stateOf(trx, run.id)).toEqual({
+          state: "done",
+          abort_reason: null,
+        });
+        expect(tenant.state.users.map((u) => u.id)).toEqual([
+          "u-root",
+          SIGNED_IN_USER,
+        ]);
+      }));
+
+    it("ends guard_stop before any write when the tenant has no RootAdmin, and names the guard", () =>
+      inRollback(async (trx) => {
+        const { conn, run } = await withUsersStep(trx);
+        const state = populatedState();
+        state.users = state.users.map((u) => ({ ...u, groupIds: [] }));
+        const tenant = makeFake(state);
+        await executeRun(run, {
+          conn,
+          ...real,
+          signIn: async () => ok({ ...tenant.portal, userId: SIGNED_IN_USER }),
+        });
+        expect(await stateOf(trx, run.id)).toEqual({
+          state: "aborted",
+          abort_reason: "guard_stop",
+        });
+        expect(tenant.writes).toEqual([]);
+        const rows = await trx
+          .selectFrom("audit_events")
+          .select("metadata")
+          .where("target_id", "=", run.id)
+          .where("action", "=", "portal_reset.guard_stop")
+          .execute();
+        expect(rows.map((r) => r.metadata)).toEqual([
+          {
+            stepKey: "guards",
+            route: "/api/v2/users",
+            guardKey: "users-root-admin",
+          },
+        ]);
+      }));
+
+    it("ends guard_stop when the signed in id is unknown", () =>
+      inRollback(async (trx) => {
+        const { conn, run } = await withUsersStep(trx);
+        const tenant = makeFake();
+        await executeRun(run, {
+          conn,
+          ...real,
+          signIn: async () => ok(tenant.portal),
+        });
+        expect(await stateOf(trx, run.id)).toEqual({
+          state: "aborted",
+          abort_reason: "guard_stop",
+        });
+        expect(tenant.writes).toEqual([]);
+      }));
+
+    it("a run without the Users step never reads a Users list", () =>
+      inRollback(async (trx) => {
+        await oneStep(trx);
+        await setMode(trx, "live");
+        const w = await world(trx);
+        await insertRun(trx, w.testbed.id);
+        const run = await claimDueRun(asConn(trx));
+        if (!run) throw new Error("no run claimed");
+        const tenant = makeFake();
+        tenant.intercept = (req) =>
+          req.path.startsWith("/api/v2/users")
+            ? { status: 500, body: {} }
+            : undefined;
+        await executeRun(run, {
+          conn: asConn(trx),
+          ...real,
+          signIn: async () => ok(tenant.portal),
+        });
+        expect(await stateOf(trx, run.id)).toEqual({
+          state: "done",
+          abort_reason: null,
+        });
+        expect(tenant.calls.some((c) => c.includes("/users"))).toBe(false);
+      }));
+  });
 });

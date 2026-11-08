@@ -62,7 +62,8 @@ const portalFetch = (
       left -= 1;
       return json(401, {});
     }
-    if (path === "/api/v1/userinfo") return json(200, { tenantId: TENANT_ID });
+    if (path === "/api/v1/userinfo")
+      return json(200, { tenantId: TENANT_ID, id: "user-1" });
     if (path === `/api/tenants/${TENANT_ID}`)
       return json(200, { name: tenantName });
     return json(200, {});
@@ -102,6 +103,8 @@ describe.skipIf(!hasDb)("connect (AC-12 to AC-17, AC-42, AC-43)", () => {
         fetchImpl: portalFetch("Nile Workshop 9"),
       })(run);
       expect(result.ok).toBe(true);
+      // The id from userinfo is what the Users guard keeps (spec 0027 AC-8).
+      expect(result.ok && result.value.userId).toBe("user-1");
       expect(inputs).toEqual([
         `automation@${DOMAIN}`,
         "https://u1.nile-global.cloud",
@@ -282,7 +285,7 @@ describe.skipIf(!hasDb)("connect (AC-12 to AC-17, AC-42, AC-43)", () => {
         const path = new URL(String(input)).pathname;
         seen.push(path);
         if (path === "/api/v1/userinfo")
-          return json(200, { tenantId: TENANT_ID });
+          return json(200, { tenantId: TENANT_ID, id: "user-1" });
         if (path === `/api/tenants/${TENANT_ID}`)
           return json(200, { name: "Nile Workshop 9" });
         return json(
@@ -311,7 +314,7 @@ describe.skipIf(!hasDb)("connect (AC-12 to AC-17, AC-42, AC-43)", () => {
       const fetchImpl = (async (input: RequestInfo | URL) => {
         const path = new URL(String(input)).pathname;
         if (path === "/api/v1/userinfo")
-          return json(200, { tenantId: TENANT_ID });
+          return json(200, { tenantId: TENANT_ID, id: "user-1" });
         if (path === `/api/tenants/${TENANT_ID}`)
           return json(200, { name: "Nile Workshop 9" });
         return json(401, {});

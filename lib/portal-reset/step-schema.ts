@@ -41,7 +41,7 @@ export const looksSecret = (name: string): boolean =>
 // segment (or a whole query value).
 export function portalPathProblem(
   path: string,
-  options: { readonly query: boolean },
+  options: { readonly query: boolean; readonly method?: string },
 ): string | null {
   if (path.length > 200) return "A path is 200 characters at most.";
   if (!path.startsWith("/api/")) return "A path must start with /api/.";
@@ -65,13 +65,16 @@ export function portalPathProblem(
   if (badSegment !== undefined) {
     return `${badSegment} is not a placeholder. Use {id}, {parentId}, {ids}, or {read.NAME.KEY}, as a whole segment.`;
   }
-  if (isDenied(path)) {
-    return "This path is on the deny list (Identity and Users are never called).";
+  if (isDenied(path, options.method)) {
+    return "This path is on the deny list (Identity is never called, and Users only by the calls of the Users step).";
   }
   return null;
 }
 
-const portalPath = (options: { readonly query: boolean }) =>
+const portalPath = (options: {
+  readonly query: boolean;
+  readonly method?: string;
+}) =>
   z.string().superRefine((path, ctx) => {
     const problem = portalPathProblem(path, options);
     if (problem !== null) ctx.addIssue({ code: "custom", message: problem });
@@ -117,29 +120,34 @@ const scalar = z.union([
   z.null(),
 ]);
 
-const OPS = ["eq", "ne", "in", "exists", "missing", "nonEmpty"] as const;
+const OPS = ["eq", "ne", "in", "exists", "missing", "nonEmpty", "has"] as const;
 const op = z.enum(OPS);
 type Op = (typeof OPS)[number];
 
+// `has` tests an array field, so it belongs to item rules only: a `when` or an
+// `expect` reads scalars (spec 0027 AC-5).
 function checkOperand(
   value: unknown,
   operator: Op,
   ctx: z.RefinementCtx,
+  allowHas = true,
 ): void {
   const problem =
-    operator === "eq" || operator === "ne"
-      ? value === undefined
-        ? `"${operator}" needs a value.`
-        : Array.isArray(value)
-          ? `"${operator}" takes one value, not a list.`
-          : null
-      : operator === "in"
-        ? Array.isArray(value)
-          ? null
-          : `"in" needs a list of values.`
-        : value === undefined
-          ? null
-          : `"${operator}" takes no value.`;
+    operator === "has" && !allowHas
+      ? `"has" is only for rules on an item, not for a read.`
+      : operator === "eq" || operator === "ne" || operator === "has"
+        ? value === undefined
+          ? `"${operator}" needs a value.`
+          : Array.isArray(value)
+            ? `"${operator}" takes one value, not a list.`
+            : null
+        : operator === "in"
+          ? Array.isArray(value)
+            ? null
+            : `"in" needs a list of values.`
+          : value === undefined
+            ? null
+            : `"${operator}" takes no value.`;
   if (problem !== null) {
     ctx.addIssue({ code: "custom", message: problem, path: ["value"] });
   }
@@ -158,7 +166,7 @@ export type Rule = z.infer<typeof rule>;
 // A test on a value kept by an earlier read of the same step.
 const cond = z
   .strictObject({ read: name, key: name, op, value: operand.optional() })
-  .superRefine((c, ctx) => checkOperand(c.value, c.op, ctx));
+  .superRefine((c, ctx) => checkOperand(c.value, c.op, ctx, false));
 export const Cond = cond;
 export type Cond = z.infer<typeof cond>;
 
@@ -219,23 +227,45 @@ const when = z.array(cond).min(1).max(5).optional();
 
 const nested = z.strictObject({ at: fieldPath, parentIdField: fieldPath });
 
-const list = z.strictObject({
-  method: z.enum(["GET", "POST"]),
-  path: portalPath({ query: true }),
-  body: body.optional(),
-  itemsAt: fieldPath,
-  nested: nested.optional(),
-  unwrap: fieldPath.optional(),
-  idField: fieldPath,
-  labelField: copiedField.optional(),
-  emptyOn: statusList.optional(),
-});
+// The list's path is checked with the list's own method, so the one allowed
+// Users list (`GET /api/v2/users`) passes and a `POST` of it does not.
+const list = z
+  .strictObject({
+    method: z.enum(["GET", "POST"]),
+    path: z.string(),
+    body: body.optional(),
+    itemsAt: fieldPath,
+    nested: nested.optional(),
+    unwrap: fieldPath.optional(),
+    idField: fieldPath,
+    labelField: copiedField.optional(),
+    emptyOn: statusList.optional(),
+  })
+  .superRefine((l, ctx) => {
+    const problem = portalPathProblem(l.path, {
+      query: true,
+      method: l.method,
+    });
+    if (problem !== null) {
+      ctx.addIssue({ code: "custom", message: problem, path: ["path"] });
+    }
+  });
 
 const deleteCall = z.strictObject({
-  path: portalPath({ query: false }),
+  path: portalPath({ query: false, method: "DELETE" }),
   body: body.optional(),
   batch: z.boolean().optional(),
   okStatus: statusList.optional(),
+});
+
+// One call sent for an item just before its delete (spec 0027 AC-3), for
+// example a user is deactivated, then deleted. Only a POST.
+const beforeDeleteCall = z.strictObject({
+  method: z.literal("POST"),
+  path: portalPath({ query: false, method: "POST" }),
+  body: body.optional(),
+  okStatus: statusList.optional(),
+  skipWhen: z.array(rule).min(1).max(10).optional(),
 });
 
 const readPart = z.strictObject({
@@ -257,6 +287,7 @@ const deleteEachPart = z.strictObject({
   kind: z.literal("delete_each"),
   list,
   delete: deleteCall,
+  beforeDelete: beforeDeleteCall.optional(),
   skipWhen: z.array(rule).min(1).max(10).optional(),
   onlyWhen: z.array(rule).min(1).max(10).optional(),
   expectRefusals: z.array(expectRefusal).min(1).max(5).optional(),
@@ -302,7 +333,7 @@ const expectPart = z
     value: operand.optional(),
     when,
   })
-  .superRefine((e, ctx) => checkOperand(e.value, e.op, ctx));
+  .superRefine((e, ctx) => checkOperand(e.value, e.op, ctx, false));
 
 const part = z.discriminatedUnion("kind", [
   readPart,
@@ -468,6 +499,40 @@ function checkPart(
         [...at, "delete", "body"],
         ctx,
       );
+      const before = p.beforeDelete;
+      if (before !== undefined) {
+        checkPlaceholders(
+          before.path,
+          allowed,
+          reads,
+          [...at, "beforeDelete", "path"],
+          ctx,
+        );
+        checkPlaceholders(
+          before.body,
+          allowed,
+          reads,
+          [...at, "beforeDelete", "body"],
+          ctx,
+        );
+        if (batch) {
+          ctx.addIssue({
+            code: "custom",
+            message: "A batch delete cannot have a call before it.",
+            path: [...at, "beforeDelete"],
+          });
+        }
+        if (
+          !hasPlaceholder(before.path, "id") &&
+          !hasPlaceholder(before.body, "id")
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            message: "A call before a delete names the item with {id}.",
+            path: [...at, "beforeDelete", "path"],
+          });
+        }
+      }
       if (batch && !hasPlaceholder(p.delete.body, "ids")) {
         ctx.addIssue({
           code: "custom",

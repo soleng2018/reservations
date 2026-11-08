@@ -7,8 +7,21 @@ import {
   type ItemRecord,
   type StepEnv,
 } from "./interpret";
-import { computeProtected, guardedPortal, isGuardedWrite } from "./guards";
-import { baselineState, makeFake, populatedState, type Fake } from "./testing";
+import { guards as allGuards } from "@/lib/portal-reset/guards";
+import { GuardStop } from "./stop";
+import {
+  computeProtected,
+  guardedPortal,
+  isGuardedWrite,
+  NO_PROTECTION,
+} from "./guards";
+import {
+  baselineState,
+  makeFake,
+  populatedState,
+  SIGNED_IN_USER,
+  type Fake,
+} from "./testing";
 
 const steps: readonly ResetStep[] = startingList().steps.map((e, i) => ({
   id: `id-${i}`,
@@ -19,6 +32,12 @@ const steps: readonly ResetStep[] = startingList().steps.map((e, i) => ({
   seedKey: e.key,
   definition: e.definition,
 }));
+
+// A tenant's state with the users left out, for the runs that skip Users.
+const withoutUsers = <T extends { users: unknown }>(state: T): T => ({
+  ...state,
+  users: [],
+});
 
 const stepNamed = (key: string): ResetStep => {
   const step = steps.find((s) => s.seedKey === key);
@@ -51,36 +70,53 @@ function envFor(
   };
 }
 
-const runAll = async (fake: Fake, extra: Partial<StepEnv> = {}) => {
+// Every step but Users, which the guards must stand in front of (its own
+// tests below run it with them).
+const runAll = async (
+  fake: Fake,
+  extra: Partial<StepEnv> = {},
+  which: readonly ResetStep[] = steps.filter((s) => s.seedKey !== "users"),
+) => {
   const { env, records, sleeps } = envFor(fake, extra);
   const results = [];
-  for (const step of steps) results.push(await runStep(step, env));
+  for (const step of which) results.push(await runStep(step, env));
   return { results, records, sleeps };
 };
 
 // covers: AC-19, AC-20, AC-22, AC-24
-describe("the 14 starting steps", () => {
-  it("has 14 steps", () => {
-    expect(steps).toHaveLength(14);
+describe("the 15 starting steps", () => {
+  it("has 15 steps", () => {
+    expect(steps).toHaveLength(15);
   });
 
   it("bring a populated tenant to the baseline", async () => {
     const fake = makeFake(populatedState());
     const { results } = await runAll(fake);
     expect(results.every((r) => r === "done")).toBe(true);
-    expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
+    expect(withoutUsers({ ...fake.state, brandingRestores: 0 })).toEqual(
+      withoutUsers(baselineState()),
+    );
   });
 
   it("reach the baseline with the hard guards on, as a real run does", async () => {
     // The 2026-10-29 Workshop 4 run: with guards a custom policy in the set
     // of the system policies, and the Nile DHCP scopes, were skipped.
     const fake = makeFake(populatedState());
-    const found = await computeProtected(fake.portal, async () => undefined);
+    const found = await computeProtected(
+      fake.portal,
+      async () => undefined,
+      allGuards,
+      SIGNED_IN_USER,
+    );
     if (!found.ok) throw new Error(found.error.why);
-    const { results } = await runAll(fake, {
-      portal: guardedPortal(fake.portal, found.value),
-      isGuarded: isGuardedWrite(found.value),
-    });
+    const { results } = await runAll(
+      fake,
+      {
+        portal: guardedPortal(fake.portal, found.value),
+        isGuarded: isGuardedWrite(found.value),
+      },
+      steps,
+    );
     expect(results.every((r) => r === "done")).toBe(true);
     expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
   });
@@ -92,7 +128,9 @@ describe("the 14 starting steps", () => {
     const second = await runAll(fake);
     expect(second.results.every((r) => r === "done")).toBe(true);
     expect(second.records).toEqual([]);
-    expect({ ...fake.state, brandingRestores: 0 }).toEqual(baselineState());
+    expect(withoutUsers({ ...fake.state, brandingRestores: 0 })).toEqual(
+      withoutUsers(baselineState()),
+    );
     // The writes a clean tenant still gets, by the starting list's design: the
     // branding restore, the certificate delete (a 404 is fine), the App group
     // the portal refuses (expected), the URL filter PUT (always sent, empty lists), and the guest switch cycled on and off.
@@ -324,7 +362,10 @@ describe("recheckStep", () => {
   const recheckAll = async (fake: Fake) => {
     const { env, records } = envFor(fake);
     const results = [];
-    for (const step of steps) results.push(await recheckStep(step, env));
+    // Users is rechecked in its own tests, with its guards.
+    for (const step of steps.filter((s) => s.seedKey !== "users")) {
+      results.push(await recheckStep(step, env));
+    }
     return { results, records };
   };
 
@@ -347,6 +388,152 @@ describe("recheckStep", () => {
     expect(
       records.some((r) => r.message === "still there after the step"),
     ).toBe(true);
+    expect(fake.writes).toEqual([]);
+  });
+});
+
+// covers: spec 0027 AC-4, AC-12, AC-13, AC-16
+describe("the Users step", () => {
+  const usersStep = stepNamed("users");
+  const guardedEnv = async (fake: Fake, extra: Partial<StepEnv> = {}) => {
+    const found = await computeProtected(
+      fake.portal,
+      async () => undefined,
+      allGuards,
+      SIGNED_IN_USER,
+    );
+    if (!found.ok) throw new Error(found.error.why);
+    return envFor(fake, {
+      portal: guardedPortal(fake.portal, found.value),
+      isGuarded: isGuardedWrite(found.value),
+      ...extra,
+    });
+  };
+  const calls = (fake: Fake) => fake.writes.map((w) => `${w.method} ${w.path}`);
+
+  it("deactivates, then deletes, each user but the two kept, and a second run changes nothing", async () => {
+    const fake = makeFake(populatedState());
+    const { env, records } = await guardedEnv(fake);
+    expect(await runStep(usersStep, env)).toBe("done");
+    expect(fake.state.users.map((u) => u.id)).toEqual([
+      "u-root",
+      SIGNED_IN_USER,
+    ]);
+    // Each removed user got a deactivate and then a delete; the user an
+    // earlier pass deactivated got only the delete.
+    expect(calls(fake)).toEqual([
+      "POST /api/v1/users/u-learner1/lifecycle/deactivate",
+      "DELETE /api/v1/users/u-learner1",
+      "POST /api/v1/users/u-learner2/lifecycle/deactivate",
+      "DELETE /api/v1/users/u-learner2",
+      "DELETE /api/v1/users/u-earlier",
+    ]);
+    expect(fake.writes[0]?.body).toEqual({ id: "u-learner1" });
+    expect(fake.writes[1]?.body).toEqual({ id: "u-learner1" });
+    // A success writes one row, the delete's, so counts are not doubled.
+    expect(records.map((r) => [r.kind, r.label])).toEqual([
+      ["deleted", "learner1@example.test"],
+      ["deleted", "learner2@example.test"],
+      ["deleted", "earlier@example.test"],
+    ]);
+    expect(await recheckStep(usersStep, env)).toBe(true);
+    const before = fake.writes.length;
+    expect(await runStep(usersStep, env)).toBe("done");
+    expect(fake.writes.length).toBe(before);
+  });
+
+  it("sends nothing in a dry run and records a would_delete per user", async () => {
+    const fake = makeFake(populatedState());
+    const { env, records } = await guardedEnv(fake, { mode: "dry_run" });
+    expect(await runStep(usersStep, env)).toBe("done");
+    expect(fake.writes).toEqual([]);
+    expect(fake.state).toEqual(populatedState());
+    expect(records.map((r) => [r.kind, r.itemId])).toEqual([
+      ["would_delete", "u-learner1"],
+      ["would_delete", "u-learner2"],
+      ["would_delete", "u-earlier"],
+    ]);
+    expect(env.hidden.size).toBe(3);
+  });
+
+  it("does not delete a user whose deactivate failed, records it, and goes on", async () => {
+    const fake = makeFake(populatedState());
+    fake.intercept = (req) =>
+      req.path === "/api/v1/users/u-learner1/lifecycle/deactivate"
+        ? { status: 400, body: { message: "cannot deactivate" } }
+        : undefined;
+    const { env, records } = await guardedEnv(fake);
+    expect(await runStep(usersStep, env)).toBe("failed");
+    expect(fake.state.users.map((u) => u.id)).toEqual([
+      "u-root",
+      SIGNED_IN_USER,
+      "u-learner1",
+    ]);
+    expect(records.filter((r) => r.kind === "failed")).toMatchObject([
+      {
+        itemId: "u-learner1",
+        method: "POST",
+        route: "/api/v1/users/{id}/lifecycle/deactivate",
+        status: 400,
+      },
+    ]);
+    expect(calls(fake)).not.toContain("DELETE /api/v1/users/u-learner1");
+  });
+
+  it("skips quietly a user that is gone (404 on the deactivate)", async () => {
+    const fake = makeFake(populatedState());
+    fake.intercept = (req) =>
+      req.path === "/api/v1/users/u-learner1/lifecycle/deactivate"
+        ? { status: 404, body: {} }
+        : undefined;
+    const { env, records } = await guardedEnv(fake);
+    expect(await runStep(usersStep, env)).toBe("done");
+    expect(records.filter((r) => r.kind === "failed")).toEqual([]);
+    expect(calls(fake)).not.toContain("DELETE /api/v1/users/u-learner1");
+  });
+
+  it("proves the skip rule is needed: the fake refuses a second deactivate", async () => {
+    const fake = makeFake(populatedState());
+    const again = await fake.portal.call({
+      method: "POST",
+      path: "/api/v1/users/u-earlier/lifecycle/deactivate",
+      body: { id: "u-earlier" },
+    });
+    expect(again).toMatchObject({ ok: true, value: { status: 400 } });
+  });
+
+  it("never touches a kept user, even for a step that lists only them", async () => {
+    const fake = makeFake(populatedState());
+    const { env } = await guardedEnv(fake);
+    const only: ResetStep = {
+      ...usersStep,
+      definition: {
+        parts: usersStep.definition.parts.map((p) =>
+          p.kind === "delete_each"
+            ? {
+                ...p,
+                onlyWhen: [
+                  {
+                    field: "id",
+                    op: "in" as const,
+                    value: ["u-root", "u-automation"],
+                  },
+                ],
+              }
+            : p,
+        ),
+      },
+    };
+    expect(await runStep(only, env)).toBe("done");
+    expect(fake.writes).toEqual([]);
+  });
+
+  it("stops at the request guard when the Users guards were not loaded (spec 0027 AC-10)", async () => {
+    const fake = makeFake(populatedState());
+    const { env } = envFor(fake, {
+      portal: guardedPortal(fake.portal, NO_PROTECTION),
+    });
+    await expect(runStep(usersStep, env)).rejects.toBeInstanceOf(GuardStop);
     expect(fake.writes).toEqual([]);
   });
 });

@@ -4,5 +4,10 @@
     "/api/*/users",
     "/global-settings/identity",
     "/network-setup/users"
+  ],
+  "allow": [
+    { "method": "GET", "path": "/api/v2/users" },
+    { "method": "POST", "path": "/api/v1/users/*/lifecycle/deactivate" },
+    { "method": "DELETE", "path": "/api/v1/users/*" }
   ]
 }

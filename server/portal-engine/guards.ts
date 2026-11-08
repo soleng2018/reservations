@@ -3,6 +3,7 @@ import { isDenied, normalizePortalRoute } from "@/lib/portal-reset/deny-list";
 import { guards as allGuards, type Guard } from "@/lib/portal-reset/guards";
 import { classify, retryDelay } from "@/lib/portal-reset/classify";
 import { routePattern } from "@/lib/portal-reset/route-pattern";
+import { getPortalPath } from "@/lib/portal-reset/portal-path";
 import { evaluateRules, listItems } from "@/lib/portal-reset/rules";
 import { err, ok, type Result } from "@/lib/result";
 import type { PortalClient, PortalRequest } from "./portal";
@@ -20,6 +21,9 @@ export type Protection = {
   readonly guard: Guard;
   // Lower case, so a differently cased id in a path still matches.
   readonly ids: ReadonlySet<string>;
+  // Every id the guard's list returned, kept or not, lower case. Used by a
+  // guard that sets `onlyListed`.
+  readonly listed: ReadonlySet<string>;
   // The parents of kept nested records. A parent is protected as itself (its
   // own delete route), not as a place its other children live in.
   readonly parentIds: ReadonlySet<string>;
@@ -34,15 +38,22 @@ export type GuardSetupError = {
   readonly why: "unreadable" | "bad_shape" | "expect_kept";
 };
 
+// A guard that stops a run when its list is not there (spec 0027 AC-6): one
+// that expects a kept record, or that is read only when a step touches it.
+const strictList = (guard: Guard): boolean =>
+  guard.expectKept !== undefined || guard.scope === "when_touched";
+
 type Sleep = (ms: number) => Promise<void>;
 
 // A guard's list read with the same retry policy as any list (AC-21). A list
-// that is not there (404) has nothing to protect; any other failure means the
-// protected ids are unknown, which stops the run before it writes.
+// that is not there (404) has nothing to protect, unless the guard is strict;
+// any other failure means the protected ids are unknown, which stops the run
+// before it writes.
 async function readGuardList(
   portal: PortalClient,
   sleep: Sleep,
   path: string,
+  strict: boolean,
   attempt = 1,
 ): Promise<Result<unknown, "unreadable">> {
   const result = await portal.call({ method: "GET", path });
@@ -53,15 +64,18 @@ async function readGuardList(
       : { kind: result.error },
   );
   if (result.ok && cls === "done") return ok(result.value.body);
-  if (cls === "nothing") return ok(undefined);
+  if (cls === "nothing" && !strict) return ok(undefined);
   const wait = cls === "retry" ? retryDelay(attempt) : null;
   if (wait === null) return err("unreadable");
   await sleep(wait);
-  return readGuardList(portal, sleep, path, attempt + 1);
+  return readGuardList(portal, sleep, path, strict, attempt + 1);
 }
 
 const keptCountOk = (guard: Guard, listed: number, kept: number): boolean => {
-  if (guard.expectKept === undefined || listed === 0) return true;
+  if (guard.expectKept === undefined) return true;
+  // An empty list has nothing to keep, except for a guard read because a step
+  // needs it: there the kept account must exist.
+  if (listed === 0 && guard.scope !== "when_touched") return true;
   return guard.expectKept === "exactlyOne" ? kept === 1 : kept >= 1;
 };
 
@@ -73,20 +87,53 @@ const keptCountOk = (guard: Guard, listed: number, kept: number): boolean => {
 export async function computeProtected(
   portal: PortalClient,
   sleep: Sleep,
-  guards: readonly Guard[] = allGuards,
+  // The guards read at the start of every run. A `when_touched` guard is
+  // passed in by the caller that knows the steps need it (spec 0027 AC-9).
+  guards: readonly Guard[] = allGuards.filter(
+    (g) => g.scope !== "when_touched",
+  ),
+  // The id of the user the run is signed in as (spec 0027 AC-8).
+  signedInId?: string,
 ): Promise<Result<Protected, GuardSetupError>> {
   const found: Protection[] = [];
   for (const guard of guards) {
-    const body = await readGuardList(portal, sleep, guard.listPath);
+    const body = await readGuardList(
+      portal,
+      sleep,
+      guard.listPath,
+      strictList(guard),
+    );
     if (!body.ok) return err({ guardKey: guard.key, why: "unreadable" });
     if (body.value === undefined) {
-      found.push({ guard, ids: new Set(), parentIds: new Set() });
+      found.push({
+        guard,
+        ids: new Set(),
+        listed: new Set(),
+        parentIds: new Set(),
+      });
       continue;
     }
     const items = listItems(body.value, guard);
     if (!items.ok) return err({ guardKey: guard.key, why: "bad_shape" });
-    const kept = items.value.filter((i) =>
-      evaluateRules(i.raw, guard.keepWhen),
+    // More rows than the page returned: the protected user may be on a page
+    // never read, so a strict guard stops the run.
+    const total = getPortalPath(body.value, "totalElements");
+    if (
+      guard.scope === "when_touched" &&
+      typeof total === "number" &&
+      total > items.value.length
+    ) {
+      return err({ guardKey: guard.key, why: "bad_shape" });
+    }
+    if (guard.keepSignedIn === true && signedInId === undefined) {
+      return err({ guardKey: guard.key, why: "expect_kept" });
+    }
+    const kept = items.value.filter(
+      (i) =>
+        (guard.keepWhen.length > 0 && evaluateRules(i.raw, guard.keepWhen)) ||
+        (guard.keepSignedIn === true &&
+          signedInId !== undefined &&
+          i.id.toLowerCase() === signedInId.toLowerCase()),
     );
     if (!keptCountOk(guard, items.value.length, kept.length)) {
       return err({ guardKey: guard.key, why: "expect_kept" });
@@ -94,6 +141,7 @@ export async function computeProtected(
     found.push({
       guard,
       ids: new Set(kept.map((i) => i.id.toLowerCase())),
+      listed: new Set(items.value.map((i) => i.id.toLowerCase())),
       parentIds: new Set(
         kept
           .flatMap((i) => (i.parentId === null ? [] : [i.parentId]))
@@ -104,8 +152,10 @@ export async function computeProtected(
   return ok(found);
 }
 
+type GuardedMethod = "DELETE" | "PUT" | "POST";
+
 const stringLeaves = (value: unknown): readonly string[] => {
-  if (typeof value === "string") return [value];
+  if (typeof value === "string") return [value, ...value.split(",")];
   if (typeof value === "number") return [String(value)];
   if (Array.isArray(value)) return value.flatMap(stringLeaves);
   if (typeof value === "object" && value !== null) {
@@ -136,7 +186,7 @@ const queryValues = (path: string): readonly string[] => {
 // path (after the route prefix) or `extra` holds, or undefined.
 function hitOf(
   prot: Protected,
-  method: "DELETE" | "PUT",
+  method: GuardedMethod,
   path: string,
   extra: readonly string[],
 ): Protection | undefined {
@@ -144,6 +194,8 @@ function hitOf(
   return prot.find(({ guard, ids, parentIds }) => {
     // A guard that allows a `PUT` guards only the delete.
     if (method === "PUT" && guard.allowPut === true) return false;
+    // A `POST` is guarded only where the guard says so (a deactivate).
+    if (method === "POST" && guard.guardPost !== true) return false;
     const prefix = normalizePortalRoute(guard.deleteRoutePrefix);
     if (!underPrefix(route, prefix)) return false;
     const rest = route.slice(prefix.length);
@@ -160,13 +212,27 @@ function hitOf(
   });
 }
 
+// A write under a route whose guard sets `onlyListed` must name, as the
+// segment right after the route prefix, an id the guard's own list returned
+// and did not keep. A literal alias, an email, or a user the list never held
+// fails this, whatever the step says (spec 0027 review).
+const onlyListedOk = (prot: Protected, path: string): boolean => {
+  const route = normalizePortalRoute(path);
+  return prot.every(({ guard, ids, listed }) => {
+    if (guard.onlyListed !== true) return true;
+    const prefix = normalizePortalRoute(guard.deleteRoutePrefix);
+    if (!underPrefix(route, prefix)) return true;
+    const target = route[prefix.length]?.toLowerCase();
+    return target !== undefined && listed.has(target) && !ids.has(target);
+  });
+};
+
 // The interpreter's silent skip (AC-26, D9): a protected item is never
 // deleted, never recorded as a failure, never emailed. `ids` holds the ids a
 // batch carries in its body.
 export const isGuardedWrite =
   (prot: Protected) =>
-  (method: "DELETE" | "PUT", path: string, ids: readonly string[]): boolean =>
-    (method === "DELETE" || method === "PUT") &&
+  (method: GuardedMethod, path: string, ids: readonly string[]): boolean =>
     hitOf(prot, method, path, ids) !== undefined;
 
 // The last line of defence, in front of every call of every step and of
@@ -178,10 +244,37 @@ export const isGuardedWrite =
 export function guardedPortal(
   inner: PortalClient,
   prot: Protected,
+  all: readonly Guard[] = allGuards,
 ): PortalClient {
   const check = (req: PortalRequest): void => {
-    if (isDenied(req.path)) throw new GuardStop(routePattern(req.path));
-    if (req.method !== "DELETE" && req.method !== "PUT") return;
+    if (isDenied(req.path, req.method)) {
+      throw new GuardStop(routePattern(req.path));
+    }
+    // A write the allow list lets through a deny prefix needs every guard of
+    // its route loaded (spec 0027 AC-10), so a path built at run time from a
+    // read cannot reach Users unguarded.
+    if (req.method !== "GET" && isDenied(req.path)) {
+      const route = normalizePortalRoute(req.path);
+      const covering = all.filter((g) =>
+        underPrefix(route, normalizePortalRoute(g.deleteRoutePrefix)),
+      );
+      const loaded = covering.every((g) =>
+        prot.some((p) => p.guard.key === g.key),
+      );
+      if (covering.length === 0 || !loaded) {
+        throw new GuardStop(routePattern(req.path));
+      }
+    }
+    if (
+      req.method !== "DELETE" &&
+      req.method !== "PUT" &&
+      req.method !== "POST"
+    ) {
+      return;
+    }
+    if (!onlyListedOk(prot, req.path)) {
+      throw new GuardStop(routePattern(req.path));
+    }
     const hit = hitOf(prot, req.method, req.path, stringLeaves(req.body));
     if (hit !== undefined) {
       throw new GuardStop(`${hit.guard.deleteRoutePrefix}/{id}`);

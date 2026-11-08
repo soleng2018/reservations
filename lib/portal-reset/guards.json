@@ -59,6 +59,34 @@
       "deleteRoutePrefix": "/api/v1/settings/dhcp-clients",
       "expectKept": "exactlyOne",
       "allowPut": true
+    },
+    {
+      "key": "users-root-admin",
+      "line": "Users in the RootAdmin group are never deactivated or deleted.",
+      "listPath": "/api/v2/users?page=0&size=2000",
+      "itemsAt": "content",
+      "idField": "id",
+      "keepWhen": [
+        { "field": "groupIds", "op": "has", "value": "00ghquj7yiA33Pg5v5d5" }
+      ],
+      "deleteRoutePrefix": "/api/v1/users",
+      "expectKept": "atLeastOne",
+      "guardPost": true,
+      "onlyListed": true,
+      "scope": "when_touched"
+    },
+    {
+      "key": "users-signed-in",
+      "line": "The account the reset signs in as is never deactivated or deleted.",
+      "listPath": "/api/v2/users?page=0&size=2000",
+      "itemsAt": "content",
+      "idField": "id",
+      "keepSignedIn": true,
+      "deleteRoutePrefix": "/api/v1/users",
+      "expectKept": "exactlyOne",
+      "guardPost": true,
+      "onlyListed": true,
+      "scope": "when_touched"
     }
   ]
 }

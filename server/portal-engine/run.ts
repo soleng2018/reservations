@@ -7,7 +7,10 @@ import type {
   PortalResetSignInReason,
 } from "@/lib/db-enums";
 import { holdsRun } from "@/lib/portal-reset/sign-in";
-import { guards as guardFile } from "@/lib/portal-reset/guards";
+import {
+  guards as guardFile,
+  guardsForDefinition,
+} from "@/lib/portal-reset/guards";
 import { readResetList, type ResetStep } from "@/server/portal-reset/steps";
 import type { DB } from "@/server/db/types";
 import {
@@ -27,6 +30,7 @@ import {
 } from "./interpret";
 import { unsafeDeleteOrder } from "@/lib/portal-reset/order-rules";
 import type { PortalClient } from "./portal";
+import { hasUserId } from "./connect";
 import {
   computeProtected,
   guardedPortal,
@@ -209,9 +213,20 @@ export async function executeRun(
   // The step in hand, for a guard stop's audit row (a readable name).
   let stepName: string | null = "guards";
   try {
+    // A `when_touched` guard is read only when an enabled step reaches its
+    // routes (spec 0027 AC-9), so a run without the Users step never depends
+    // on a Users list.
+    const touched = new Set(
+      steps.flatMap((s) => guardsForDefinition(s.definition).map((g) => g.key)),
+    );
+    const needed = guardFile.filter(
+      (g) => g.scope !== "when_touched" || touched.has(g.key),
+    );
     const found = await computeProtected(
       guardedPortal(raw, NO_PROTECTION),
       sleep,
+      needed,
+      hasUserId(raw) ? raw.userId : undefined,
     );
     if (!found.ok) {
       const guard = allGuardsByKey(found.error.guardKey);
@@ -220,7 +235,8 @@ export async function executeRun(
         {},
         {
           stepKey: "guards",
-          route: guard?.listPath ?? "/api/",
+          route: guard?.listPath.split("?")[0] ?? "/api/",
+          guardKey: found.error.guardKey,
         },
       );
     }

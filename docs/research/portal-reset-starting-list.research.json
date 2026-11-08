@@ -641,6 +641,56 @@
       "orderRule": "No ordering dependency was seen. Independent of every other step. Always runs.",
       "expectedAfter": "Theme name Default, colors #0996EE and #F39A4E, no custom logo, default background.",
       "verified": "Restore seen once on a customised Workshop 4 (the owner changed the colors; the page's call answered 204 and the page and profile went back to default). The request body is not captured, so the engine cannot yet send it. A later attempt to change and save a color through the page did not enable SAVE, so that save call was not captured."
+    },
+    {
+      "key": "users",
+      "order": 14,
+      "featureName": "Users: deactivate, then delete",
+      "kind": "deactivate-then-delete",
+      "status": "proposed, not in db/seed/portal-reset-starting-list.json: the deny list (D14) and the step language must change first (findings section 3i, D17)",
+      "location": "Network Setup, Users (/network-setup/users)",
+      "list": {
+        "method": "GET",
+        "path": "/api/v2/users?page=0&size=2000",
+        "itemsAt": "content",
+        "idField": "id",
+        "labelField": "email"
+      },
+      "deactivate": {
+        "method": "POST",
+        "path": "/api/v1/users/{id}/lifecycle/deactivate",
+        "body": {
+          "id": "{id}"
+        },
+        "successStatus": 204,
+        "note": "One call per user; the page's multi select is a loop, not a bulk call."
+      },
+      "delete": {
+        "method": "DELETE",
+        "path": "/api/v1/users/{id}",
+        "body": {
+          "id": "{id}"
+        },
+        "successStatus": 204
+      },
+      "skipWhen": [
+        {
+          "reason": "RootAdmin: never deleted (owner, 2026-11-07). Match the group named RootAdmin from GET /api/v1/groups; the id 00ghquj7yiA33Pg5v5d5 was seen on Workshop 2 only.",
+          "field": "groupIds",
+          "op": "contains the RootAdmin group id",
+          "mustNeverDelete": true
+        },
+        {
+          "reason": "The user the reset signs in as (automation@<testbed domain>, the app's own account) is never deleted: it would end the run. Designed in spec 0027.",
+          "field": "id",
+          "equals": "<id of the signed in user, from GET /api/v1/userinfo>",
+          "mustNeverDelete": true
+        }
+      ],
+      "orderInsideStep": "Deactivate every user first, then delete. Put the step last in the list.",
+      "expectedAfter": "Only the RootAdmin and the signed in user are left.",
+      "verified": "Tested on Workshop 2 through the page with two users (2026-11-07): deactivate 204 then status DEACTIVATED, delete 204 then gone. Not tested: delete of an ACTIVATED user, the guards' refusals, a direct API run.",
+      "note": "Reverses D14 for these three routes only."
     }
   ],
   "notYetFound": [
@@ -714,7 +764,8 @@
       }
     ],
     "engineGuard": "A deny list in the engine, checked on every call just before it is sent, independent of the saved list: refuse any method other than a plain read on a path under these prefixes, and treat an attempt as a bug (throw, audit, and email), not as a skip. A saved step whose list or delete path matches a prefix is refused when the page saves it as well (spec 0022 AC-9 validation).",
-    "note": "This guard is separate from the 'system defined' skips: those are expected and silent (reporting.systemDefinedItems); this one is a safety stop and is loud."
+    "note": "This guard is separate from the 'system defined' skips: those are expected and silent (reporting.systemDefinedItems); this one is a safety stop and is loud.",
+    "amendedBy": "D17, owner, 2026-11-07: for Network Setup, Users only the list, deactivate, and delete routes of the step 'users' are to be allowed, with the RootAdmin and signed in user guards. Not yet applied to the deny list."
   },
   "discovery": {
     "decidedBy": "owner, 2026-10-27: no hardcoded types; the script must understand the structure and handle a newly added type by itself.",

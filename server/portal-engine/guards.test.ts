@@ -5,8 +5,14 @@ import {
   isGuardedWrite,
   NO_PROTECTION,
 } from "./guards";
+import { guards as allGuards } from "@/lib/portal-reset/guards";
 import { GuardStop } from "./stop";
-import { baselineState, makeFake, populatedState } from "./testing";
+import {
+  baselineState,
+  makeFake,
+  populatedState,
+  SIGNED_IN_USER,
+} from "./testing";
 
 const noSleep = async () => undefined;
 
@@ -59,10 +65,42 @@ describe("computeProtected", () => {
     const fake = makeFake(state);
     const real = fake.intercept;
     fake.intercept = (req) =>
-      req.path.startsWith("/api/v1/settings/radius")
+      req.path.startsWith("/api/v1/cloudradius/policysets")
         ? { status: 404, body: {} }
         : real(req);
     expect((await computeProtected(fake.portal, noSleep)).ok).toBe(true);
+  });
+
+  it("fails closed on a list that is not there when the guard expects a kept record (spec 0027 AC-6)", async () => {
+    const fake = makeFake(baselineState());
+    const real = fake.intercept;
+    fake.intercept = (req) =>
+      req.path.startsWith("/api/v1/settings/radius")
+        ? { status: 404, body: {} }
+        : real(req);
+    expect(await computeProtected(fake.portal, noSleep)).toEqual({
+      ok: false,
+      error: { guardKey: "nile-radius", why: "unreadable" },
+    });
+  });
+
+  it("fails closed on a list that is not there, for a guard read because a step needs it", async () => {
+    const fake = makeFake(baselineState());
+    fake.intercept = (req) =>
+      req.path.startsWith("/api/v2/users")
+        ? { status: 404, body: {} }
+        : undefined;
+    expect(
+      await computeProtected(
+        fake.portal,
+        noSleep,
+        allGuards.filter((g) => g.key === "users-root-admin"),
+        SIGNED_IN_USER,
+      ),
+    ).toEqual({
+      ok: false,
+      error: { guardKey: "users-root-admin", why: "unreadable" },
+    });
   });
 
   it("fails closed when a list cannot be read, after the retries", async () => {
@@ -262,5 +300,157 @@ describe("isGuardedWrite", () => {
       guarded("DELETE", "/api/v3/policy/policysets/ps1/rules/pol-sys", []),
     ).toBe(true);
     expect(guarded("DELETE", "/api/v3/policy/policysets/ps1", [])).toBe(true);
+  });
+});
+
+// covers: spec 0027 AC-5 to AC-10
+describe("the Users guards", () => {
+  const usersGuards = allGuards.filter((g) => g.key.startsWith("users-"));
+  const load = (fake = makeFake(), id: string | null = SIGNED_IN_USER) =>
+    computeProtected(fake.portal, noSleep, usersGuards, id ?? undefined);
+
+  it("keeps the RootAdmin by group, wherever the group sits, and the signed in user by id", async () => {
+    const found = await load();
+    if (!found.ok) throw new Error(found.error.why);
+    expect(found.value.flatMap((p) => [...p.ids]).sort()).toEqual([
+      "u-automation",
+      "u-root",
+    ]);
+  });
+
+  it("stops before any write when no user holds the RootAdmin group", async () => {
+    const state = populatedState();
+    state.users = state.users.map((u) => ({ ...u, groupIds: [] }));
+    expect(await load(makeFake(state))).toEqual({
+      ok: false,
+      error: { guardKey: "users-root-admin", why: "expect_kept" },
+    });
+  });
+
+  it("stops when the signed in user is not listed once, or its id is unknown", async () => {
+    const state = populatedState();
+    state.users = state.users.filter((u) => u.id !== SIGNED_IN_USER);
+    expect(await load(makeFake(state))).toEqual({
+      ok: false,
+      error: { guardKey: "users-signed-in", why: "expect_kept" },
+    });
+    expect(await load(makeFake(), null)).toEqual({
+      ok: false,
+      error: { guardKey: "users-signed-in", why: "expect_kept" },
+    });
+  });
+
+  it("stops when the tenant has more users than the page returned", async () => {
+    const fake = makeFake();
+    fake.intercept = (req) =>
+      req.path.startsWith("/api/v2/users")
+        ? {
+            status: 200,
+            body: { content: fake.state.users, totalElements: 2001 },
+          }
+        : undefined;
+    expect(await load(fake)).toEqual({
+      ok: false,
+      error: { guardKey: "users-root-admin", why: "bad_shape" },
+    });
+  });
+
+  it("refuses a deactivate or a delete that holds a kept id, in the path or the body", async () => {
+    const fake = makeFake();
+    const found = await load(fake);
+    if (!found.ok) throw new Error(found.error.why);
+    const portal = guardedPortal(fake.portal, found.value);
+    const refused = [
+      { method: "POST", path: "/api/v1/users/u-root/lifecycle/deactivate" },
+      {
+        method: "POST",
+        path: "/api/v1/users/u-learner1/lifecycle/deactivate",
+        body: { id: SIGNED_IN_USER },
+      },
+      { method: "DELETE", path: `/api/v1/users/${SIGNED_IN_USER}` },
+      { method: "DELETE", path: "/api/v1/users/U-ROOT" },
+    ] as const;
+    for (const req of refused) {
+      await expect(portal.call(req)).rejects.toBeInstanceOf(GuardStop);
+    }
+    expect(fake.writes).toEqual([]);
+    const ok = await portal.call({
+      method: "POST",
+      path: "/api/v1/users/u-learner1/lifecycle/deactivate",
+      body: { id: "u-learner1" },
+    });
+    expect(ok).toMatchObject({ ok: true, value: { status: 204 } });
+  });
+
+  it("is protected in the skip check for a POST too", async () => {
+    const found = await load();
+    if (!found.ok) throw new Error(found.error.why);
+    const guarded = isGuardedWrite(found.value);
+    expect(
+      guarded("POST", "/api/v1/users/u-root/lifecycle/deactivate", ["u-root"]),
+    ).toBe(true);
+    expect(
+      guarded("POST", "/api/v1/users/u-x/lifecycle/deactivate", ["u-x"]),
+    ).toBe(false);
+    // Other guards do not guard a POST.
+    expect(guarded("POST", "/api/v1/settings/ssids/ssid-protected", [])).toBe(
+      false,
+    );
+  });
+
+  it("refuses a write the allow list lets through when its guards were not loaded, and any other Users route", async () => {
+    const fake = makeFake();
+    const none = guardedPortal(fake.portal, NO_PROTECTION);
+    await expect(
+      none.call({ method: "DELETE", path: "/api/v1/users/u-learner1" }),
+    ).rejects.toBeInstanceOf(GuardStop);
+    await expect(
+      none.call({
+        method: "POST",
+        path: "/api/v1/users/u-learner1/lifecycle/deactivate",
+      }),
+    ).rejects.toBeInstanceOf(GuardStop);
+    // The guard's own list read is how they load: a GET passes.
+    expect(
+      await none.call({
+        method: "GET",
+        path: "/api/v2/users?page=0&size=2000",
+      }),
+    ).toMatchObject({ ok: true });
+    const found = await load(fake);
+    if (!found.ok) throw new Error(found.error.why);
+    const guarded = guardedPortal(fake.portal, found.value);
+    for (const req of [
+      { method: "POST", path: "/api/v1/users" },
+      { method: "PUT", path: "/api/v1/users/u-learner1" },
+      { method: "POST", path: "/api/v1/users/u-learner1/tags" },
+      { method: "POST", path: "/api/v1/users/u-learner1/lifecycle/activate" },
+      { method: "GET", path: "/api/v1/users/u-learner1" },
+    ] as const) {
+      await expect(guarded.call(req)).rejects.toBeInstanceOf(GuardStop);
+    }
+    expect(fake.writes).toEqual([]);
+  });
+  it("refuses an alias, an email, or a user the list never held, and any kept id in the query or a comma list", async () => {
+    const fake = makeFake();
+    const found = await load(fake);
+    if (!found.ok) throw new Error(found.error.why);
+    const portal = guardedPortal(fake.portal, found.value);
+    const refused = [
+      { method: "DELETE", path: "/api/v1/users/me" },
+      { method: "DELETE", path: "/api/v1/users/nileadmin%40example.com" },
+      { method: "DELETE", path: "/api/v1/users/u-never-listed" },
+      { method: "POST", path: "/api/v1/users/me/lifecycle/deactivate" },
+      { method: "DELETE", path: "/api/v1/users/u-learner1?id=u-root" },
+      {
+        method: "DELETE",
+        path: "/api/v1/users/u-learner1",
+        body: { ids: "u-learner1,u-root" },
+      },
+    ] as const;
+    for (const req of refused) {
+      await expect(portal.call(req)).rejects.toBeInstanceOf(GuardStop);
+    }
+    expect(fake.writes).toEqual([]);
   });
 });

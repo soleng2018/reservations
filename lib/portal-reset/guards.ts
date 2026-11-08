@@ -11,25 +11,52 @@ import { isPortalPath } from "./portal-path";
 const route = z
   .string()
   .regex(/^\/api\/[A-Za-z0-9._~\-/]+$/, "A guard route is a plain /api/ path.");
+// A list path may carry a query (spec 0027 AC-6): the Users list is paged. A
+// delete route prefix never does.
+const listRoute = z
+  .string()
+  .regex(
+    /^\/api\/[A-Za-z0-9._~\-/]+(?:\?[A-Za-z0-9._~=&-]+)?$/,
+    "A guard list is a plain /api/ path, with an optional query.",
+  );
 const fieldPath = z.string().refine(isPortalPath);
 
 const nested = z.strictObject({ at: fieldPath, parentIdField: fieldPath });
 
-export const Guard = z.strictObject({
+const guardShape = z.strictObject({
   key: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   // Plain words for the page, for example "SSIDs where ... are never deleted".
   line: z.string().min(1).max(200),
-  listPath: route,
+  listPath: listRoute,
   itemsAt: fieldPath,
   nested: nested.optional(),
   idField: fieldPath,
-  keepWhen: z.array(Rule).min(1).max(5),
+  keepWhen: z.array(Rule).max(5).default([]),
+  // Also keep the item whose id is the id of the user the run signed in as
+  // (spec 0027 AC-8).
+  keepSignedIn: z.boolean().optional(),
   deleteRoutePrefix: route,
   expectKept: z.enum(["exactlyOne", "atLeastOne"]).optional(),
+  // A `POST` under the delete route that carries a protected id is refused
+  // like a `DELETE` (spec 0027 AC-6): a deactivate is a `POST`.
+  guardPost: z.boolean().optional(),
+  // A write under the delete route may name only a record the guard's own
+  // list read returned, by its id, and never a kept one (spec 0027 review). A
+  // positive check, so an alias (`me`) or another identifier (an email) is
+  // refused, not just the known ids.
+  onlyListed: z.boolean().optional(),
+  // `always` (the default) is read at the start of every run. `when_touched`
+  // is read only by a run whose enabled steps reach the guard's routes, and
+  // then a 404, a bad shape, or a truncated list stops the run.
+  scope: z.enum(["always", "when_touched"]).optional(),
   // The kept record may be changed by a `PUT` (a step that empties its scopes
   // or sets its default), never deleted. Without it a `PUT` is guarded too.
   allowPut: z.boolean().optional(),
 });
+export const Guard = guardShape.refine(
+  (g) => g.keepWhen.length > 0 || g.keepSignedIn === true,
+  "A guard keeps something: keepWhen rules or keepSignedIn.",
+);
 export type Guard = z.infer<typeof Guard>;
 
 export const GuardsFile = z
@@ -61,7 +88,11 @@ const touches = (guard: Guard, path: string): boolean => {
 const writePaths = (part: Part): readonly string[] => {
   switch (part.kind) {
     case "delete_each":
-      return [part.list.path, part.delete.path];
+      return [
+        part.list.path,
+        part.delete.path,
+        ...(part.beforeDelete === undefined ? [] : [part.beforeDelete.path]),
+      ];
     case "update_record":
       return [part.list.path, part.put.path];
     case "call":

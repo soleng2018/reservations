@@ -4,13 +4,15 @@ import { GuardsFile, guards, guardsForDefinition } from "./guards";
 import { StepDefinition } from "./step-schema";
 
 describe("guards.json (AC-20)", () => {
-  it("holds the five starting guards", () => {
+  it("holds the seven guards", () => {
     expect(guards.map((g) => g.key)).toEqual([
       "protected-ssid",
       "system-policies",
       "nile-radius",
       "nile-radius-policies",
       "nile-dhcp",
+      "users-root-admin",
+      "users-signed-in",
     ]);
   });
 
@@ -24,8 +26,10 @@ describe("guards.json (AC-20)", () => {
 
   it("holds no route on the deny list", () => {
     guards.forEach((g) => {
-      expect(isDenied(g.listPath)).toBe(false);
-      expect(isDenied(g.deleteRoutePrefix)).toBe(false);
+      // The Users guards read their list and refuse writes on a prefix the
+      // deny list covers, so they are checked with the method they use.
+      expect(isDenied(g.listPath, "GET")).toBe(false);
+      expect(isDenied(`${g.deleteRoutePrefix}/x`, "DELETE")).toBe(false);
     });
   });
 
@@ -90,5 +94,42 @@ describe("guardsForDefinition", () => {
         }),
       ),
     ).toEqual([]);
+  });
+});
+
+// covers: spec 0027 AC-7, and the review fix (onlyListed)
+describe("the Users guards in guards.json", () => {
+  const users = guards.filter((g) => g.key.startsWith("users-"));
+
+  it("are read only when a step touches them, guard a POST, and accept only listed ids", () => {
+    expect(users.map((g) => g.key)).toEqual([
+      "users-root-admin",
+      "users-signed-in",
+    ]);
+    for (const g of users) {
+      expect(g).toMatchObject({
+        listPath: "/api/v2/users?page=0&size=2000",
+        itemsAt: "content",
+        idField: "id",
+        deleteRoutePrefix: "/api/v1/users",
+        guardPost: true,
+        onlyListed: true,
+        scope: "when_touched",
+      });
+    }
+  });
+
+  it("keep the RootAdmin group and the signed in user", () => {
+    const [root, signedIn] = users;
+    expect(root).toMatchObject({
+      keepWhen: [
+        { field: "groupIds", op: "has", value: "00ghquj7yiA33Pg5v5d5" },
+      ],
+      expectKept: "atLeastOne",
+    });
+    expect(signedIn).toMatchObject({
+      keepSignedIn: true,
+      expectKept: "exactlyOne",
+    });
   });
 });

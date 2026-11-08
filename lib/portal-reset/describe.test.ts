@@ -96,4 +96,30 @@ describe("describeStep (AC-24)", () => {
       "Read GET /api/v1/settings/ssids, and in each record where a.b is not empty set a.b to [] and PUT it back to /api/v1/x/{id}.",
     );
   });
+
+  it("describes a call before each delete (spec 0027)", () => {
+    const [line] = describeStep(
+      parse([
+        {
+          kind: "delete_each",
+          list: {
+            method: "GET",
+            path: "/api/v2/users?page=0&size=2000",
+            itemsAt: "content",
+            idField: "id",
+          },
+          beforeDelete: {
+            method: "POST",
+            path: "/api/v1/users/{id}/lifecycle/deactivate",
+            body: { id: "{id}" },
+            skipWhen: [{ field: "status", op: "eq", value: "DEACTIVATED" }],
+          },
+          delete: { path: "/api/v1/users/{id}", body: { id: "{id}" } },
+        },
+      ]),
+    );
+    expect(line).toBe(
+      'Read GET /api/v2/users?page=0&size=2000, delete each item with DELETE /api/v1/users/{id}, first calling POST /api/v1/users/{id}/lifecycle/deactivate on each (not where status is "DEACTIVATED").',
+    );
+  });
 });

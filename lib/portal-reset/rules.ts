@@ -34,6 +34,14 @@ export function testValue(value: unknown, op: Op, operand: Operand): boolean {
       return value === undefined || value === null;
     case "nonEmpty":
       return nonEmpty(value);
+    case "has":
+      // An array field that holds the one value given; anything else is false.
+      return (
+        Array.isArray(value) &&
+        operand !== undefined &&
+        !Array.isArray(operand) &&
+        value.some((v) => v === operand)
+      );
     default: {
       const never: never = op;
       throw new Error(`Unknown op ${String(never)}`);

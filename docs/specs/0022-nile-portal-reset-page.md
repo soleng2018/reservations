@@ -4,6 +4,7 @@
 **Revised**: 2026-10-27 (after the portal research; the step model is new)
 **Status**: Accepted
 **Builds with**: [spec 0023](0023-nile-portal-reset-engine/index.md) (the engine that runs the saved list). This spec owns the step language and how it is stored, edited, and validated. Spec 0023 owns how each part is executed.
+**Amended in part by**: [spec 0027](0027-portal-reset-users-step.md) (the Users step: a method aware deny list, `beforeDelete`, the `has` rule, and two Users guards).
 **Research**: [findings D1 to D17](../research/nile-portal-reset-findings.md), the tested calls in `db/seed/portal-reset-starting-list.json`
 
 ## Summary

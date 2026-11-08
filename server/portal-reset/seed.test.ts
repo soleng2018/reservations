@@ -105,9 +105,9 @@ describe.skipIf(!hasDb)("seedPortalReset", () => {
         actor_user_id: null,
         target_type: "portal_reset_settings",
         target_id: "settings",
-        summary: "Seeded 14 steps from the starting list",
+        summary: "Seeded 15 steps from the starting list",
       });
-      expect(rows[0]?.metadata).toMatchObject({ count: 14 });
+      expect(rows[0]?.metadata).toMatchObject({ count: 15 });
     });
   });
 
