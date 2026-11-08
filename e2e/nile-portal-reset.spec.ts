@@ -1,14 +1,19 @@
 import { expect, type Page } from "@playwright/test";
 import { adminContext, test } from "./admin-session";
 import { haveSecrets } from "./authentik";
+import seed from "../db/seed/portal-reset-starting-list.json";
 import { expectNoSeriousViolations } from "./axe";
+
+// The number of starting steps, read from the seed so a new starting step
+// (spec 0027 added the 15th) never leaves a hard coded count behind.
+const N = seed.steps.length;
 
 // Spec 0022 (tasks 1 to 6): the read only Nile Portal Reset page against the
 // real database. Reads only, so it changes nothing.
 test.skip(!haveSecrets, "hol-test passwords are not on this machine");
 
 // covers: AC-3, AC-4, AC-10, AC-20, AC-21, AC-24
-test("the page opens read only with the 13 starting steps in order", async ({
+test("the page opens read only with every starting step in order", async ({
   adminPage: page,
 }) => {
   await page.goto("/admin/nile-portal-reset");
@@ -17,7 +22,7 @@ test("the page opens read only with the 13 starting steps in order", async ({
   ).toBeVisible();
 
   const steps = page.getByRole("list", { name: /Reset steps/ }).locator("> li");
-  await expect(steps).toHaveCount(13);
+  await expect(steps).toHaveCount(N);
   await expect(steps.first()).toContainText("Integrations");
   await expect(steps.nth(1)).toContainText("SSIDs");
   await expect(steps.nth(1)).toContainText(
@@ -147,11 +152,11 @@ test("Cancel on the Edit confirm changes nothing; Confirm shows the edit control
   await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
 
   await startEditing(page);
-  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(13);
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(N);
   await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Discard" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(13);
-  await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(13);
+  await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(N);
+  await expect(page.getByRole("button", { name: /^Remove / })).toHaveCount(N);
   await expectNoSeriousViolations(page);
   await page.getByRole("button", { name: "Discard" }).click();
   await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
@@ -166,7 +171,9 @@ test("a row moves by keyboard, is announced, renumbers, and Escape cancels", asy
   expect(before[1]).toBe("SSIDs");
 
   const handle = page.getByRole("button", { name: /^Reorder SSIDs,/ });
-  await expect(handle).toHaveAccessibleName("Reorder SSIDs, position 2 of 13");
+  await expect(handle).toHaveAccessibleName(
+    `Reorder SSIDs, position 2 of ${N}`,
+  );
   await handle.focus();
   await page.keyboard.press("Space");
   // The lift is announced, then at once as over its own place.
@@ -174,13 +181,13 @@ test("a row moves by keyboard, is announced, renumbers, and Escape cancels", asy
   await expect(
     page
       .locator("[aria-live]")
-      .filter({ hasText: "SSIDs moved to position 2 of 13." }),
+      .filter({ hasText: `SSIDs moved to position 2 of ${N}.` }),
   ).toBeAttached();
   await page.keyboard.press("ArrowDown");
   await expect(
     page
       .locator("[aria-live]")
-      .filter({ hasText: "SSIDs moved to position 3 of 13." }),
+      .filter({ hasText: `SSIDs moved to position 3 of ${N}.` }),
   ).toBeAttached();
   await page.keyboard.press("Escape");
   expect(await stepNames(page)).toEqual(before);
@@ -191,7 +198,7 @@ test("a row moves by keyboard, is announced, renumbers, and Escape cancels", asy
   expect(after[1]).toBe(before[2]);
   const numbers = await page.getByTestId("step-number").allInnerTexts();
   expect(numbers.map((n) => n.replace("Step", "").trim())).toEqual(
-    Array.from({ length: 13 }, (_, i) => String(i + 1)),
+    Array.from({ length: N }, (_, i) => String(i + 1)),
   );
 
   // A changed draft asks before it is thrown away.
@@ -280,7 +287,7 @@ test("edit mode at 390px keeps the handles and does not scroll sideways", async 
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await startEditing(page);
-  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(13);
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(N);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - window.innerWidth,
   );
@@ -332,7 +339,9 @@ test("the row editor flags bad JSON by path, describes good JSON, and adds only 
 
   // Applying changes the draft only: Discard leaves the saved list as it was.
   await apply.click();
-  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(14);
+  await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(
+    N + 1,
+  );
   await page.getByRole("button", { name: "Discard" }).click();
   const confirm = page.getByRole("alertdialog");
   if (await confirm.isVisible())
@@ -341,7 +350,7 @@ test("the row editor flags bad JSON by path, describes good JSON, and adds only 
   await page.goto("/admin/nile-portal-reset");
   await expect(
     page.getByRole("list", { name: /Reset steps/ }).locator("> li"),
-  ).toHaveCount(13);
+  ).toHaveCount(N);
 });
 
 // The safety controls on the editor (spec 0022 AC-5, AC-7, AC-11, AC-22). The
@@ -490,9 +499,7 @@ test("a stale Save keeps the draft and offers Reload, which returns to the saved
       .filter({ hasText: "Someone else saved" });
     await expect(notice).toBeVisible();
     await expect(emailInput(page)).toHaveValue("second-admin@example.test");
-    await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(
-      13,
-    );
+    await expect(page.getByRole("button", { name: /^Reorder/ })).toHaveCount(N);
 
     // Reload drops the draft, shows the other admin's save, and Edit works at once.
     await notice.getByRole("button", { name: "Reload" }).click();
