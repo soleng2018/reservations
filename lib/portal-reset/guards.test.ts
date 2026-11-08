@@ -96,3 +96,40 @@ describe("guardsForDefinition", () => {
     ).toEqual([]);
   });
 });
+
+// covers: spec 0027 AC-7, and the review fix (onlyListed)
+describe("the Users guards in guards.json", () => {
+  const users = guards.filter((g) => g.key.startsWith("users-"));
+
+  it("are read only when a step touches them, guard a POST, and accept only listed ids", () => {
+    expect(users.map((g) => g.key)).toEqual([
+      "users-root-admin",
+      "users-signed-in",
+    ]);
+    for (const g of users) {
+      expect(g).toMatchObject({
+        listPath: "/api/v2/users?page=0&size=2000",
+        itemsAt: "content",
+        idField: "id",
+        deleteRoutePrefix: "/api/v1/users",
+        guardPost: true,
+        onlyListed: true,
+        scope: "when_touched",
+      });
+    }
+  });
+
+  it("keep the RootAdmin group and the signed in user", () => {
+    const [root, signedIn] = users;
+    expect(root).toMatchObject({
+      keepWhen: [
+        { field: "groupIds", op: "has", value: "00ghquj7yiA33Pg5v5d5" },
+      ],
+      expectKept: "atLeastOne",
+    });
+    expect(signedIn).toMatchObject({
+      keepSignedIn: true,
+      expectKept: "exactlyOne",
+    });
+  });
+});
