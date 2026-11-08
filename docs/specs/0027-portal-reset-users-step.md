@@ -1,7 +1,7 @@
 # 0027. Portal reset step for Users: deactivate, then delete
 
 **Date**: 2026-11-07
-**Status**: In Progress
+**Status**: Accepted
 **Amends**: [spec 0022](0022-nile-portal-reset-page.md) (AC-18 step language, AC-19 deny list, AC-20 guards) and [spec 0023](0023-nile-portal-reset-engine/index.md) (AC-25 to AC-27 the hard guards), in part. Nothing else in them changes.
 **Research**: [findings section 3i and D17](../research/nile-portal-reset-findings.md), the calls recorded on Workshop 2 on 2026-11-07, [14-users-ui-capture.mjs](../research/portal-scripts/14-users-ui-capture.mjs)
 
@@ -168,6 +168,8 @@ Approach: Tracer Bullet. First one thin thread through every layer on the fake p
 - [x] Review fix (2026-11-07): the Users guards set `onlyListed`, so a write under `/api/v1/users` must name an id the guard's list returned and did not keep (an alias such as `me`, an email, or an unlisted user stops the run). A user who signs in between the guard read and the step is not listed, so that run stops `guard_stop` and the next run removes the user.
 
 - [x] Recorded 2026-11-07 on Workshop 2 with throwaway users: a deactivate of an already deactivated user answers 204 (not the 400 the fake assumes, so `skipWhen` saves a call but is not required), and a delete of a still active user answers 400 "Please deactivate the user ... before you can delete them" (so the pre call is required). The fake keeps its stricter 400 on purpose.
-- [ ] `/sync` after merge (the root `AGENTS.md` line is already added): add one line to the root `AGENTS.md` portal rules that `/api/*/users` has three allowed calls and two guards (`guardPost`, `when_touched`), and update the deny list line.
+- [x] `/sync` (the root `AGENTS.md` line is added): add one line to the root `AGENTS.md` portal rules that `/api/*/users` has three allowed calls and two guards (`guardPost`, `when_touched`), and update the deny list line.
 - [x] Add a scope row for this (feature 26).
 - [ ] Confirm the RootAdmin group id on Workshop 1 and 5 if either gets a portal tenant (Workshop 5 has none today).
+
+- [x] The 404 rule on guards that expect a kept record (review minor): checked live on Workshop 2 on 2026-11-07, the SSID, RADIUS and DHCP lists answer 200 and always hold their system record, so a 404 there means a broken tenant and stopping is right.

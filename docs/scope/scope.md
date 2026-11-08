@@ -61,7 +61,7 @@ Decisions already made by the product owner (inputs for `/architect`, not open q
 | 23 | Cleanup hook for labs that end early | Slice 6 | done |
 | 24 | Nile Portal reset when a lab ends | Slice 6 | done |
 | 25 | Admin: Nile Portal Reset page | Slice 6 | done |
-| 26 | Portal reset: remove Users | Slice 6 | in-progress |
+| 26 | Portal reset: remove Users | Slice 6 | done |
 
 ## Foundations
 
@@ -479,7 +479,7 @@ Feature 24 needs to know which portal calls to make and in what order, so the ow
 spec [0022](../specs/0022-nile-portal-reset-page.md) · code in `server/portal-reset/`, `lib/portal-reset/`, `app/admin/nile-portal-reset/`, `db/migrations/0018_portal_reset.sql`, `db/seed/`
 > Notes for `/architect` (2026-10-26, kept for history): the owner asked for "a page listing all the APIs, ordered" and "a Nile Portal Reset page with the email and the drag table"; they are one page (decided 2026-10-26). Resolved in the 2026-10-27 revision: what an entry holds (typed parts, spec 0022), one saved list serves all five workshops, how a wrong order is caught before it runs (a dry run mode, spec 0023), and no Reset to starting list button (a removed starting step is offered back under "Add from starting list"). Keep the drag handle usable with the keyboard.
 
-### 26. Portal reset: remove Users · in-progress · Full
+### 26. Portal reset: remove Users · done · Full
 Follow up from feature 24, from spec 0027 (owner request 2026-11-07). After every lab the reset also deactivates and then deletes the portal's users, except the RootAdmin and the account the reset signs in as (`automation@<domain>`). This reverses part of D14, so the deny list allows exactly three Users calls, and the step language and guards each gain a few small features.
 **Done when:** a dry run and then a live run on a scratch workshop with the Users step added on the page leave only `nileadmin@` and `automation@`, a second run changes nothing, a run without the step never reads Users, and no saved step can create, edit, or touch either kept account.
 - [x] Design it (spec): `/architect portal reset users step` (spec 0027, accepted by the owner 2026-11-07)
