@@ -490,7 +490,7 @@ Follow up from feature 24, from spec 0027 (owner request 2026-11-07). After ever
 - [x] Verify it: `/check verify portal reset: remove users` (a dry run and then a live run on a scratch tenant, with the owner present)
 - [x] Test it: `/test portal reset: remove users`
 - [x] Review it (fresh model): `/check review portal reset: remove users`
-- [ ] Document it: `/document portal reset: remove users`
+- [x] Document it: `/document portal reset: remove users`
 spec [0027](../specs/0027-portal-reset-users-step.md) · research [findings 3i and D17](../research/nile-portal-reset-findings.md) · code in `server/portal-engine/`, `lib/portal-reset/`, `db/seed/portal-reset-starting-list.json`
 
 ## Deferred
