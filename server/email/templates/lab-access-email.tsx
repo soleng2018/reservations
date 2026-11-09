@@ -113,7 +113,7 @@ export function LabAccessEmail({
     >
       <TwoLoginsNotice
         nileLogin={nileLogin}
-        withSetPassword={kind !== "rescheduled"}
+        withSetPassword={kind === "booked"}
       />
       <DetailsCard
         rows={[

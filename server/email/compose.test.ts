@@ -121,13 +121,13 @@ describe("booking email render (spec 0013 AC-23)", () => {
     },
   );
 
-  it("leaves the set password sentence out of the rescheduled email only", async () => {
+  it("keeps the set password sentence in the booked email only", async () => {
     const sentence = "we'll email you a link to set your password";
     const text = async (kind: "booked" | "rescheduled" | "reminder") =>
       (await renderBookingEmail(kind, SAMPLE_BOOKING_DETAILS)).text;
-    expect(await text("rescheduled")).not.toContain(sentence);
     expect(await text("booked")).toContain(sentence);
-    expect(await text("reminder")).toContain(sentence);
+    expect(await text("rescheduled")).not.toContain(sentence);
+    expect(await text("reminder")).not.toContain(sentence);
   });
 
   it("falls back to the pattern when the booking has no lab login", async () => {

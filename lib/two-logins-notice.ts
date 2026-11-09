@@ -17,7 +17,8 @@ export const WORK_EMAIL = {
 } as const;
 
 // The set password sentence is for a first booking. A learner who is
-// rescheduling already has a password, so that email leaves it out.
+// rescheduling, or is reminded of a lab, already has a password, so those
+// leave it out.
 export const workEmailBody = (withSetPassword: boolean): string =>
   withSetPassword ? WORK_EMAIL.body + WORK_EMAIL.setPassword : WORK_EMAIL.body;
 
