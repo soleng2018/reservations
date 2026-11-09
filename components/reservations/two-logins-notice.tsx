@@ -7,6 +7,7 @@ import {
   WINDOW_NOTICE,
   WORK_EMAIL,
   labLoginBody,
+  workEmailBody,
 } from "@/lib/two-logins-notice";
 
 // The two things a learner must not miss: the links only work during the
@@ -14,8 +15,11 @@ import {
 // Shown above the lab access card while the booking's links are live.
 export function TwoLoginsNotice({
   nileLogin = null,
+  withSetPassword = true,
 }: {
   readonly nileLogin?: string | null;
+  // False for a learner who already has a password (a reschedule).
+  readonly withSetPassword?: boolean;
 }) {
   return (
     <div className="mb-3 flex flex-col gap-3">
@@ -50,7 +54,7 @@ export function TwoLoginsNotice({
             n="1"
             heading={WORK_EMAIL.heading}
             tag={WORK_EMAIL.tag}
-            body={WORK_EMAIL.body}
+            body={workEmailBody(withSetPassword)}
           />
           <Login
             n="2"

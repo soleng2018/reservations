@@ -111,7 +111,10 @@ export function LabAccessEmail({
       heading={text.heading}
       intro={text.intro}
     >
-      <TwoLoginsNotice nileLogin={nileLogin} />
+      <TwoLoginsNotice
+        nileLogin={nileLogin}
+        withSetPassword={kind === "booked"}
+      />
       <DetailsCard
         rows={[
           ["Lab type", details.labTypeName],

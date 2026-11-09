@@ -55,7 +55,10 @@ export function RescheduleSuccess({
 
       {done.access ? (
         <>
-          <TwoLoginsNotice nileLogin={done.access.nileLogin ?? null} />
+          <TwoLoginsNotice
+            nileLogin={done.access.nileLogin ?? null}
+            withSetPassword={false}
+          />
           <LabAccessCard
             variant="success"
             note={SUCCESS_NOTE}
