@@ -19,6 +19,7 @@ import {
   type MembershipError,
   type TestbedGroup,
 } from "@/server/authentik/groups";
+import { guardGroupWrite } from "@/server/authentik/guard";
 import { endAuthentikSessions } from "@/server/authentik/sessions";
 import {
   makeRevoker,
@@ -136,7 +137,13 @@ export async function reconcileAccess(
     }
   }
 
-  await reconcileTypeGroups(api, conn, current, revoke);
+  await reconcileTypeGroups(
+    api,
+    conn,
+    current,
+    revoke,
+    new Set(rows.map((r) => r.groupPk)),
+  );
 }
 
 // Spec 0028: every live Testbed Type's group (spec 0026) holds the learners
@@ -149,6 +156,7 @@ async function reconcileTypeGroups(
   conn: Kysely<DB>,
   current: readonly Current[],
   revoke: RunRevoke,
+  testbedPks: ReadonlySet<string>,
 ): Promise<void> {
   const types = await conn
     .selectFrom("testbed_types")
@@ -160,7 +168,24 @@ async function reconcileTypeGroups(
   for (const t of types) {
     const pk = t.authentik_group_pk;
     if (pk === null) continue;
+    // A group a testbed also uses belongs to the testbed pass: two passes
+    // would remove and add the same learners every tick.
+    if (testbedPks.has(pk)) {
+      console.error(
+        `reconciler: type ${t.id} group ${pk} is also a testbed group, skipped`,
+      );
+      continue;
+    }
     try {
+      // The group must still pass the add check (not admin, not a testbed
+      // group, flat) before anything is read or removed from it.
+      const usable = await guardGroupWrite(api, pk, "add_type");
+      if (!usable.ok) {
+        console.error(
+          `reconciler: type ${t.id} group ${pk} is not usable (${usable.error}), skipped`,
+        );
+        continue;
+      }
       const read = await readTestbedGroup(api, pk);
       const row: GroupRow = {
         id: t.id,
@@ -353,14 +378,14 @@ async function reconcileGroup(
     // stamps it.
     if (read.error !== "not_found" || live.length > 0)
       console.error(
-        `reconciler: testbed ${label.id} could not read group ${groupPk} (${read.error})`,
+        `reconciler: ${kind} ${label.id} could not read group ${groupPk} (${read.error})`,
       );
     return;
   }
   const members = await testbedGroupMembers(api, groupPk);
   if (!members.ok) {
     console.error(
-      `reconciler: testbed ${label.id} could not read the members of group ${groupPk} (${members.error})`,
+      `reconciler: ${kind} ${label.id} could not read the members of group ${groupPk} (${members.error})`,
     );
     return;
   }

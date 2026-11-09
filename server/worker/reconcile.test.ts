@@ -1061,4 +1061,65 @@ describe.skipIf(!hasDb)("reconcileAccess type groups (spec 0028)", () => {
       await reconcileAccess(ak.api, asConn(trx), OFF);
       expect(ak.users.some((u) => u.groups.includes(tgroup))).toBe(false);
     }));
+
+  it("skips a type group a testbed also uses, or marked as a testbed group, and removes no one from it", () =>
+    inRollback(async (trx) => {
+      const shared = groupPk();
+      const typeA = await makeType(trx, {
+        authentik_group_pk: shared,
+        authentik_group_origin: "reused",
+      });
+      const tb = await makeTestbed(trx, typeA.id, {
+        authentik_group_pk: shared,
+      });
+      await bookingOn(trx, tb.id, typeA.id, TP + 21, -1, 2);
+      const marked = groupPk();
+      await makeType(trx, {
+        authentik_group_pk: marked,
+        authentik_group_origin: "reused",
+      });
+      const ak = fakeAuthentik(
+        [
+          fakeLearner(TP + 21),
+          fakeLearner(TP + 22, { groups: [shared, marked] }),
+        ],
+        {
+          groups: [
+            markedGroup(shared, tb.group_name),
+            markedGroup(marked, "Marked"),
+          ],
+        },
+      );
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      // The testbed pass owns the shared group. The marked group is never
+      // reconciled as a type group: TP+22 stays and TP+21 is not added.
+      const inMarked = ak.users.filter((u) => u.groups.includes(marked));
+      expect(inMarked.map((u) => u.pk)).toEqual([TP + 22]);
+    }));
+
+  it("a type group removal ends no session and audits kind type", () =>
+    inRollback(async (trx) => {
+      const tgroup = groupPk();
+      await makeType(trx, {
+        authentik_group_pk: tgroup,
+        authentik_group_origin: "reused",
+      });
+      const gone = await makeUser(trx, { authentik_user_pk: TP + 31 });
+      const ak = fakeAuthentik([fakeLearner(TP + 31, { groups: [tgroup] })], {
+        groups: [fakeGroup(tgroup, "Lab guide")],
+        sessions: [
+          { uuid: "s9", user: TP + 31, username: `learner-${TP + 31}@x.test` },
+        ],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users[0]?.groups).not.toContain(tgroup);
+      expect(ak.sessions).toHaveLength(1);
+      const rows = (await audited(trx, "access.revoked")).filter(
+        (r) => r.target_id === gone.id,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.metadata).toMatchObject({ kind: "type" });
+    }));
 });

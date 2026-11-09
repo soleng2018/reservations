@@ -17,3 +17,9 @@ Spec 0026 gave every Testbed Type an Authentik group for the LMS but said no lea
 - **AC-6**: The reconciler still never creates, renames, or deletes any group; `tests/group-writes-scan.test.ts` is unchanged.
 
 Access ends with the booking, as testbed access does. A learner with an upcoming booking is added when it starts, within one worker tick.
+
+## Safety and rollout
+
+- A type group is skipped, with one logged line, when its pk is also a testbed's group pk, or when it no longer passes the `add_type` guard (for example the owner later marks it `hol_testbed_group`). Nothing is added or removed there, so the two passes never fight over one group. (Found in review 2026-11-09.)
+- The first run after deploy removes tagged learners who are in a type group but have no Current booking of that type, including learners the owner added by hand. Untagged users are never touched.
+- A soft deleted type is no longer visited, so a reused group left in place keeps its members. Accepted.
