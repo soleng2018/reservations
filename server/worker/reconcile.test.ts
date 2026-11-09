@@ -998,3 +998,67 @@ describe.skipIf(!hasDb)("reconcileAccess groups (spec 0017 AC-10)", () => {
       expect(lines[0]).toContain("1 add(s) refused");
     }));
 });
+
+// covers: spec 0028 (a type's group follows Current bookings of that type)
+describe.skipIf(!hasDb)("reconcileAccess type groups (spec 0028)", () => {
+  const TP = 930_000 + Math.floor(Math.random() * 9_000);
+
+  it("adds a Current learner to the type group, not an upcoming one, and removes an ended one", () =>
+    inRollback(async (trx) => {
+      const tgroup = groupPk();
+      const type = await makeType(trx, {
+        authentik_group_pk: tgroup,
+        authentik_group_origin: "reused",
+      });
+      const bgroup = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: bgroup,
+      });
+      await bookingOn(trx, testbed.id, type.id, TP + 1, -1, 2);
+      await bookingOn(trx, testbed.id, type.id, TP + 2, 5, 8);
+      await makeUser(trx, { authentik_user_pk: TP + 3 });
+      const ak = fakeAuthentik(
+        [
+          fakeLearner(TP + 1),
+          fakeLearner(TP + 2),
+          fakeLearner(TP + 3, { groups: [tgroup] }),
+          fakeUser({ pk: TP + 4, groups: [tgroup] }),
+        ],
+        {
+          groups: [
+            markedGroup(bgroup, testbed.group_name),
+            fakeGroup(tgroup, "Lab guide"),
+          ],
+        },
+      );
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+
+      const members = ak.users.filter((u) => u.groups.includes(tgroup));
+      expect(members.map((u) => u.pk).sort()).toEqual([TP + 1, TP + 4]);
+      expect(groupWrites(ak.writes)).toEqual([]);
+    }));
+
+  it("never writes a type group that is a testbed group or the admin group", () =>
+    inRollback(async (trx) => {
+      const tgroup = groupPk();
+      const type = await makeType(trx, {
+        authentik_group_pk: tgroup,
+        authentik_group_origin: "reused",
+      });
+      const bgroup = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: bgroup,
+      });
+      await bookingOn(trx, testbed.id, type.id, TP + 11, -1, 2);
+      const ak = fakeAuthentik([fakeLearner(TP + 11)], {
+        groups: [
+          markedGroup(bgroup, testbed.group_name),
+          markedGroup(tgroup, "Marked as a testbed group"),
+        ],
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users.some((u) => u.groups.includes(tgroup))).toBe(false);
+    }));
+});

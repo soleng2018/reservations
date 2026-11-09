@@ -284,3 +284,41 @@ describe("checkTypeGroupWrite (spec 0026)", () => {
     ).toEqual({ ok: false, error: "unsafe_group" });
   });
 });
+
+describe("checkGroupWrite add_type (spec 0028)", () => {
+  const plain = (over: Partial<GroupTarget> = {}): GroupTarget => ({
+    pk: "g1",
+    name: "Lab guide",
+    isSuperuser: false,
+    parents: [],
+    roles: [],
+    attributes: {},
+    ...over,
+  });
+
+  it("allows a flat plain or app made type group", () => {
+    expect(checkGroupWrite(plain(), "add_type", ADMINS).ok).toBe(true);
+    expect(
+      checkGroupWrite(
+        plain({ attributes: { hol_type_group: true } }),
+        "add_type",
+        ADMINS,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["admin by pk", plain({ pk: ADMINS })],
+    ["admin by name", plain({ name: "hol-admins" })],
+    ["superuser", plain({ isSuperuser: true })],
+    ["unknown superuser", plain({ isSuperuser: undefined })],
+    ["parent", plain({ parents: ["p"] })],
+    ["role", plain({ roles: ["r"] })],
+    ["testbed marker", plain({ attributes: { hol_testbed_group: false } })],
+  ])("refuses %s", (_, g) => {
+    expect(checkGroupWrite(g, "add_type", ADMINS)).toEqual({
+      ok: false,
+      error: "not_testbed_group",
+    });
+  });
+});
