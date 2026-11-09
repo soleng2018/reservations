@@ -12,8 +12,14 @@ export const LOGINS_TITLE = "You'll have two logins, one password";
 export const WORK_EMAIL = {
   heading: "Your real work email",
   tag: "For the reservation system",
-  body: "Use it to book, reschedule, or cancel. After you book, we'll email you a link to set your password.",
+  body: "Use it to book, reschedule, or cancel.",
+  setPassword: " After you book, we'll email you a link to set your password.",
 } as const;
+
+// The set password sentence is for a first booking. A learner who is
+// rescheduling already has a password, so that email leaves it out.
+export const workEmailBody = (withSetPassword: boolean): string =>
+  withSetPassword ? WORK_EMAIL.body + WORK_EMAIL.setPassword : WORK_EMAIL.body;
 
 export const SAME_PASSWORD =
   "Both use the same password: the one you set from that link.";

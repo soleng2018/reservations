@@ -8,6 +8,7 @@ import {
   WINDOW_NOTICE,
   WORK_EMAIL,
   labLoginBody,
+  workEmailBody,
 } from "@/lib/two-logins-notice";
 import { BLUE, INK, sectionPad } from "./email-frame";
 
@@ -26,8 +27,10 @@ const mono = {
 
 export function TwoLoginsNotice({
   nileLogin,
+  withSetPassword,
 }: {
   readonly nileLogin: string | null;
+  readonly withSetPassword: boolean;
 }) {
   return (
     <Section style={sectionPad(20, 4)}>
@@ -71,7 +74,7 @@ export function TwoLoginsNotice({
             n="1"
             heading={WORK_EMAIL.heading}
             tag={WORK_EMAIL.tag}
-            body={WORK_EMAIL.body}
+            body={workEmailBody(withSetPassword)}
           />
           <Login
             n="2"
