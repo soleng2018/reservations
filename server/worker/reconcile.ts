@@ -19,6 +19,7 @@ import {
   type MembershipError,
   type TestbedGroup,
 } from "@/server/authentik/groups";
+import { guardGroupWrite } from "@/server/authentik/guard";
 import { endAuthentikSessions } from "@/server/authentik/sessions";
 import {
   makeRevoker,
@@ -43,11 +44,14 @@ import type { DB } from "@/server/db/types";
 // live testbed whose stored pk went stale (the group is gone, or renamed) is
 // found again by the testbed's group name, and only the database row changes.
 
+type GroupKind = "testbed" | "type";
+
 type GroupRead = Result<TestbedGroup, AuthentikFailure>;
 
 type Current = {
   readonly bookingId: string;
   readonly testbedId: string;
+  readonly typeId: string;
   readonly userId: string;
   readonly pk: number;
 };
@@ -116,9 +120,91 @@ export async function reconcileAccess(
     const read = reads.get(pk);
     if (skippedPks.has(pk) || !read) continue;
     try {
-      await reconcileGroup(api, conn, pk, group, read, current, revoke);
+      const liveIds = new Set(group.filter((r) => !r.deleted).map((r) => r.id));
+      const desired = current.filter((c) => liveIds.has(c.testbedId));
+      await reconcileGroup(
+        api,
+        conn,
+        pk,
+        group,
+        read,
+        desired,
+        revoke,
+        "testbed",
+      );
     } catch (e) {
       console.error(`reconciler: group ${pk} failed`, e);
+    }
+  }
+
+  await reconcileTypeGroups(
+    api,
+    conn,
+    current,
+    revoke,
+    new Set(rows.map((r) => r.groupPk)),
+  );
+}
+
+// Spec 0028: every live Testbed Type's group (spec 0026) holds the learners
+// whose confirmed booking on a testbed of that type is Current, so the LMS
+// opens that lab guide. The pk comes from the type row and is never relinked;
+// a type with no group yet (not backfilled) is skipped. Two types can't share
+// a group (a unique index), so one entry per type is one group.
+async function reconcileTypeGroups(
+  api: CoreApi,
+  conn: Kysely<DB>,
+  current: readonly Current[],
+  revoke: RunRevoke,
+  testbedPks: ReadonlySet<string>,
+): Promise<void> {
+  const types = await conn
+    .selectFrom("testbed_types")
+    .select(["id", "name", "authentik_group_pk"])
+    .where("deleted_at", "is", null)
+    .where("authentik_group_pk", "is not", null)
+    .orderBy("created_at")
+    .execute();
+  for (const t of types) {
+    const pk = t.authentik_group_pk;
+    if (pk === null) continue;
+    // A group a testbed also uses belongs to the testbed pass: two passes
+    // would remove and add the same learners every tick.
+    if (testbedPks.has(pk)) {
+      console.error(
+        `reconciler: type ${t.id} group ${pk} is also a testbed group, skipped`,
+      );
+      continue;
+    }
+    try {
+      // The group must still pass the add check (not admin, not a testbed
+      // group, flat) before anything is read or removed from it.
+      const usable = await guardGroupWrite(api, pk, "add_type");
+      if (!usable.ok) {
+        console.error(
+          `reconciler: type ${t.id} group ${pk} is not usable (${usable.error}), skipped`,
+        );
+        continue;
+      }
+      const read = await readTestbedGroup(api, pk);
+      const row: GroupRow = {
+        id: t.id,
+        groupName: t.name,
+        groupPk: pk,
+        deleted: false,
+      };
+      await reconcileGroup(
+        api,
+        conn,
+        pk,
+        [row],
+        read,
+        current.filter((c) => c.typeId === t.id),
+        revoke,
+        "type",
+      );
+    } catch (e) {
+      console.error(`reconciler: type group ${pk} failed`, e);
     }
   }
 }
@@ -153,9 +239,11 @@ async function currentLearners(conn: Kysely<DB>): Promise<readonly Current[]> {
   const current = await conn
     .selectFrom("bookings as b")
     .innerJoin("users as u", "u.id", "b.user_id")
+    .innerJoin("testbeds as t", "t.id", "b.testbed_id")
     .select([
       "b.id as bookingId",
       "b.testbed_id as testbedId",
+      "t.testbed_type_id as typeId",
       "u.id as userId",
       "u.authentik_user_pk as pk",
     ])
@@ -278,8 +366,9 @@ async function reconcileGroup(
   groupPk: string,
   rows: readonly GroupRow[],
   read: GroupRead,
-  current: readonly Current[],
+  desired: readonly Current[],
   revoke: RunRevoke,
+  kind: GroupKind,
 ): Promise<void> {
   const live = rows.filter((r) => !r.deleted);
   const label = live[0] ?? rows[0];
@@ -289,24 +378,27 @@ async function reconcileGroup(
     // stamps it.
     if (read.error !== "not_found" || live.length > 0)
       console.error(
-        `reconciler: testbed ${label.id} could not read group ${groupPk} (${read.error})`,
+        `reconciler: ${kind} ${label.id} could not read group ${groupPk} (${read.error})`,
       );
     return;
   }
   const members = await testbedGroupMembers(api, groupPk);
   if (!members.ok) {
     console.error(
-      `reconciler: testbed ${label.id} could not read the members of group ${groupPk} (${members.error})`,
+      `reconciler: ${kind} ${label.id} could not read the members of group ${groupPk} (${members.error})`,
     );
     return;
   }
-  const liveIds = new Set(live.map((r) => r.id));
-  const desired = current.filter((c) => liveIds.has(c.testbedId));
   const diff = membershipDiff(new Set(desired.map((c) => c.pk)), members.value);
 
   const addFailures: MembershipError[] = [];
   for (const pk of diff.add) {
-    const added = await addToTestbedGroup(api, groupPk, pk);
+    const added = await addToTestbedGroup(
+      api,
+      groupPk,
+      pk,
+      kind === "type" ? "add_type" : "add",
+    );
     if (!added.ok) {
       addFailures.push(added.error);
       continue;
@@ -317,8 +409,12 @@ async function reconcileGroup(
       action: "access.granted",
       targetType: "booking",
       targetId: booking?.bookingId ?? label.id,
-      summary: "Learner added to the testbed's access group",
+      summary:
+        kind === "type"
+          ? "Learner added to the testbed type's group"
+          : "Learner added to the testbed's access group",
       metadata: {
+        kind,
         testbedId: booking?.testbedId ?? label.id,
         groupPk,
         authentikUserPk: pk,
@@ -326,7 +422,7 @@ async function reconcileGroup(
       },
     });
   }
-  logFailures(label.id, groupPk, "add", addFailures);
+  logFailures(kind, label.id, groupPk, "add", addFailures);
 
   const removeFailures: MembershipError[] = [];
   for (const pk of diff.remove) {
@@ -340,6 +436,19 @@ async function reconcileGroup(
       .select(["id", "email"])
       .where("authentik_user_pk", "=", pk)
       .executeTakeFirst();
+    if (kind === "type") {
+      // The type group only opens the LMS: the testbed group's removal, in
+      // the same run, already ends sessions and revokes Cloudflare.
+      await audit(conn, {
+        actorUserId: null,
+        action: "access.revoked",
+        targetType: user ? "user" : "authentik_group",
+        targetId: user?.id ?? groupPk,
+        summary: "Learner removed from the testbed type's group",
+        metadata: { kind, typeId: label.id, groupPk, authentikUserPk: pk },
+      });
+      continue;
+    }
     const who = user ? `user ${user.id}` : `pk ${pk}`;
     // Membership is already gone, so neither step is retried after this
     // run: a failure is logged (by id, never the email) and audited.
@@ -367,11 +476,12 @@ async function reconcileGroup(
       },
     });
   }
-  logFailures(label.id, groupPk, "removal", removeFailures);
+  logFailures(kind, label.id, groupPk, "removal", removeFailures);
 }
 
 // One line per testbed and kind: how many writes were refused, and why.
 function logFailures(
+  kind: GroupKind,
   testbedId: string,
   groupPk: string,
   what: "add" | "removal",
@@ -379,6 +489,6 @@ function logFailures(
 ): void {
   if (errors.length === 0) return;
   console.error(
-    `reconciler: testbed ${testbedId} group ${groupPk}: ${errors.length} ${what}(s) refused (${[...new Set(errors)].join(", ")})`,
+    `reconciler: ${kind} ${testbedId} group ${groupPk}: ${errors.length} ${what}(s) refused (${[...new Set(errors)].join(", ")})`,
   );
 }

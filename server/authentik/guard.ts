@@ -32,7 +32,10 @@ export type UserTarget = {
 // "add": a learner joins the group, so it must be a flat, marked testbed
 // group. "remove": a learner leaves, which is allowed on any group but the
 // admin one, so a group that lost its marker still lets ended learners out.
-export type GroupWritePurpose = "add" | "remove";
+// "add_type" (spec 0028): a learner joins a Testbed Type's group, which the
+// owner may have made (a reused group) or the app did (spec 0026), so it must
+// be flat, not admin, not superuser, and never a testbed group.
+export type GroupWritePurpose = "add" | "add_type" | "remove";
 
 export type GroupTarget = {
   readonly pk: string;
@@ -77,6 +80,16 @@ const isUsableTestbedGroup = (group: GroupTarget) =>
   group.parents?.length === 0 &&
   group.roles?.length === 0;
 
+// A Testbed Type's group learners may be added to (spec 0028): flat, not a
+// superuser group, and without the testbed marker key, whatever its value, the
+// same safety test spec 0026 AC-3 applies before linking a group.
+const isUsableTypeGroup = (group: GroupTarget, adminGroupUuid: string) =>
+  !isAdminGroup(group, adminGroupUuid) &&
+  group.isSuperuser === false &&
+  group.parents?.length === 0 &&
+  group.roles?.length === 0 &&
+  !(TESTBED_GROUP_MARKER in group.attributes);
+
 // Pure: may this write touch this group?
 export function checkGroupWrite(
   group: GroupTarget,
@@ -85,6 +98,8 @@ export function checkGroupWrite(
 ): Result<void, GroupRefusal> {
   if (isAdminGroup(group, adminGroupUuid)) return err("not_testbed_group");
   if (purpose === "add" && !isUsableTestbedGroup(group))
+    return err("not_testbed_group");
+  if (purpose === "add_type" && !isUsableTypeGroup(group, adminGroupUuid))
     return err("not_testbed_group");
   return ok(undefined);
 }

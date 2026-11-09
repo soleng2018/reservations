@@ -17,6 +17,7 @@ import {
   TESTBED_GROUP_MARKER,
   toGroupTarget,
   type GroupRefusal,
+  type GroupWritePurpose,
   type UserRefusal,
 } from "./guard";
 
@@ -74,7 +75,7 @@ async function guarded(
   api: CoreApi,
   groupUuid: string,
   userPk: number,
-  purpose: "add" | "remove",
+  purpose: GroupWritePurpose,
 ): Promise<Result<void, MembershipError>> {
   const group = await guardGroupWrite(api, groupUuid, purpose);
   if (!group.ok) return group;
@@ -86,8 +87,9 @@ export async function addToTestbedGroup(
   api: CoreApi,
   groupUuid: string,
   userPk: number,
+  purpose: "add" | "add_type" = "add",
 ): Promise<Result<void, MembershipError>> {
-  const allowed = await guarded(api, groupUuid, userPk, "add");
+  const allowed = await guarded(api, groupUuid, userPk, purpose);
   if (!allowed.ok) return allowed;
   return call("groups.add_user", () =>
     api.coreGroupsAddUserCreate({
