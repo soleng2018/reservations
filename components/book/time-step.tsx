@@ -181,6 +181,11 @@ export function TimeStep({
                               className="peer sr-only"
                             />
                             <span
+                              title={
+                                open || isCurrent
+                                  ? undefined
+                                  : `Not available: a full ${durationLabel} reservation can't start at this time.`
+                              }
                               className={cn(
                                 "flex min-h-8 flex-col items-center justify-center rounded-[0.375rem] px-1 py-1.5 text-[0.71875rem] leading-tight font-semibold transition-colors duration-120 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring",
                                 inReservation(s)
@@ -206,6 +211,9 @@ export function TimeStep({
                   </div>
                 ))}
               </fieldset>
+              <p className="mt-2 text-xs text-fg3">
+                Grayed times can&apos;t fit a full {durationLabel} reservation.
+              </p>
               {dayHasFree ? null : (
                 <p className="mt-2 text-[0.8125rem] text-fg3" role="status">
                   No open times left on this day. Try another date.
