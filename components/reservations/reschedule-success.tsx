@@ -3,6 +3,7 @@ import { CheckIcon } from "lucide-react";
 import { BOOK_HEADING_ID } from "@/components/book/step-heading";
 import { buttonVariants } from "@/components/ui/button";
 import { LabAccessCard } from "./lab-access-card";
+import { TwoLoginsNotice } from "./two-logins-notice";
 import { formatDateTime } from "@/lib/format-time";
 import { labRows, SUCCESS_NOTE } from "@/lib/lab-access";
 import type { Rescheduled } from "@/lib/reschedule-flow";
@@ -53,12 +54,15 @@ export function RescheduleSuccess({
       </dl>
 
       {done.access ? (
-        <LabAccessCard
-          variant="success"
-          note={SUCCESS_NOTE}
-          rows={{ kind: "active", rows: labRows(done.access) }}
-          nileLogin={done.access.nileLogin}
-        />
+        <>
+          <TwoLoginsNotice nileLogin={done.access.nileLogin ?? null} />
+          <LabAccessCard
+            variant="success"
+            note={SUCCESS_NOTE}
+            rows={{ kind: "active", rows: labRows(done.access) }}
+            nileLogin={done.access.nileLogin}
+          />
+        </>
       ) : null}
 
       <Link

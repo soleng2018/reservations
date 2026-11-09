@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LearnerFrame } from "@/components/learner-frame";
 import { LabAccessCard } from "@/components/reservations/lab-access-card";
+import { TwoLoginsNotice } from "@/components/reservations/two-logins-notice";
 import { Badge } from "@/components/ui/badge";
 import { toneFor } from "@/lib/badge-tones";
 import { bookingPhase } from "@/lib/booking-phase";
@@ -63,6 +64,9 @@ export default async function LabAccessPage(
             </div>
           ))}
         </dl>
+        {labCardRows(access.links, view).kind === "active" ? (
+          <TwoLoginsNotice nileLogin={access.links.nileLogin ?? null} />
+        ) : null}
         <LabAccessCard
           variant="detail"
           note={view.note}
