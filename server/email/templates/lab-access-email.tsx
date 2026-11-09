@@ -12,6 +12,7 @@ import {
 import { firstName } from "@/lib/manage-reservations";
 import { CtaButton } from "./cta-button";
 import { DetailsCard } from "./details-card";
+import { TwoLoginsNotice } from "./two-logins-notice";
 import { BLUE, EmailFrame, INK, LINE, MUTED, sectionPad } from "./email-frame";
 
 // Spec 0013 AC-12: the booked and rescheduled email, after
@@ -110,6 +111,7 @@ export function LabAccessEmail({
       heading={text.heading}
       intro={text.intro}
     >
+      <TwoLoginsNotice nileLogin={nileLogin} />
       <DetailsCard
         rows={[
           ["Lab type", details.labTypeName],

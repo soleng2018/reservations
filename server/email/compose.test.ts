@@ -98,6 +98,42 @@ describe("booking email render (spec 0013 AC-23)", () => {
     expect(ics).toMatchSnapshot("ics");
   });
 
+  // The two logins notice: booked, rescheduled and reminder all carry it;
+  // a cancellation does not.
+  it.each(["booked", "rescheduled", "reminder"] as const)(
+    "puts the two logins notice in the %s email, with the real lab login",
+    async (kind) => {
+      const { html, text } = await renderBookingEmail(
+        kind,
+        SAMPLE_BOOKING_DETAILS,
+        [],
+        "jane.doe@nileworkshop-1.com",
+      );
+      for (const out of [html, text]) {
+        expect(out).toContain("Lab links work only during your window.");
+        expect(out).toContain("two logins, one password");
+        expect(out).toContain(
+          "Both use the same password: the one you set from that link.",
+        );
+        expect(out).toContain("jane.doe@nileworkshop-1.com");
+        expect(out).not.toContain("firstname.lastname@labdomain");
+      }
+    },
+  );
+
+  it("falls back to the pattern when the booking has no lab login", async () => {
+    const { text } = await renderBookingEmail("booked", SAMPLE_BOOKING_DETAILS);
+    expect(text).toContain("firstname.lastname@labdomain");
+  });
+
+  it("leaves the notice out of a cancellation", async () => {
+    const { html } = await renderBookingEmail(
+      "cancelled",
+      SAMPLE_BOOKING_DETAILS,
+    );
+    expect(html).not.toContain("two logins");
+  });
+
   // covers: spec 0007 (client OS logins in the booking email)
   it("shows each client's OS login under its link, and only its own", async () => {
     const { html, text } = await renderBookingEmail(

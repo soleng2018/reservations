@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CheckIcon } from "lucide-react";
 import { LabAccessCard } from "@/components/reservations/lab-access-card";
+import { TwoLoginsNotice } from "@/components/reservations/two-logins-notice";
 import { buttonVariants } from "@/components/ui/button";
 import type { Booked } from "@/lib/booking-flow";
 import { formatDateTime } from "@/lib/format-time";
@@ -105,12 +106,15 @@ export function BookingSuccess({
       )}
 
       {!booking.newUser && booking.access ? (
-        <LabAccessCard
-          variant="success"
-          note={SUCCESS_NOTE}
-          rows={{ kind: "active", rows: labRows(booking.access) }}
-          nileLogin={booking.access.nileLogin}
-        />
+        <>
+          <TwoLoginsNotice nileLogin={booking.access.nileLogin ?? null} />
+          <LabAccessCard
+            variant="success"
+            note={SUCCESS_NOTE}
+            rows={{ kind: "active", rows: labRows(booking.access) }}
+            nileLogin={booking.access.nileLogin}
+          />
+        </>
       ) : null}
 
       <Link
