@@ -5,6 +5,8 @@ import {
   asConn,
   hasDb,
   inRollback,
+  dropHalfHourRule,
+  inRollbackDdl,
   makeTestbed,
   makeType,
   makeUser,
@@ -31,7 +33,25 @@ const failing =
   (error: SignInError): RunDeps["signIn"] =>
   async () => ({ ok: false, error });
 
+// The saved step list lives in the shared database and the owner edits it
+// (the Users step is enabled live now, and the fake portal has no signed in
+// user for its guards). A test that needs a known list sets it, inside its
+// own rolled back transaction.
+async function oneWaitStep(trx: Transaction<DB>) {
+  await trx.deleteFrom("portal_reset_steps").execute();
+  await trx
+    .insertInto("portal_reset_steps")
+    .values({
+      position: 1,
+      feature_name: "Tracer",
+      enabled: true,
+      definition: JSON.stringify({ parts: [{ kind: "wait", seconds: 1 }] }),
+    })
+    .execute();
+}
+
 async function start(trx: Transaction<DB>, mode: "live" | "dry_run" = "live") {
+  await oneWaitStep(trx);
   await trx.updateTable("portal_reset_settings").set({ mode }).execute();
   await trx
     .updateTable("portal_reset_settings")
@@ -202,6 +222,39 @@ describe.skipIf(!hasDb)("a held run (AC-14)", () => {
       const s = await held(trx, 29);
       await settleHeldRuns(s.conn);
       expect((await stateOf(trx, s.run.id)).state).toBe("held");
+    }));
+
+  // Spec 0029 AC-3: the held run retry uses the same 6 minute margin.
+  it("ends lab_started when a lab starts 5.5 minutes away (inside 6), and keeps waiting when it is 7 away", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      const s = await held(trx, 5);
+      const user = await makeUser(trx);
+      const booking = await trx
+        .insertInto("bookings")
+        .values({
+          user_id: user.id,
+          testbed_id: s.testbed.id,
+          testbed_type_id: s.type.id,
+          starts_at: slot(2),
+          ends_at: slot(4),
+          status: "confirmed",
+        })
+        .returning("id")
+        .executeTakeFirstOrThrow();
+      const moveTo = (interval: string) =>
+        sql`update hol_app.bookings set starts_at = now() + ${interval}::interval where id = ${booking.id}::uuid`.execute(
+          trx,
+        );
+      await moveTo("7 minutes");
+      await settleHeldRuns(s.conn);
+      expect((await stateOf(trx, s.run.id)).state).toBe("held");
+      await moveTo("5 minutes 30 seconds");
+      await settleHeldRuns(s.conn);
+      expect(await stateOf(trx, s.run.id)).toMatchObject({
+        state: "aborted",
+        abort_reason: "lab_started",
+      });
     }));
 
   it("goes back to the queue after 30 minutes with no lab, and is claimed again", () =>

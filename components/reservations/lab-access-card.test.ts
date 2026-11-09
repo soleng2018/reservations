@@ -40,7 +40,7 @@ describe("LabAccessCard while active", () => {
     );
     expect(html).toContain("Your lab access");
     expect(html).toContain(
-      "These links start working at your start time (allow up to a minute).",
+      "These links start working about 5 minutes before your start time (allow up to a minute).",
     );
     expect(html).toContain("Nile Portal");
     expect(html).toContain("LMS course");
@@ -68,7 +68,7 @@ describe("LabAccessCard while active", () => {
     expect(html).toContain("Lab access");
     expect(html).toContain("Testbed assigned");
     expect(html).toContain("aa bench");
-    expect(html).toContain("Access can take up to a minute");
+    expect(html).toContain("Access can take up to a minute to start.");
   });
 });
 

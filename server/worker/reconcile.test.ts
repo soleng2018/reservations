@@ -16,6 +16,9 @@ import {
   asConn,
   hasDb,
   inRollback,
+  dropHalfHourRule,
+  inRollbackDdl,
+  startBookingIn,
   makeAuthUser,
   makeTestbed,
   makeType,
@@ -71,6 +74,103 @@ const audited = (trx: Kysely<DB>, action: string) =>
 
 // pk numbers high enough never to meet a real Authentik pk in the shared DB.
 const PK = 900_000 + Math.floor(Math.random() * 90_000);
+
+// covers: spec 0029 AC-1 (access opens 5 minutes before the start)
+describe.skipIf(!hasDb)("reconcileAccess early access (spec 0029)", () => {
+  it("adds a learner 4 minutes before the start, not 6 minutes before", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      const early = await bookingOn(trx, testbed.id, type.id, PK + 11, 2, 4);
+      await startBookingIn(trx, early.booking.id, "4 minutes");
+      const ak = fakeAuthentik([fakeLearner(PK + 11)], {
+        groups: [markedGroup(pk, testbed.group_name)],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(ak.users.find((u) => u.pk === PK + 11)?.groups).toEqual([pk]);
+
+      const type2 = await makeType(trx);
+      const pk2 = groupPk();
+      const testbed2 = await makeTestbed(trx, type2.id, {
+        authentik_group_pk: pk2,
+      });
+      const late = await bookingOn(trx, testbed2.id, type2.id, PK + 12, 2, 4);
+      await startBookingIn(trx, late.booking.id, "6 minutes");
+      const ak2 = fakeAuthentik([fakeLearner(PK + 12)], {
+        groups: [markedGroup(pk2, testbed2.group_name)],
+      });
+      await reconcileAccess(ak2.api, asConn(trx), OFF);
+      expect(ak2.users.find((u) => u.pk === PK + 12)?.groups).toEqual([]);
+    }));
+
+  // AC-1, AC-2: access still ends at `ends_at`, and the next learner on the
+  // testbed is let in early, so the two are never in the group together.
+  it("hands the testbed over: removes the learner whose lab just ended, adds the next one 4 minutes early", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      const type = await makeType(trx);
+      const pk = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: pk,
+      });
+      // A true handover inside the 30 minute gap: the first lab ended 26
+      // minutes ago, the next one starts in 4 minutes.
+      const first = await bookingOn(trx, testbed.id, type.id, PK + 13, -3, -2);
+      await sql`update hol_app.bookings set ends_at = now() - interval '26 minutes' where id = ${first.booking.id}::uuid`.execute(
+        trx,
+      );
+      const next = await bookingOn(trx, testbed.id, type.id, PK + 14, 2, 4);
+      await startBookingIn(trx, next.booking.id, "4 minutes");
+      const ak = fakeAuthentik(
+        [fakeLearner(PK + 13, { groups: [pk] }), fakeLearner(PK + 14)],
+        { groups: [markedGroup(pk, testbed.group_name)] },
+      );
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(first.user.id).not.toBe(next.user.id);
+      expect(
+        ak.users.filter((u) => u.groups.includes(pk)).map((u) => u.pk),
+      ).toEqual([PK + 14]);
+    }));
+
+  // AC-1: the type group (spec 0028) follows the same 5 minute lead.
+  it("adds the learner to the type group 4 minutes before, not 6 minutes before", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      const tgroup = groupPk();
+      const type = await makeType(trx, {
+        authentik_group_pk: tgroup,
+        authentik_group_origin: "reused",
+      });
+      const bgroup = groupPk();
+      const testbed = await makeTestbed(trx, type.id, {
+        authentik_group_pk: bgroup,
+      });
+      const soon = await bookingOn(trx, testbed.id, type.id, PK + 15, 2, 4);
+      await startBookingIn(trx, soon.booking.id, "4 minutes");
+      const bgroup2 = groupPk();
+      const testbed2 = await makeTestbed(trx, type.id, {
+        authentik_group_pk: bgroup2,
+      });
+      const later = await bookingOn(trx, testbed2.id, type.id, PK + 16, 8, 10);
+      await startBookingIn(trx, later.booking.id, "6 minutes");
+      const ak = fakeAuthentik([fakeLearner(PK + 15), fakeLearner(PK + 16)], {
+        groups: [
+          markedGroup(bgroup, testbed.group_name),
+          markedGroup(bgroup2, testbed2.group_name),
+          fakeGroup(tgroup, "Lab guide"),
+        ],
+      });
+      await reconcileAccess(ak.api, asConn(trx), OFF);
+      expect(
+        ak.users.filter((u) => u.groups.includes(tgroup)).map((u) => u.pk),
+      ).toEqual([PK + 15]);
+    }));
+});
 
 // covers: AC-12, spec 0017 AC-4 (no group is ever written)
 describe.skipIf(!hasDb)("reconcileAccess (AC-12)", () => {

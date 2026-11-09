@@ -50,8 +50,12 @@ export const labRows = (links: LabLinks): readonly LabLinkRow[] => [
 export const endedRows = (links: LabLinks): readonly LabRow[] =>
   labRows(links).map(({ label, kind }) => ({ label, kind }));
 
+// Spec 0029: lab access opens this long before `starts_at`. The reconciler
+// and the portal reset's stop margin both use it, so they cannot drift.
+export const ACCESS_LEAD_MS = 5 * 60 * 1000;
+
 const START_NOTE =
-  "These links start working at your start time (allow up to a minute).";
+  "These links start working about 5 minutes before your start time (allow up to a minute).";
 const SUPPORT_NOTE = "Quote the testbed name below if you contact support.";
 
 // The success screens' note (AC-2, AC-5): a booked or rescheduled start is
@@ -72,7 +76,7 @@ export function labAccessView(phase: BookingPhase): LabAccessView {
   switch (phase) {
     case "Current":
       return {
-        note: `${SUPPORT_NOTE} Access can take up to a minute to start after your start time. Close your lab tabs when your time ends.`,
+        note: `${SUPPORT_NOTE} Access can take up to a minute to start. Close your lab tabs when your time ends.`,
         active: true,
       };
     case "Upcoming":

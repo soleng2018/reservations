@@ -90,7 +90,7 @@ describe("BookingSuccess lab access (spec 0012)", () => {
       html.indexOf("Your lab access"),
     );
     expect(html).toContain(
-      "These links start working at your start time (allow up to a minute).",
+      "These links start working about 5 minutes before your start time (allow up to a minute).",
     );
     expect(html.match(/target="_blank"/g)).toHaveLength(3);
     expect(html.match(/rel="noopener noreferrer"/g)).toHaveLength(3);

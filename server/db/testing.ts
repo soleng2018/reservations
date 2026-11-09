@@ -125,6 +125,31 @@ export async function applyBookingGapMigration(trx: Kysely<DB>): Promise<void> {
   await sql.raw(await readFile(file, "utf8")).execute(trx);
 }
 
+// Spec 0029: real starts sit on the half hour, so a test that needs a start 4
+// or 6 minutes away drops that rule first. Schema change, so the test must
+// run in `inRollbackDdl` (enforced by tests/ddl-lock-scan.test.ts).
+export async function dropHalfHourRule(trx: Kysely<DB>): Promise<void> {
+  await sql`alter table hol_app.bookings drop constraint bookings_starts_on_half_hour`.execute(
+    trx,
+  );
+}
+
+// Moves a booking's start to `interval` from now, by the database clock, and
+// returns the booking's new version (the row's version bumps on any update).
+// Only after `dropHalfHourRule`.
+export async function startBookingIn(
+  trx: Kysely<DB>,
+  id: string,
+  interval: string,
+): Promise<number> {
+  const { rows } = await sql<{ version: number }>`
+    update hol_app.bookings set starts_at = now() + ${interval}::interval
+    where id = ${id}::uuid returning version`.execute(trx);
+  const row = rows[0];
+  if (!row) throw new Error(`no booking ${id}`);
+  return row.version;
+}
+
 // The rule before spec 0020: no gap. For a test that needs the old state,
 // whatever the database has applied.
 export async function restoreOldOverlapRule(trx: Kysely<DB>): Promise<void> {

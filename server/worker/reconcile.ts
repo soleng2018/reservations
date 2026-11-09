@@ -7,6 +7,7 @@ import {
   membershipDiff,
   type GroupRow,
 } from "@/lib/reconcile";
+import { ACCESS_LEAD_MS } from "@/lib/lab-access";
 import type { Result } from "@/lib/result";
 import { audit } from "@/server/audit";
 import type { AuthentikFailure, CoreApi } from "@/server/authentik/client";
@@ -34,7 +35,8 @@ import type { DB } from "@/server/db/types";
 // The access reconciler (spec 0004 AC-12, spec 0017 AC-10), the only code
 // that adds or removes testbed group members. It works per distinct group pk:
 // the members of a group are made to match the learners whose confirmed
-// booking on any live testbed holding that pk is Current by the DB clock. A
+// booking on any live testbed holding that pk is Current by the DB clock,
+// or starts within ACCESS_LEAD_MS (spec 0029, early lab access). A
 // soft deleted testbed adds no one, so its group is emptied of tagged
 // learners. Each removal also ends the learner's Authentik sessions and, when
 // the revoke is on, makes Cloudflare Access refuse their new requests (spec
@@ -248,7 +250,12 @@ async function currentLearners(conn: Kysely<DB>): Promise<readonly Current[]> {
       "u.authentik_user_pk as pk",
     ])
     .where("b.status", "=", "confirmed")
-    .where("b.starts_at", "<=", sql<Date>`now()`)
+    // Spec 0029: access opens ACCESS_LEAD_MS before the start.
+    .where(
+      "b.starts_at",
+      "<=",
+      sql<Date>`now() + make_interval(secs => ${ACCESS_LEAD_MS / 1000})`,
+    )
     .where("b.ends_at", ">", sql<Date>`now()`)
     .where("u.authentik_user_pk", "is not", null)
     // Spec 0008 AC-11: a deactivated learner is never a desired member,

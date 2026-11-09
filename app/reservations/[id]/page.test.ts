@@ -127,7 +127,7 @@ describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
       expect(html).toMatch(/E[DS]T/); // users.timezone, America/New_York
       expect(html).toContain("Testbed assigned");
       expect(html).toContain(`href="${PORTAL}"`);
-      expect(html).toContain("Access can take up to a minute");
+      expect(html).toContain("Access can take up to a minute to start.");
       expect(html).toContain("Close your lab tabs when your time ends.");
     }));
 
@@ -159,7 +159,7 @@ describe.skipIf(!hasDb)("/reservations/[id] (AC-7, AC-8)", () => {
       const html = await render((await book(10, 12)).id);
       expect(html).toContain(">Upcoming<");
       expect(html).toContain(
-        "These links start working at your start time (allow up to a minute).",
+        "These links start working about 5 minutes before your start time (allow up to a minute).",
       );
       expect(html).toContain(`href="${PORTAL}"`);
     }));

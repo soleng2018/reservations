@@ -16,7 +16,25 @@ import { makeFake } from "./testing";
 
 afterAll(() => db().destroy());
 
+// The saved step list lives in the shared database and the owner edits it
+// (the Users step is enabled live now, and the fake portal has no signed in
+// user for its guards). A test that needs a known list sets it, inside its
+// own rolled back transaction.
+async function oneWaitStep(trx: Transaction<DB>) {
+  await trx.deleteFrom("portal_reset_steps").execute();
+  await trx
+    .insertInto("portal_reset_steps")
+    .values({
+      position: 1,
+      feature_name: "Tracer",
+      enabled: true,
+      definition: JSON.stringify({ parts: [{ kind: "wait", seconds: 1 }] }),
+    })
+    .execute();
+}
+
 async function start(trx: Transaction<DB>, minutesAgo = 6) {
+  await oneWaitStep(trx);
   await trx
     .updateTable("portal_reset_settings")
     .set({ mode: "live", abort_email: "owner@example.test" })

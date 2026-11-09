@@ -1,12 +1,20 @@
 import "server-only";
 import { sql, type Kysely, type Selectable } from "kysely";
 import type { CancelSource } from "@/lib/db-enums";
+import { ACCESS_LEAD_MS } from "@/lib/lab-access";
 import { err, ok, type Result } from "@/lib/result";
 import { cleanupHookOn } from "@/server/catalog/api-keys";
 import { queueBookingNotice } from "@/server/jobs/booking-notice";
 import { queueCleanupNotice } from "@/server/jobs/cleanup-queue";
 import { queuePortalReset } from "@/server/portal-engine/queue";
 import type { DB, Testbeds } from "./types";
+
+// Spec 0029 AC-7: a booking the learner already has access to counts as
+// Current for the reset and the cleanup hook, so this reads `starts_at` with
+// the early access lead, by the database clock. The booking phase a learner
+// sees keeps `starts_at`.
+const wasCurrent = () =>
+  sql<boolean>`starts_at <= now() + make_interval(secs => ${ACCESS_LEAD_MS / 1000})`;
 
 // Data rules for booking writes (spec 0002). Every function takes the caller's
 // transaction; Kysely's Transaction is a Kysely, so the type is the same.
@@ -99,13 +107,14 @@ export async function rescheduleBooking(
   // read first (the caller holds the row FOR UPDATE; Current is decided in
   // SQL, the database being the clock).
   // Spec 0023 AC-3 needs the old slot too, so it is always read.
+  // Spec 0029 AC-7: "Current" includes the early access lead.
   const old = await trx
     .selectFrom("bookings")
     .select([
       "testbed_id",
       "starts_at",
       "ends_at",
-      sql<boolean>`starts_at <= now()`.as("was_current"),
+      wasCurrent().as("was_current"),
     ])
     .where("id", "=", r.id)
     .where("status", "=", "confirmed")
@@ -181,7 +190,7 @@ export async function cancelBooking(
       "testbed_id",
       "starts_at",
       "ends_at",
-      sql<boolean>`starts_at <= now()`.as("was_current"),
+      wasCurrent().as("was_current"),
     ])
     .executeTakeFirst();
   if (!row) return err("stale");
