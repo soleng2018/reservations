@@ -123,7 +123,7 @@ test("a signed in learner sees their lab access after booking and on the detail 
   await expect(success).toBeVisible();
   await expect(
     success.getByText(
-      "These links start working at your start time (allow up to a minute).",
+      "These links start working about 5 minutes before your start time (allow up to a minute).",
     ),
   ).toBeVisible();
   const [mineBox, cardBox] = await Promise.all([
@@ -159,7 +159,7 @@ test("a signed in learner sees their lab access after booking and on the detail 
   const detail = page.getByRole("region", { name: "Lab access" });
   await expect(
     detail.getByText(
-      "These links start working at your start time (allow up to a minute). Quote the testbed name below if you contact support.",
+      "These links start working about 5 minutes before your start time (allow up to a minute). Quote the testbed name below if you contact support.",
     ),
   ).toBeVisible();
   await expect(detail.getByText("Testbed assigned")).toBeVisible();

@@ -44,14 +44,14 @@ describe("labRows", () => {
 describe("labAccessView", () => {
   it("is active with the support note while Current", () => {
     expect(labAccessView("Current")).toEqual({
-      note: "Quote the testbed name below if you contact support. Access can take up to a minute to start after your start time. Close your lab tabs when your time ends.",
+      note: "Quote the testbed name below if you contact support. Access can take up to a minute to start. Close your lab tabs when your time ends.",
       active: true,
     });
   });
 
   it("is active with the start note while Upcoming", () => {
     expect(labAccessView("Upcoming")).toEqual({
-      note: "These links start working at your start time (allow up to a minute). Quote the testbed name below if you contact support.",
+      note: "These links start working about 5 minutes before your start time (allow up to a minute). Quote the testbed name below if you contact support.",
       active: true,
     });
   });
@@ -69,7 +69,7 @@ describe("labAccessView", () => {
 
   it("gives the success screens the start note alone", () => {
     expect(SUCCESS_NOTE).toBe(
-      "These links start working at your start time (allow up to a minute).",
+      "These links start working about 5 minutes before your start time (allow up to a minute).",
     );
   });
 });

@@ -14,12 +14,35 @@ export type MimePart = {
   readonly body: string;
 };
 
+// Quoted printable: a soft line break (`=` at the end of a line) joins two
+// lines, and `=XX` is one byte, so a UTF-8 character is read back whole.
+const decodeQuotedPrintable = (body: string): string =>
+  Buffer.from(
+    body
+      .replace(/=\r?\n/g, "")
+      .replace(/=([0-9A-Fa-f]{2})/g, (_, hex: string) =>
+        String.fromCharCode(parseInt(hex, 16)),
+      ),
+    "latin1",
+  ).toString("utf8");
+
 const headerValue = (headers: string, name: string): string | null => {
   const unfolded = headers.replace(/\r?\n[ \t]+/g, " ");
   const line = unfolded
     .split(/\r?\n/)
     .find((l) => l.toLowerCase().startsWith(`${name.toLowerCase()}:`));
   return line ? line.slice(name.length + 1).trim() : null;
+};
+
+const decodeBody = (encoding: string | null, rest: string): string => {
+  switch (encoding?.toLowerCase()) {
+    case "base64":
+      return Buffer.from(rest.replace(/\s+/g, ""), "base64").toString("utf8");
+    case "quoted-printable":
+      return decodeQuotedPrintable(rest);
+    default:
+      return rest;
+  }
 };
 
 export function parseMime(raw: string): MimePart {
@@ -49,10 +72,7 @@ export function parseMime(raw: string): MimePart {
     disposition: headerValue(headers, "Content-Disposition"),
     contentId: headerValue(headers, "Content-ID"),
     children,
-    body:
-      encoding?.toLowerCase() === "base64"
-        ? Buffer.from(rest.replace(/\s+/g, ""), "base64").toString("utf8")
-        : rest,
+    body: decodeBody(encoding, rest),
   };
 }
 

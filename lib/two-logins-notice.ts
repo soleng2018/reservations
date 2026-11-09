@@ -4,7 +4,7 @@
 
 export const WINDOW_NOTICE = {
   title: "Lab links work only during your window.",
-  body: "They turn on when it starts and off when it ends, so plan your time.",
+  body: "They turn on about 5 minutes before it starts and off when it ends, so plan your time.",
 } as const;
 
 export const LOGINS_TITLE = "You'll have two logins, one password";

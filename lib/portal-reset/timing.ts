@@ -1,13 +1,21 @@
 // The engine's clocks and limits (spec 0023). Plain values, all in
 // milliseconds unless the name says otherwise. Safe on both sides.
+import { ACCESS_LEAD_MS } from "@/lib/lab-access";
+
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
 
 export const START_DELAY = 5 * MINUTE;
-export const TARGET = 25 * MINUTE;
+// Spec 0029: lab end + 24 minutes, the latest a reset may finish between two
+// back to back labs (START_DELAY + 19 minutes, up to START_MARGIN before the
+// next start).
+export const TARGET = 24 * MINUTE;
 export const HARD_CAP = 2 * HOUR;
-export const START_MARGIN = 2 * MINUTE;
+// Spec 0029 AC-3, AC-8: the reset stops this long before the next start, the
+// lab access lead plus a safety margin for a write already in flight.
+export const RESET_SAFETY_MS = MINUTE;
+export const START_MARGIN = ACCESS_LEAD_MS + RESET_SAFETY_MS;
 export const LOOKBACK = 45 * MINUTE;
 export const LEASE = 90 * SECOND;
 export const MAX_RESUMES = 3;

@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 // inRollbackDdl (server/db/testing.ts), which holds the DDL advisory lock
 // alone; in plain inRollback it starves the DB tests in other files and they
 // fail at random with lock_not_available.
-const DDL_HELPERS = ["applyBookingGapMigration(", "restoreOldOverlapRule("];
+const DDL_HELPERS = [
+  "applyBookingGapMigration(",
+  "restoreOldOverlapRule(",
+  "dropHalfHourRule(",
+];
 const DIRS = ["server", "lib", "worker", "scripts", "tests"];
 
 const root = path.resolve(__dirname, "..");

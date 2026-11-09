@@ -12,6 +12,8 @@ describe("two logins notice", () => {
   it("shows the window rule and the shared password", () => {
     const html = render(null);
     expect(html).toContain("Lab links work only during your window.");
+    // Spec 0029 AC-5: the banner agrees with the 5 minute early access.
+    expect(html).toContain("They turn on about 5 minutes before it starts");
     expect(html).toContain("two logins, one password");
     expect(html).toContain("Both use the same password");
   });

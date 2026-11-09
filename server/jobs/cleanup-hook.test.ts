@@ -17,7 +17,10 @@ import { cancelBooking, rescheduleBooking } from "@/server/db/bookings";
 import {
   asConn,
   hasDb,
+  dropHalfHourRule,
   inRollback,
+  inRollbackDdl,
+  startBookingIn,
   makeTestbed,
   makeType,
   makeUser,
@@ -275,6 +278,26 @@ describe.skipIf(!hasDb)("queueing (spec 0021 AC-2, AC-3, AC-4, AC-8)", () => {
         endsAt: slot(32),
       });
       expect(await hookJobs(trx)).toEqual([]);
+    }));
+
+  // covers: spec 0029 AC-7, the early access lead counts as Current
+  it("queues a job for a cancel 4 minutes before the start, and none at 7 minutes", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      const w = await world(trx);
+      const far = await w.book(2);
+      const farVersion = await startBookingIn(trx, far.id, "7 minutes");
+      expect((await cancel(trx, far.id, farVersion)).ok).toBe(true);
+      expect(await hookJobs(trx)).toEqual([]);
+      const near = await w.book(6);
+      const nearVersion = await startBookingIn(trx, near.id, "4 minutes");
+      expect((await cancel(trx, near.id, nearVersion)).ok).toBe(true);
+      const jobs = await hookJobs(trx);
+      expect(jobs).toHaveLength(1);
+      expect(cleanupPayload.parse(jobs[0]?.payload)).toMatchObject({
+        bookingId: near.id,
+        event: "booking.ended_early",
+      });
     }));
 
   // covers: AC-8, a repeat queue adds nothing

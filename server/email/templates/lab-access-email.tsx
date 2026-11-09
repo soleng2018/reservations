@@ -41,14 +41,14 @@ function copy(kind: LabAccessKind, details: BookingEmailDetails): Copy {
         title: "Your Nile Hands-On Lab access",
         preview: BOOKED_PREVIEW,
         heading: "Your lab access is ready",
-        intro: `Hi ${name}, your reservation is confirmed. The links below become active at your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`,
+        intro: `Hi ${name}, your reservation is confirmed. The links below become active about 5 minutes before your start time and stop working when your session ends. The calendar invite attached to this email holds the same details.`,
       };
     case "rescheduled":
       return {
         title: "Your Nile Hands-On Lab access",
         preview: BOOKED_PREVIEW,
         heading: "Your reservation was rescheduled",
-        intro: `Hi ${name}, your reservation was moved. Here are the new details. The links below become active at your new start time and stop working when your session ends. The calendar invite attached to this email moves the event in your calendar.`,
+        intro: `Hi ${name}, your reservation was moved. Here are the new details. The links below become active about 5 minutes before your new start time and stop working when your session ends. The calendar invite attached to this email moves the event in your calendar.`,
       };
     // Spec 0015 AC-7.
     case "reminder":
@@ -57,7 +57,7 @@ function copy(kind: LabAccessKind, details: BookingEmailDetails): Copy {
         preview:
           "Your lab starts soon. Access links and session details inside.",
         heading: "Your lab starts soon",
-        intro: `Hi ${firstName(name)}, this is a reminder that your reservation starts ${emailStart(details)}. The links below become active at your start time and stop working when your session ends.`,
+        intro: `Hi ${firstName(name)}, this is a reminder that your reservation starts ${emailStart(details)}. The links below become active about 5 minutes before your start time and stop working when your session ends.`,
       };
     default: {
       const never: never = kind;

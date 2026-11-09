@@ -8,10 +8,13 @@ import {
   asConn,
   hasDb,
   inRollback,
+  dropHalfHourRule,
+  inRollbackDdl,
   makeTestbed,
   makeType,
   makeUser,
   slot,
+  startBookingIn,
 } from "@/server/db/testing";
 import type { Bookings, DB } from "@/server/db/types";
 import { claimDueRun, keepingLease, stopCheck } from "./claim";
@@ -282,6 +285,88 @@ describe.skipIf(!hasDb)("stop check (AC-6)", () => {
         trx,
       );
       expect(await stopCheck(conn, id)).toBe("deadline");
+    }));
+
+  // Spec 0029 AC-3, AC-8: the stop margin is the 5 minute access lead plus a
+  // 1 minute safety margin. Starts sit on the half hour, so the test drops
+  // that rule inside its own rolled back transaction.
+  it("stops for a start 5.5 minutes away and not for one 7 minutes away", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      await setMode(trx, "live");
+      const w = await world(trx);
+      const conn = asConn(trx);
+      const id = await insertRun(trx, w.testbed.id, {
+        state: "running",
+        lease: "now() + interval '1 minute'",
+      });
+      const next = await w.book(2, 4);
+      const moveTo = (interval: string) =>
+        sql`update hol_app.bookings set starts_at = now() + ${interval}::interval where id = ${next.id}::uuid`.execute(
+          trx,
+        );
+      await moveTo("7 minutes");
+      expect(await stopCheck(conn, id)).toBe("go");
+      await moveTo("5 minutes 30 seconds");
+      expect(await stopCheck(conn, id)).toBe("lab_started");
+    }));
+
+  // Spec 0029 AC-7: a cancel or move inside the 5 minutes of early lab access
+  // counts as Current, so the reset is queued; 7 minutes before is Upcoming.
+  it("queues a reset for a cancel 4 minutes before the start, and none at 7 minutes", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      await setMode(trx, "live");
+      const w = await world(trx);
+      const cancelAt = async (interval: string) => {
+        const b = await w.book(2, 4);
+        const version = await startBookingIn(trx, b.id, interval);
+        const done = await cancelBooking(trx, {
+          id: b.id,
+          expectedVersion: version,
+          source: "admin",
+          byUserId: null,
+        });
+        expect(done.ok).toBe(true);
+        return runsOf(trx, w.testbed.id);
+      };
+      expect(await cancelAt("7 minutes")).toEqual([]);
+      const runs = await cancelAt("4 minutes");
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ event: "ended_early", mode: "live" });
+    }));
+
+  it("queues a moved reset for a move 4 minutes before the start, and none at 7 minutes", () =>
+    inRollbackDdl(async (trx) => {
+      await dropHalfHourRule(trx);
+      await setMode(trx, "live");
+      const w = await world(trx);
+      const moveAt = async (interval: string) => {
+        const b = await w.book(2, 4);
+        const version = await startBookingIn(trx, b.id, interval);
+        const moved = await rescheduleBooking(trx, {
+          id: b.id,
+          expectedVersion: version,
+          testbedId: w.other.id,
+          testbedTypeId: w.type.id,
+          startsAt: slot(30),
+          endsAt: slot(32),
+        });
+        expect(moved.ok).toBe(true);
+        // One live booking per learner: put this one away before the next.
+        const away = await cancelBooking(trx, {
+          id: b.id,
+          expectedVersion: moved.ok ? moved.value.version : -1,
+          source: "admin",
+          byUserId: null,
+        });
+        expect(away.ok).toBe(true);
+        return runsOf(trx, w.testbed.id);
+      };
+      expect(await moveAt("7 minutes")).toEqual([]);
+      const runs = await moveAt("4 minutes");
+      expect(runs).toHaveLength(1);
+      expect(runs[0]).toMatchObject({ event: "moved", mode: "live" });
     }));
 
   it("has no hard cap for a run that was held (AC-14)", () =>
